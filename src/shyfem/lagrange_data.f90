@@ -157,6 +157,13 @@
         double precision, save :: lgr_dtvd_sum = 0.d0
         integer(kind=8), save :: lgr_dtvd_nstep = 0
         integer(kind=8), save :: lgr_dtvd_n = 0, lgr_dtvd_nsub = 0
+	!gradient term of the random walk step (lgr_vdiff_gradstep, #286):
+	!dt <= lgr_vdiff_facg Kmin/K'**2 per layer, at least lgr_vdiff_dtming;
+	!the element steps it lowered dtvd in (lgr_dtvd_ngrad), and those it
+	!lowered to the floor (lgr_dtvd_nfloor); written by lgr_vdiff_stats
+        real, parameter :: lgr_vdiff_facg = 0.07
+        real, parameter :: lgr_vdiff_dtming = 0.2
+        integer(kind=8), save :: lgr_dtvd_ngrad = 0, lgr_dtvd_nfloor = 0
 	!the vertical walk of a particle step (diff_body, #261): at most
 	!lgr_nvdiff_max calls of lgr_diff_vert (100 until #261, which stopped
 	!about 8 % of the particle steps of the ilagr = 3 reproducer short of

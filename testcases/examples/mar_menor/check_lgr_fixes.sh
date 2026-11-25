@@ -273,7 +273,11 @@
 #             difference with one spacing, (K(l+1) - 2 K(l) + K(l-1))/hl(l)
 #             **2 (the sign fixed, the spacing not), fails the quadratic and
 #             the linear profile on unequal layers, and so does the formula
-#             before #257.  2. The 3D case mm_hyd_41
+#             before #257.  Likewise lgr_vdiff_gradstep (#286), the gradient
+#             term dt <= 0.07 Kmin/K'**2 per layer (K' = slope of K in the
+#             layer): linear K 17.5 s, constant K untouched, a K jump in one
+#             layer, a layer of zero thickness skipped, one layer 280 s.
+#             2. The 3D case mm_hyd_41
 #             as in mode ilagr3 (no tilt, one day, ilagr = 3, nbdy = 300,
 #             rwhpar = 0, ipvert = -1) with iturb = 0 and diftur = 1.e-3
 #             (and vistur = 1.e-3), serially: without turbulence closure
@@ -1469,6 +1473,74 @@ EOF
     else
       fail "the test of lgr_vdiff_curvature does not compile"; sed 's/^/    /' "$W/vcurv_build.log" | head -5
     fi
+
+    # the gradient term of the step (#286), cut out and compiled the same way
+    echo "=== lgr_vdiff_gradstep on its own: linear K, constant K, a jump of K, a layer of zero thickness, one layer"
+    awk '/^[ \t]*subroutine lgr_vdiff_gradstep/,/^[ \t]*end subroutine lgr_vdiff_gradstep/' "$SRCF" > "$W/vgrad.f90"
+    if ! grep -q 'end subroutine lgr_vdiff_gradstep' "$W/vgrad.f90"; then
+      fail "lgr_vdiff_gradstep not found in $SRCF"
+    else
+    cat > "$W/vgrad_test.f90" <<'EOF'
+	program vgrad_test
+! dtg = min over the layers of facg Kmin/K'**2, K' = (K(l)-K(l-1))/hl(l)
+	implicit none
+	real, parameter :: facg = 0.07
+	real :: hl(6), z(0:6), wd(0:6), dtg, want
+	integer :: l, nfail
+	nfail = 0
+	hl = (/ 1., 2., 4., 0.5, 3., 1.5 /)
+	z(0) = 0.
+	do l = 1,6
+	  z(l) = z(l-1) + hl(l)
+	end do
+	! linear K: K' = 2e-3 everywhere, Kmin = 1e-3 at the top layer
+	wd = 1.e-3 + 2.e-3*z
+	dtg = 300.
+	call lgr_vdiff_gradstep(6,hl,wd,facg,dtg)
+	want = 17.5
+	write(6,'(2x,a,2es13.5)') 'linear K, dtg and expected:',dtg,want
+	if( abs(dtg-want) > 1.e-5*want ) nfail = nfail + 1
+	! constant K: no gradient, the step is untouched
+	wd = 1.e-3
+	dtg = 300.
+	call lgr_vdiff_gradstep(6,hl,wd,facg,dtg)
+	write(6,'(2x,a,es13.5)') 'constant K, dtg:',dtg
+	if( dtg /= 300. ) nfail = nfail + 1
+	! a jump of K confined to layer 3
+	wd = 1.e-3
+	wd(3:6) = 5.e-2
+	dtg = 300.
+	call lgr_vdiff_gradstep(6,hl,wd,facg,dtg)
+	want = real(0.07d0*1.d-3/((4.9d-2/4.d0)**2))
+	write(6,'(2x,a,2es13.5)') 'a K jump in layer 3, dtg and expected:',dtg,want
+	if( abs(dtg-want) > 1.e-5*want ) nfail = nfail + 1
+	! a layer of zero thickness: layers (1, 2, 0, 3), no division by zero
+	hl(1:4) = (/ 1., 2., 0., 3. /)
+	z(0:4) = (/ 0., 1., 3., 3., 6. /)
+	wd(0:4) = 1.e-3 + 2.e-3*z(0:4)
+	dtg = 300.
+	call lgr_vdiff_gradstep(4,hl(1:4),wd(0:4),facg,dtg)
+	want = 17.5
+	write(6,'(2x,a,2es13.5)') 'a layer of zero thickness, dtg and expected:',dtg,want
+	if( abs(dtg-want) > 1.e-5*want ) nfail = nfail + 1
+	! one layer
+	wd(0:1) = (/ 1.e-3, 2.e-3 /)
+	hl(1) = 2.
+	dtg = 300.
+	call lgr_vdiff_gradstep(1,hl(1:1),wd(0:1),facg,dtg)
+	want = 280.
+	write(6,'(2x,a,2es13.5)') 'lmax = 1, dtg and expected:',dtg,want
+	if( abs(dtg-want) > 1.e-5*want ) nfail = nfail + 1
+	write(6,'(2x,a,i0)') 'failed checks: ',nfail
+	if( nfail > 0 ) stop 1
+	end program vgrad_test
+EOF
+    if ( cd "$W" && gfortran -ffpe-trap=zero,invalid,overflow -o vgrad_test vgrad_test.f90 vgrad.f90 > vgrad_build.log 2>&1 ); then
+      ( cd "$W" && ./vgrad_test ) || fail "lgr_vdiff_gradstep: wrong step"
+    else
+      fail "the test of lgr_vdiff_gradstep does not compile"; sed 's/^/    /' "$W/vgrad_build.log" | head -5
+    fi
+    fi
   fi
 
   # 2. a model run with the same diffusivity at every interface
@@ -1482,12 +1554,15 @@ EOF
     grep -qF -- "$o" "$W/vdt_const.str" || fail "no '$o' in vdt_const.str"
   done
   grep -q "tilt" "$W/vdt_const.str" && fail "tilt lines left in vdt_const.str"
-  echo "=== mm_hyd_41 (no tilt, one day, iturb = 0, diftur = 1.e-3 at every interface) with ilagr = 3, serially"
+  echo "=== mm_hyd_41 (no tilt, one day, iturb = 0, diftur = 1.e-3 at every interface) with ilagr = 3, serially: K'' = 0 and K' = 0, so neither step rule (curvature, gradient) limits the step and the model step is taken"
   if run vdt_const vdt_const.log shyfem; then
     line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/vdt_const.log")"
     echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
     echo "$line" | grep -q 'min 300\.000* mean 300\.000*,' || fail "the random walk time step is not the model time step (300 s) everywhere"
     echo "$line" | grep -Eq ' below the model step 0( over 100 sub-steps 0)?$' || fail "element steps with a random walk time step below the model step"
+    line="$(grep -m1 'lgr vertical diffusion step rule' "$W/vdt_const.log")"
+    echo "  ${line:-no line 'lgr vertical diffusion step rule' in the log}"
+    echo "$line" | grep -q 'gradient term set the step in 0 element steps, its floor 0.2 s in 0$' || fail "the gradient term set the step at a constant K"
   else
     fail "the run did not end"
   fi

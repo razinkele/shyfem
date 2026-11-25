@@ -684,6 +684,11 @@
      &		,', sub-steps per step ',dble(lgr_dtvd_nstep)/lgr_dtvd_n	&
      &		,', element steps ',lgr_dtvd_n				&
      &		,' below the model step ',lgr_dtvd_nsub
+	  write(6,'(a,i0,a,f3.1,a,i0)')					&
+     &		' lgr vertical diffusion step rule: the gradient term'	&
+     &		//' set the step in ',lgr_dtvd_ngrad			&
+     &		,' element steps, its floor ',lgr_vdiff_dtming		&
+     &		,' s in ',lgr_dtvd_nfloor
 	end if
 	! the vertical walk of the particle steps (#261)
 	write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr vertical diffusion:'	&
@@ -728,6 +733,8 @@
         real                    :: dmax
 	logical			:: bzero	!a layer of zero thickness
 	real			:: dtd		!random walk time step
+	real			:: dtg		!step of the gradient term
+	real			:: dtn		!step with the gradient term
         integer 		:: lmax 	!maximum layers in element
 	real, parameter 	:: dtmin = 2.0	!minimum time step
 	real, parameter 	:: difmol = 1.0e-06
@@ -813,6 +820,23 @@
               dtd = max(dtmin, dtd)
 	    end if
 	  end if
+
+	  !-----------------------------------------------
+	  ! gradient term (#286): the drift K' dt of the walk must stay small
+	  ! against the scale K/K' of K, dt <= lgr_vdiff_facg Kmin/K'**2 over
+	  ! the layers (lgr_vdiff_gradstep), at least lgr_vdiff_dtming. Also for
+	  ! lmax = 1 and for a column with a layer of zero thickness (skipped)
+	  !-----------------------------------------------
+	  dtg = time
+	  call lgr_vdiff_gradstep(lmax,hl,wde(0:lmax,ie),lgr_vdiff_facg,dtg)
+	  if( dtg < dtd ) then
+	    dtn = min(dtd,max(lgr_vdiff_dtming,dtg))
+	    if( dtn < dtd ) then		!the gradient term lowered it
+	      lgr_dtvd_ngrad = lgr_dtvd_ngrad + 1
+	      if( dtn == lgr_vdiff_dtming ) lgr_dtvd_nfloor = lgr_dtvd_nfloor + 1
+	    end if
+	    dtd = dtn
+	  end if
 	  dtvd(ie) = dtd
 
 	  ! statistics (#257): the step a particle uses, min(dtvd,time), and
@@ -871,6 +895,43 @@
      &		(dwd2(lmax-1)-dwd2(lmax-2))/hl(lmax-1)*hl(lmax)
 
 	end subroutine lgr_vdiff_curvature
+
+!******************************************************************
+
+	subroutine lgr_vdiff_gradstep(lmax,hl,wd,facg,dtg)
+
+! gradient term of the time step of the vertical random walk (#286): per
+! layer l with hl(l) > 0, K' = (K(l)-K(l-1))/hl(l) is the slope of the
+! diffusivity wd(0:lmax) in the layer, and the drift K' dt of the walk must
+! stay small against the scale K/K' of K, dt <= facg Kmin/K'**2 with Kmin
+! the smaller interface value (at least 1e-6). dtg is lowered to the
+! smallest of these; a layer of zero thickness is skipped (no division),
+! and a layer with K' = 0 sets no limit. Self-contained (no module), so
+! that check_lgr_fixes.sh vdiff-dt can compile and test it on its own.
+
+	implicit none
+
+	integer, intent(in)	:: lmax		!layers of the column
+	real, intent(in)	:: hl(lmax)	!layer thickness
+	real, intent(in)	:: wd(0:lmax)	!diffusivity at interfaces
+	real, intent(in)	:: facg		!factor of the step
+	real, intent(inout)	:: dtg		!time step, lowered
+
+	integer l
+	double precision :: dk,kmin,dtl
+
+	do l = 1,lmax
+	  if( hl(l) > 0. ) then
+	    dk = (dble(wd(l))-dble(wd(l-1)))/hl(l)
+	    kmin = max(1.d-6,dble(min(wd(l-1),wd(l))))
+	    if( dk /= 0.d0 ) then
+	      dtl = facg*kmin/(dk*dk)
+	      if( dtl < dtg ) dtg = real(dtl)
+	    end if
+	  end if
+	end do
+
+	end subroutine lgr_vdiff_gradstep
 
 !******************************************************************
 ! Horizontal diffusion of body id
