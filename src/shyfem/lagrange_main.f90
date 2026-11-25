@@ -650,9 +650,14 @@
 ! particle loop (lgr_internal_failed, #256) the remaining particles of
 ! the loop are skipped and the particle that hit it is not finished: the
 ! run stops after the loop (lgr_mpi_list_check)
+!
+! test hook LGR_TEST_NOADV=1 (lgr_test_noadv, read once by lgr_mpi_init;
+! check_lgr_wellmixed.sh, #286, #287): the advection (horizontal and
+! vertical) is skipped and the steps after it run as before
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_test_internal, lgr_mpi_test_internal
+	use mod_lagrange_mpi, only : lgr_test_noadv
         use mod_geom_dynamic, only : iwegv
         use levels, only : nlv
 
@@ -715,7 +720,9 @@
 ! its advection ends, by lgr_mpi_handover)
 !---------------------------------------------------------------
 
-	call track_advect(i,t_left,n_left,dtime)
+	if( .not. lgr_test_noadv ) then		!test hook (lgr_mpi_init)
+	  call track_advect(i,t_left,n_left,dtime)
+	end if
 	if( lgr_internal_failed() ) return	!the run stops after the loop
 	if( lgr_marked(i) == 0 ) call track_finish(i,0,dtime)
 

@@ -268,6 +268,22 @@
 	! nothing
 	integer, save :: lgr_test_vdiff_end = 0
 
+	! test hooks of the acceptance checks of the vertical walk of ilagr =
+	! 3 (check_lgr_wellmixed.sh, #286, #287; read once by lgr_mpi_init,
+	! also in a serial run; never written after that):
+	! LGR_TEST_KPROF=N sets the vertical diffusivity of the particles in
+	! every element (wde of lag_vdiff_ele, right after it is computed and
+	! before the time step of the walk is taken from it) to a profile of
+	! the relative depth s = hle(l)/hle(lmax) of the interfaces of the
+	! column (only where the column depth hle(lmax) is above 0): 1 linear,
+	! 1e-3 + 2e-2 s; 2 parabolic, 1e-3 + 8e-2 s (1 - s); 3 constant,
+	! 1e-2 [m**2/s]. Any other value leaves it off (0)
+	integer, save :: lgr_test_kprof = 0
+	! LGR_TEST_NOADV=1: the particles are not advected (track_single
+	! skips track_advect); the steps after the advection (vertical walk,
+	! horizontal diffusion, Stokes drift, beaching) run as before
+	logical, save :: lgr_test_noadv = .false.
+
 	! limit nbdymax on several processes: insert_particle does not stop
 	! there, it only records that this process passed the limit by itself;
 	! lgr_mpi_assign_ids decides for all processes after the release
@@ -467,6 +483,13 @@
 ! with their time left (lgr_test_vdiff_end, diff_body, #288); the master
 ! writes a line when it is on
 !
+! test hooks LGR_TEST_KPROF=N (N = 1, 2 or 3) and LGR_TEST_NOADV=1, read
+! here once, in a serial run too: the vertical diffusivity of the
+! particles is the fixed profile N (lgr_test_kprof, lag_vdiff_ele), and
+! the particles are not advected (lgr_test_noadv, track_single); the
+! master writes a line for each hook that is on (check_lgr_wellmixed.sh
+! looks for these lines, #286, #287)
+!
 ! test hooks of lgr_mpi_check_consistency, read here once (several
 ! processes only): LGR_TEST_DROP=R and LGR_TEST_DUP=R arm the fault on
 ! the process whose rank is R (lgr_test_drop, lgr_test_dup; see
@@ -508,6 +531,25 @@
 	  write(6,'(a,i0,a)') ' test hook LGR_TEST_VDIFF_END: the vertical'	&
      &		//' walk of the particles whose id is a multiple of '	&
      &		,lgr_test_vdiff_end,' ends at once with its time left'
+	end if
+
+	call get_environment_variable('LGR_TEST_KPROF',sval,status=ist)
+	if( ist == 0 ) then
+	  read(sval,*,iostat=ios) ir
+	  if( ios == 0 ) then
+	    if( ir >= 1 .and. ir <= 3 ) lgr_test_kprof = ir
+	  end if
+	end if
+	if( lgr_test_kprof > 0 .and. shympi_is_master() ) then
+	  write(6,'(a,i0)') ' test hook LGR_TEST_KPROF: the vertical'	&
+     &		//' diffusivity of the particles is profile ',lgr_test_kprof
+	end if
+
+	call get_environment_variable('LGR_TEST_NOADV',sval,status=ist)
+	lgr_test_noadv = ( ist == 0 .and. trim(sval) == '1' )
+	if( lgr_test_noadv .and. shympi_is_master() ) then
+	  write(6,'(a)') ' test hook LGR_TEST_NOADV: particles are not'	&
+     &		//' advected'
 	end if
 
 	if( .not. bmpi_lagr ) return

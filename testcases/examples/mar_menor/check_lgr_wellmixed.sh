@@ -2,8 +2,18 @@
 #------------------------------------------------------------------------
 # The vertical random walk of ilagr = 3 keeps particles that are evenly
 # spread over the depth evenly spread (issue #284): a well-mixed state
-# must stay well mixed.
+# must stay well mixed.  Five modes:
 #
+#   const      (the default, #284) a diffusivity constant over the depth,
+#              in still water
+#   linear     (#286) a linear profile of the diffusivity, in the forced
+#              mm_hyd_41 with the particles not advected
+#   parabolic  (#286) a parabolic profile, the same case
+#   gotm       (#286) GOTM's diffusivity, the same case
+#   thin       (#287) the walk spreads the particles at its diffusivity in
+#              layers 0.5 m thick (constant diffusivity, still water)
+#
+#========================= mode const (the default) =====================
 # Case: mm_hyd_41 (19 levels, 1 m down to 10 m, then 12, 15, 20, 30, ...
 # 80 m: the layers thicken downward) without its tilt lines, for one day,
 # in still water: no wind, heat flux or rain, no evaporation, the open
@@ -68,12 +78,116 @@
 # them up (with only the first fixed: 1.045 / 0.979), so it partly masked
 # the first.
 #
-# Usage:  ./check_lgr_wellmixed.sh
-# Needs shyfem and python3 on PATH and `make init` done.  The scratch
-# folder is made with mktemp under ${TMPDIR:-/tmp}; it is removed at the
-# end when the check passes and kept (its path is printed) when it fails.
-# Takes about a minute and 200 MB of scratch space.
-# Prints "WELLMIXED: PASS" (exit 0) or "WELLMIXED: FAIL" (exit 1).
+#================= modes linear, parabolic and gotm (#286) ================
+# Case: the forced mm_hyd_41 as it is (GOTM, iturb = 1; wind, heat flux,
+# rain and evaporation; the open level boundary and the river as in the
+# STR) without its tilt lines, for one day, with the hydro output every
+# hour (idtout = '1h': lgr_vprof.read_geom takes the geometry from its
+# header) and the $lagrg section of mode const (39960 particles uniform
+# in relative depth at the release, ilagr = 3, rwhpar = 0, output every
+# hour).  This is the case the measurements of #286 ran (lgr_wm.str in
+# docs/investigation/2026-11-lgr-walk-redesign/str; it differs only in
+# the run name, the lgrseed line and idtout = '3h').  Three runs, lgrseed
+# = 1, 2 and 3, in parallel (at most 7200 s each).  The particles are not
+# advected (test hook LGR_TEST_NOADV=1, read once at the start by
+# lgr_mpi_init): only the vertical walk moves them, in a column whose
+# depth follows the water level.  The diffusivity of the walk at the
+# interfaces of every element, with s = depth of the interface / column
+# depth, is
+#   linear     test hook LGR_TEST_KPROF=1: K = 1e-3 + 2e-2 s [m**2/s]
+#   parabolic  test hook LGR_TEST_KPROF=2: K = 1e-3 + 8e-2 s (1 - s)
+#   gotm       GOTM's (LGR_TEST_KPROF unset)
+# Where K changes over the depth, a random walk keeps a well-mixed state
+# well mixed only if it takes the gradient of K into account correctly
+# (Visser 1997); today's walk does not (#286).  These profiles are the
+# ones the measurements of #286 used.
+#
+# Required, for each run:
+#   - the run ends (exit code 0 and "simulation end" in its log);
+#   - the hooks took: the log holds the master's line " test hook
+#     LGR_TEST_NOADV: particles are not advected" and, in modes linear
+#     and parabolic, " test hook LGR_TEST_KPROF: the vertical diffusivity
+#     of the particles is profile N" with N = 1 or 2 (in mode gotm no such
+#     line).  A binary without the hooks would measure another case and
+#     could pass.  And no particle is advected: every active particle
+#     keeps the position and element of its release at every output;
+#   - 39960 particles released, all of them active (none exited) at
+#     every output;
+#   - well mixed: the mean over the 13 hourly outputs 12:00 ... 24:00 of
+#     the chi-square of the 20-bin histogram of the relative depth of all
+#     active particles (unweighted) is below 31, the limit of mode const.
+#     The relative depth (lgr_vprof.rel_depths) is the depth over the
+#     column depth in the particle's column at the output time; the
+#     particle file holds no water level, so it is recovered from the
+#     particle records.
+# Printed for each run, not gated: the top 5 % ratio (the share of the
+# particles in the upper 5 % of the column over 5 %), mean over 12:00 ...
+# 24:00; and in mode gotm the mean chi-square of the particles in
+# one-layer columns, with their number (a one-layer column must stay well
+# mixed too; no measured spread exists to set a limit from).
+#
+# Measured (mean chi-square 12:00 ... 24:00 for lgrseed 1, 2, 3; top 5 %
+# ratio of seed 1):
+#                                        seed 1  seed 2  seed 3  top 5 %
+#   today's walk (#284), linear          3196.7  3206.9  3383.4   0.437
+#                        parabolic        147.2   124.6   128.1   0.844
+#                        gotm              17.6    20.8    19.0   0.981
+# (34103497 with these hooks; the walk made 2.55 calls per particle step
+# in mode linear, 76.8 in parabolic).  The measurements of #286, an
+# in-model histogram of the same relative depths on a debug build of
+# 97a7ad46 with today's walk, gave linear 3198 and parabolic 148 (seed
+# 1), gotm 17.6 and 20.8 (seeds 1, 2); the prototype of the new walk
+# (B07: f = 0.07, floors 2 s and 0.2 s) gave linear 25.3, 21.8, 21.6,
+# parabolic 20.4, 20.6, 18.6 and gotm 18.7, 21.9, 19.5 (top 5 % 1.036,
+# 1.052, 1.034).
+# Mode gotm passes on today's walk too: it guards against a regression
+# and does not show the fix.  Its one-layer columns (1400 particles) gave
+# 53.3, 54.0 and 57.4 on today's walk.
+#
+#=========================== mode thin (#287) ============================
+# Case: still water as in mode const (iturb = 0, diftur = 1.e-2), but with
+# uniform levels 0.5 m apart, in the STR down to 75 m (0.5 1 1.5 ... 75,
+# 150 levels; the deepest point is 74.62 m).  The model adds the 0.12 m
+# below 74.5 m in the deepest elements to the layer above (a last layer
+# thinner than hlvmin = 0.25 of its regular thickness, set_last_layer),
+# so the run has 149 levels, 0.5 ... 74.5 m.  One run, lgrseed = 1 (at
+# most 3600 s), no test hook.  At constant K the walk must spread the
+# particles at K whatever the thickness of the layers (#287: it did not).
+#
+# Required:
+#   - the run ends; its log lists diftur = 0.100000E-01; the hydro header
+#     holds the 149 levels 0.5, 1, ... 74.5 m;
+#   - still water and no particle lost, as in mode const (every particle
+#     keeps the position and element of its release; every output holds
+#     all released particles as active ones);
+#   - K_eff/K within 0.1 of 1.  K_eff (the method of the measurements of
+#     #287) is the mean over the 23 pairs of consecutive hourly outputs of
+#     sum(dz**2) / n / (2 dt), dt = 3600 s, over the n particles that lie
+#     at least 3 sigma = 3 sqrt(2 K dt) (25.5 m) below the surface and
+#     above the bed at the start of the hour; dz is their change of depth
+#     over the hour, and the column depth is that of mode const (twice
+#     the mean depth of the particles released in the element).
+#
+# Measured (K_eff/K, lgrseed 1): today's walk (#284; 34103497 with the
+# hooks of the other modes) 0.142 +- 0.003 (standard error of the mean of
+# the 23 hourly values, 0.113 ... 0.172; about 199 particles per hour far
+# enough from the surface and the bed).  The measurements of #287 gave
+# 0.142 for main and 1.02 +- 0.02 for the prototype of the new walk
+# (NOSTOP).
+#
+# Usage:  ./check_lgr_wellmixed.sh [const | linear | parabolic | gotm | thin]
+# Needs shyfem and python3 on PATH (python3 with numpy for every mode but
+# const) and `make init` done.  The scratch folder is made with mktemp
+# under ${TMPDIR:-/tmp}; it is removed at the end when the check passes
+# and kept (its path is printed) when it fails.
+# Takes about a minute and 200 MB of scratch space in mode const; on
+# today's walk (wall clock, the three runs of a mode in parallel) about a
+# minute in mode linear, 9 minutes in gotm, 16 in parabolic and 1.5 in
+# thin, and up to 250 MB of scratch space.  A run of the modes linear,
+# parabolic and gotm stops after 7200 s (the walk can make several
+# hundred calls per particle step there), of mode thin after 3600 s.
+# Prints "WELLMIXED: PASS" (exit 0) or "WELLMIXED: FAIL" (exit 1) in mode
+# const, "WELLMIXED MODE: PASS" or "WELLMIXED MODE: FAIL" in the others.
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
@@ -82,20 +196,33 @@ fail() { echo "  FAIL: $*"; rc=1; }
 CHI2MAX=31
 DZFLOOR=0.15
 SEEDS="1 2"
+SEEDS_FORCED="1 2 3"	# modes linear, parabolic and gotm
+KEFFTOL=0.1		# mode thin: |K_eff/K - 1| at most
 
-command -v shyfem > /dev/null 2>&1 || { echo "WELLMIXED: FAIL (shyfem is not on PATH)"; exit 1; }
-command -v python3 > /dev/null 2>&1 || { echo "WELLMIXED: FAIL (python3 is not on PATH)"; exit 1; }
+MODE="${1:-const}"
+case "$MODE" in
+  const|linear|parabolic|gotm|thin) ;;
+  *) echo "usage: $0 [const | linear | parabolic | gotm | thin]"; exit 2 ;;
+esac
+LABEL="WELLMIXED"
+[ "$MODE" = const ] || LABEL="WELLMIXED $MODE"
+
+command -v shyfem > /dev/null 2>&1 || { echo "$LABEL: FAIL (shyfem is not on PATH)"; exit 1; }
+command -v python3 > /dev/null 2>&1 || { echo "$LABEL: FAIL (python3 is not on PATH)"; exit 1; }
+if [ "$MODE" != const ]; then
+  python3 -c 'import numpy' > /dev/null 2>&1 || { echo "$LABEL: FAIL (python3 cannot import numpy)"; exit 1; }
+fi
 [ -f "$HERE/GRID/MM_coarse_smooth.bas" ] \
-  || { echo "WELLMIXED: FAIL (GRID/MM_coarse_smooth.bas is missing: run 'make init' in $HERE)"; exit 1; }
+  || { echo "$LABEL: FAIL (GRID/MM_coarse_smooth.bas is missing: run 'make init' in $HERE)"; exit 1; }
 
 P="$(mktemp -d "${TMPDIR:-/tmp}/check_wellmixed.XXXXXX")" || exit 1
 finish() {
   if [ "$rc" = 0 ]; then
     rm -rf "$P"
-    echo "WELLMIXED: PASS"
+    echo "$LABEL: PASS"
   else
     echo "  logs kept in $P"
-    echo "WELLMIXED: FAIL"
+    echo "$LABEL: FAIL"
   fi
   exit "$rc"
 }
@@ -123,6 +250,262 @@ mk() {
   [ "$(grep -c 'ibtyp = 0' "$P/$1.str")" = 2 ] || return 1
   ! grep -q 'tilt\|wind\|qflux\|rain\|ibtyp = [13]' "$P/$1.str"
 }
+
+#================= modes linear, parabolic and gotm (#286) ================
+# mkf NAME SEED: NAME.str from mm_hyd_41.str (forced as it is, without
+# its tilt lines, one day, hydro output every hour) with the $lagrg
+# section of mode const
+mkf() {
+  sed -e '/^[[:space:]]*ztilt[[:space:]]*=/d' -e '/^[[:space:]]*ktilt[[:space:]]*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-02'/" \
+      -e "s/idtout = '[^']*'/idtout = '1h'/" \
+      -e "s/^\([[:space:]]*\)mm_hyd_41[[:space:]]*\$/\1$1/" "$HERE/mm_hyd_41.str" > "$P/$1.str" || return 1
+  printf '\n$lagrg\n        ilagr = 3   nbdymax = 50000\n        nbdy = 2000  idtl = 0  idtlgr = %s\n        rwhpar = 0  ipvert = 20\n        lgrseed = %s\n$end\n' \
+    "'1h'" "$2" >> "$P/$1.str" || return 1
+  # every edit took, and the forcing is kept
+  grep -q "^[[:space:]]*$1[[:space:]]*\$" "$P/$1.str" || return 1
+  for o in "itend = '2009-01-02'" "idtout = '1h'" "lgrseed = $2" 'ibarcl = 3' \
+           'iturb = 1      ievap = 1 ' "wind='INPUT/wind09.txt'" "qflux='INPUT/qflux09.txt'" \
+           "rain='INPUT/rain09.txt'" "gotmpa = 'INPUT/gotmturb.nml'"; do
+    grep -qF -- "$o" "$P/$1.str" || return 1
+  done
+  [ "$(grep -c 'ibtyp = [13]' "$P/$1.str")" = 2 ] || return 1
+  ! grep -q 'tilt' "$P/$1.str"
+}
+
+if [ "$MODE" = linear ] || [ "$MODE" = parabolic ] || [ "$MODE" = gotm ]; then
+  KPROF=0
+  [ "$MODE" = linear ] && KPROF=1
+  [ "$MODE" = parabolic ] && KPROF=2
+  for s in $SEEDS_FORCED; do
+    mkf f_s$s $s || { fail "cannot make f_s$s.str"; finish; }
+  done
+  # the hooks are set (or unset) explicitly: a hook inherited from the
+  # caller's environment would measure another case
+  for s in $SEEDS_FORCED; do
+    if [ "$KPROF" = 0 ]; then
+      ( cd "$P" && timeout 7200 nice -n 10 env -u LGR_TEST_KPROF LGR_TEST_NOADV=1 \
+          shyfem f_s$s.str < /dev/null > f_s$s.log 2>&1; echo $? > f_s$s.rc ) &
+    else
+      ( cd "$P" && timeout 7200 nice -n 10 env LGR_TEST_NOADV=1 LGR_TEST_KPROF=$KPROF \
+          shyfem f_s$s.str < /dev/null > f_s$s.log 2>&1; echo $? > f_s$s.rc ) &
+    fi
+  done
+  wait
+  for s in $SEEDS_FORCED; do
+    c=f_s$s; log="$P/$c.log"
+    echo "=== $c: forced mm_hyd_41, particles not advected, diffusivity $MODE, ilagr = 3, lgrseed = $s, one day"
+    if [ "$(cat "$P/$c.rc" 2> /dev/null)" != 0 ] || ! grep -q "simulation end" "$log"; then
+      tail -5 "$log" | sed 's/^/    /'; fail "$c did not end (exit code $(cat "$P/$c.rc" 2> /dev/null))"; continue
+    fi
+    # the hooks took (lgr_mpi_init writes these lines)
+    grep -qxF ' test hook LGR_TEST_NOADV: particles are not advected' "$log" \
+      || fail "$c: the log does not acknowledge the test hook LGR_TEST_NOADV (a binary without the hooks?)"
+    if [ "$KPROF" = 0 ]; then
+      if grep -q 'test hook LGR_TEST_KPROF' "$log"; then
+        fail "$c: the log acknowledges the test hook LGR_TEST_KPROF: the diffusivity is not GOTM's"
+      fi
+    else
+      grep -qxF " test hook LGR_TEST_KPROF: the vertical diffusivity of the particles is profile $KPROF" "$log" \
+        || fail "$c: the log does not acknowledge the test hook LGR_TEST_KPROF with profile $KPROF (a binary without the hooks?)"
+    fi
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$CHI2MAX" "$MODE" <<'EOF' || fail "$c: see above"
+import sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+import lgr_vprof as lv
+
+path, gpath, chi2max, mode = sys.argv[2], sys.argv[3], float(sys.argv[4]), sys.argv[5]
+NPART = 39960
+ok = True
+geom = lv.read_geom(gpath)
+ilhv = geom["ilhv"]
+_, times = lc.read_file(path)
+rel = {}		# release records (inserted blocks)
+for t, b, _ in times:
+    rel.update(b[-1])
+print("  released %d particles, %d outputs (%.0f ... %.0f s)"
+      % (len(rel), len(times), times[0][0], times[-1][0]))
+if len(rel) != NPART:
+    print("  FAIL: %d particles released, expected %d" % (len(rel), NPART))
+    ok = False
+nlost = nmove = 0
+for t, b, _ in times:
+    if len(b[0]) != len(rel) or b[1]:
+        nlost += 1
+    for pid, p in b[0].items():
+        r = rel.get(pid)
+        if r is None or (p["x"], p["y"], p["ie"]) != (r["x"], r["y"], r["ie"]):
+            nmove += 1
+print("  outputs that do not hold all %d particles as active ones: %d;"
+      " active records that left their release position or element: %d"
+      % (len(rel), nlost, nmove))
+if nlost:
+    print("  FAIL: particles lost or exited (the chi-square would leave them out)")
+    ok = False
+if nmove:
+    print("  FAIL: particles were advected (LGR_TEST_NOADV did not take)")
+    ok = False
+
+late = []
+nout = 0
+for (t, b, _), rows in zip(times, lv.rel_depths(times, geom)):
+    s = [x[1] for x in rows]
+    nout += sum(1 for v in s if v < -1.e-5 or v > 1.0 + 1.e-5)
+    if 43200.0 <= t <= 86400.0:
+        one = [x[1] for x in rows if ilhv[b[0][x[0]]["ie"] - 1] == 1]
+        late.append((t, lv.chi2(s), lv.bin_ratio(s, None, 0, 1), lv.chi2(one), len(one)))
+print("  relative depths outside 0 ... 1 (all outputs, not gated): %d" % nout)
+if len(late) != 13:
+    print("  FAIL: %d outputs in 12:00 ... 24:00, expected 13" % len(late))
+    ok = False
+else:
+    m = sum(x[1] for x in late) / len(late)
+    top = sum(x[2] for x in late) / len(late)
+    print("  well mixed: mean chi-square over 12:00 ... 24:00 %.1f (limit: below %.0f;"
+          " per output %.1f ... %.1f); top 5 %% of the column %.3f of uniform"
+          % (m, chi2max, min(x[1] for x in late), max(x[1] for x in late), top))
+    if mode == "gotm":
+        print("  one-layer columns (not gated): mean chi-square over 12:00 ... 24:00 %.1f,"
+              " %d particles" % (sum(x[3] for x in late) / len(late), late[-1][4]))
+    if not m < chi2max:
+        print("  FAIL: not well mixed")
+        ok = False
+sys.exit(0 if ok else 1)
+EOF
+  done
+  finish
+fi
+
+#=========================== mode thin (#287) ============================
+if [ "$MODE" = thin ]; then
+  c=thin_s1; log="$P/$c.log"
+  mk $c 1 || { fail "cannot make $c.str"; finish; }
+  # the levels of mm_hyd_41 replaced by 0.5 1 1.5 ... 75 (the first level
+  # at or below the deepest point, 74.62 m), ten to a line
+  awk '
+    /^[[:space:]]*1 2 3 4 5 6 7 8 9 10 12 15 20 30 40 50 60 70 80[[:space:]]*$/ {
+      line = "       "; n = 0
+      for( i = 1; ; i++ ) {
+        v = i * 0.5; line = line " " sprintf("%g", v); n++
+        if( v >= 74.62 ) { print line; break }
+        if( n == 10 ) { print line; line = "       "; n = 0 }
+      }
+      nrep++; next
+    }
+    { print }
+    END { if( nrep != 1 ) exit 1 }' "$P/$c.str" > "$P/$c.tmp" && mv "$P/$c.tmp" "$P/$c.str" \
+    || { fail "cannot set the levels of $c.str"; finish; }
+  nlev="$(awk '/^\$levels/ { f = 1; next } /^\$end/ { f = 0 } f { n += NF } END { print n + 0 }' "$P/$c.str")"
+  [ "$nlev" = 150 ] || { fail "$c.str has $nlev levels, expected 150"; finish; }
+  grep -qx '        70.5 71 71.5 72 72.5 73 73.5 74 74.5 75' "$P/$c.str" \
+    || { fail "$c.str: the levels do not end at 75 m"; finish; }
+  if awk '/^\$levels/ { f = 1; next } /^\$end/ { f = 0 } f && length > 79 { b = 1 } END { exit !b }' "$P/$c.str"; then
+    fail "$c.str: a line of levels is longer than 79 characters"; finish
+  fi
+  ( cd "$P" && timeout 3600 nice -n 10 env -u LGR_TEST_KPROF -u LGR_TEST_NOADV \
+      shyfem $c.str < /dev/null > $c.log 2>&1; echo $? > $c.rc )
+  echo "=== $c: mm_hyd_41 in still water, levels 0.5 m apart, iturb = 0, diftur = 1.e-2, ilagr = 3, lgrseed = 1, one day"
+  if [ "$(cat "$P/$c.rc" 2> /dev/null)" != 0 ] || ! grep -q "simulation end" "$log"; then
+    tail -5 "$log" | sed 's/^/    /'; fail "$c did not end (exit code $(cat "$P/$c.rc" 2> /dev/null))"; finish
+  fi
+  grep -q "diftur *= *0\.100000E-01" "$log" || fail "$c: the log does not list diftur = 0.100000E-01"
+  if grep -q 'test hook LGR_TEST_\(KPROF\|NOADV\)' "$log"; then
+    fail "$c: the log acknowledges a test hook LGR_TEST_KPROF or LGR_TEST_NOADV"
+  fi
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$KEFFTOL" <<'EOF' || fail "$c: see above"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+import lgr_vprof as lv
+
+path, gpath, tol = sys.argv[2], sys.argv[3], float(sys.argv[4])
+K = 1.e-2		# diftur
+ok = True
+hlv = [float(v) for v in lv.read_geom(gpath)["hlv"]]
+bad = [k for k in range(len(hlv)) if abs(hlv[k] - 0.5 * (k + 1)) > 1.e-4]
+print("  levels in the hydro header: %d, %.2f ... %.2f m" % (len(hlv), hlv[0], hlv[-1]))
+if len(hlv) != 149 or bad:
+    print("  FAIL: not the 149 levels 0.5, 1, ... 74.5 m")
+    ok = False
+_, times = lc.read_file(path)
+rel = {}		# release records (inserted blocks)
+for t, b, _ in times:
+    rel.update(b[-1])
+# column depth of an element: 2 x the mean depth of the particles
+# released in it (depths (i - 0.5)/20 of the column)
+acc = {}
+for p in rel.values():
+    a = acc.setdefault(p["ie"], [0.0, 0])
+    a[0] += p["hl"]
+    a[1] += 1
+ht = dict((ie, 2.0 * a[0] / a[1]) for ie, a in acc.items())
+print("  released %d particles in %d elements (column depth %.2f ... %.2f m), %d outputs"
+      % (len(rel), len(ht), min(ht.values()), max(ht.values()), len(times)))
+if len(rel) < 39000:
+    print("  FAIL: fewer than 39000 particles released")
+    ok = False
+nmove = nout = nlost = 0
+for t, b, _ in times:
+    if len(b[0]) != len(rel) or b[1]:
+        nlost += 1
+    for pid, p in b[0].items():
+        r = rel[pid]
+        if (p["x"], p["y"], p["ie"]) != (r["x"], r["y"], r["ie"]):
+            nmove += 1
+        q = p["hl"] / ht[p["ie"]]
+        if q < -1.e-5 or q > 1.0 + 1.e-5:
+            nout += 1
+print("  still water: records that left their release position or element %d;"
+      " depths outside their column %d; outputs that do not hold all particles"
+      " as active ones %d" % (nmove, nout, nlost))
+if nmove or nout or nlost:
+    print("  FAIL: the water is not still or particles were lost")
+    ok = False
+
+# K_eff: hourly mean-square displacement of the particles far from the
+# surface and the bed (at least 3 sigma at the start of the hour)
+ks = []
+prev = None
+for t, b, _ in times:
+    if prev is not None and b[0]:
+        dt = t - prev[0]
+        sig = math.sqrt(2.0 * K * dt)
+        sq = 0.0
+        n = 0
+        for pid, p in b[0].items():
+            q = prev[1].get(pid)
+            if q is None:
+                continue
+            h = ht[p["ie"]]
+            if q["hl"] < 3.0 * sig or h - q["hl"] < 3.0 * sig:
+                continue
+            d = p["hl"] - q["hl"]
+            sq += d * d
+            n += 1
+        ks.append((dt, n, sq / n / (2.0 * dt) / K if n > 1 else float("nan")))
+    prev = (t, b[0])
+nbad = sum(1 for dt, n, _ in ks if dt != 3600.0 or n < 2)
+if len(ks) != 23 or nbad:
+    print("  FAIL: %d pairs of hourly outputs (expected 23), %d of them not 3600 s apart"
+          " or with fewer than 2 particles far from the surface and the bed" % (len(ks), nbad))
+    ok = False
+else:
+    v = [k for _, _, k in ks]
+    m = sum(v) / len(v)
+    se = math.sqrt(sum((x - m) ** 2 for x in v) / (len(v) - 1) / len(v))
+    print("  K_eff/K %.3f +- %.3f (SE) over %d hourly pairs (hourly %.3f ... %.3f), %.0f"
+          " particles per hour at least 3 sigma = %.2f m from the surface and the bed"
+          " (limit: within %.2f of 1)"
+          % (m, se, len(v), min(v), max(v), sum(n for _, n, _ in ks) / float(len(ks)),
+             3.0 * math.sqrt(2.0 * K * 3600.0), tol))
+    if not abs(m - 1.0) <= tol:
+        print("  FAIL: the walk does not spread the particles at its diffusivity")
+        ok = False
+sys.exit(0 if ok else 1)
+EOF
+  finish
+fi
 
 for s in $SEEDS; do
   mk wm_s$s $s || { fail "cannot make wm_s$s.str"; finish; }

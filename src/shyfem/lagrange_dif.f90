@@ -712,6 +712,7 @@
         use mod_lagrange
         use mod_diff_visc_fric, only : difv
         use levels
+        use mod_lagrange_mpi, only : lgr_test_kprof
 
 	implicit none
 
@@ -722,6 +723,7 @@
         real                    :: htot         !total depth without zeta
         real                    :: htotz        !total depth with zeta 
         real                    :: wdl
+	real			:: s		!relative depth (test hook)
         double precision        :: dwd2(nlv)    !second derivative of diffusivity 
         real                    :: dmax
 	logical			:: bzero	!a layer of zero thickness
@@ -756,6 +758,28 @@
 	    end do
             wde(l,ie) = wdl / 3.
           end do
+
+	  !-----------------------------------------------
+	  ! test hook LGR_TEST_KPROF (lgr_mpi_init, check_lgr_wellmixed.sh,
+	  ! #286, #287): a fixed profile of the relative depth s of the
+	  ! interfaces replaces the diffusivity, before the time step of the
+	  ! walk is taken from it; a column of depth 0 keeps its diffusivity
+	  !-----------------------------------------------
+	  if( lgr_test_kprof > 0 ) then
+	    if( hle(lmax) > 0. ) then
+	      do l = 0,lmax
+	        s = hle(l)/hle(lmax)
+	        select case( lgr_test_kprof )
+	        case( 1 )			!linear
+	          wde(l,ie) = 1.e-3 + 2.e-2*s
+	        case( 2 )			!parabolic
+	          wde(l,ie) = 1.e-3 + 8.e-2*s*(1.-s)
+	        case default			!3: constant
+	          wde(l,ie) = 1.e-2
+	        end select
+	      end do
+	    end if
+	  end if
 
 	!write(6,*) 'diffus gggguu'
 	!write(6,*) ie,lmax
