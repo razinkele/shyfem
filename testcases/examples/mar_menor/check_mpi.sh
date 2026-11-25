@@ -157,8 +157,10 @@ else
 fi
 
 echo "=== 5. mm_lgr_w (particles): particle file of $NP processes vs serial"
-if [ ! -f GRID/MM_geo.bas ] && ! ( cd GRID && shypre -noopti MM_geo.grd > shypre_geo.mpi.log 2>&1 ); then
-  tail -5 GRID/shypre_geo.mpi.log; fail "shypre failed on GRID/MM_geo.grd"
+# built when missing; one that is not what today's shypre writes is replaced,
+# with a line saying so (check_geo_bas.sh, #280)
+if ! ./check_geo_bas.sh --build-missing . "MPI GATE"; then
+  fail "GRID/MM_geo.bas is not usable (check_geo_bas.sh)"
 else
   for mode in pos ids handover; do
     log="mm_lgr_w.$mode.gate.log"

@@ -221,8 +221,9 @@ fi
 
 echo "=== 7. serial: mm_hyd_01 on the geographic basin with ilin = 0, itlin = 1 must stop"
 R7="${TAG}_hyd01geo"
-if [ ! -f GRID/MM_geo.bas ] && ! ( cd GRID && shypre -noopti MM_geo.grd > "$SCR/shypre_geo.log" 2>&1 ); then
-  tail -3 "$SCR/shypre_geo.log"; fail "row 7: shypre failed on GRID/MM_geo.grd"
+# built when missing; a stale one is replaced, with a line saying so (#280)
+if ! ./check_geo_bas.sh --build-missing . "ITLIN CHECK"; then
+  fail "row 7: GRID/MM_geo.bas is not usable (check_geo_bas.sh)"
 elif mkstr mm_hyd_01 "$R7" -e "$ITL" -e 's|^\([ \t]*\)GRID/MM_coarse[ \t]*$|\1GRID/MM_geo|'; then
   grep -q "itlin = 1" "$R7.str" || fail "row 7: the sed expression set no itlin"
   grep -q "GRID/MM_geo" "$R7.str" || fail "row 7: the sed expression set no geographic basin"
