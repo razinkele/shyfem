@@ -36,7 +36,7 @@ The owner's decision is to fix all four in **one change**, so that `ilagr = 3` r
   - The walk always moves particles, because `lag_vdiff_ele` adds a molecular floor `difmol` = 1e-6 m²/s to K.
   - So today's walk rarely leaves a particle exactly at the bed (M299: no output particle at exactly z = 1, without settling), and the reflecting walk never will.
   - How often deposition happens today with settling particles has not been measured.
-  - The change must still bring settling particles to the bed as today (§5.3, §6 test 6).
+  - The change must still let settling particles settle at their full speed in the bottom layer, as today (§5.3, §6 test 6).
 
   *(My call: this lies outside the four issues. It is recorded here, and will be measured and filed as a separate issue.)*
 
@@ -167,10 +167,10 @@ Seeds are fixed, and limits come from the measured seed-to-seed spread. Every te
 
 1. **`check_lgr_wellmixed.sh`** (constant K, still water) stays as it is, with limit 31. With no gradient it now takes the model step in one call (min/mean 300 s).
 2. **Smooth profiles and GOTM:** new modes of `check_lgr_wellmixed.sh`, through two test hooks read once outside any loop, in the style of `LGR_TEST_VDIFF_END` (#288):
-   - `LGR_TEST_KPROF`: 1 for linear K = 1e-3 + 2e-2·s, 2 for parabolic K = 1e-3 + 8e-2·s(1−s), with s = depth/H. These are the formulas the measurements used.
+   - `LGR_TEST_KPROF`: 1 for linear K = 1e-3 + 2e-2·s, 2 for parabolic K = 1e-3 + 8e-2·s(1−s), with s = depth/H. These are the formulas the measurements used. 3 sets a constant K = 1e-2: the cost's fixed part, one walk call per step, as the measurement did. *(My call, added with the plan.)*
    - `LGR_TEST_NOADV`: particles are not advected.
    - **Set-up**, the one the limit of 31 is calibrated to; a smaller case would break it:
-     - the same as the existing check: `mm_hyd_41` in still water, nbdy = 2000 × ipvert = 20 (39,960 particles), one day;
+     - the forced `mm_hyd_41` (GOTM, wind, boundaries as in the STR, tilt lines removed), one day, with particle advection off (`LGR_TEST_NOADV`), and the existing check's `$lagrg` section: nbdy = 2000 × ipvert = 20 (39,960 particles). This is the measured set-up, `str/lgr_wm.str` in §8. *(Corrected 2026-11-25: an earlier version of this line said "in still water".)*
      - the 20-bin histogram of relative depth, mean χ² over the hourly outputs 12:00–24:00;
      - seeds 1, 2 and 3.
      - Before fixing the limits, the builder confirms the check's χ² on these runs reproduces the measured values (reportMwalk2.md) within the seed range. The measurements used an in-model χ² of the same histogram.
@@ -179,11 +179,12 @@ Seeds are fixed, and limits come from the measured seed-to-seed spread. Every te
 3. **Thin layers (#287):** still water, constant K (`iturb = 0`, `diftur`, kept since #248), uniform 0.5 m levels. K_eff/K from the hourly displacement variance far from the surface and bed must be within **0.1** of 1. The new walk measured 1.00 ± 0.003 (K = 1e-3) and 1.02 ± 0.02 (K = 1e-2) on one seed; main gives 0.14–0.36. At constant K every candidate setting is byte-identical to plain N2, so this test does not depend on the constants. *(My call: 0.1 is 5x the larger measured ± and far from main.)*
 4. **#299 bottom:** the closed forced case (`mm_hyd_41`, both boundaries `ibtyp = 0`, GOTM, 39,960 particles, one day). The bottom 5 % at 24 h must be ≥ **0.80**. The new walk with the bed fix gave 0.88 and 0.89 on 2 seeds; main gives 0.49. *(My call.)*
 5. **#283 part 1:** part 1 of the prototype `check_setup_order.sh` (203fc8dc): the first particle step sees the closure's K.
-6. **Settling to the bed:** still water, more than one layer, `ised` set so that particles have a settling velocity, and no turbulent diffusivity, so the walk sees only the molecular floor.
-   - Release particles at the top of the bottom layer.
-   - After 1.5·hd/sv, at least most of them (the builder sets the share) must be within δ of the bed, deposited ones included.
-   - δ must be at least 3x the walk's residual spread over that time, about √(2·K_floor·t), and at most a quarter of the 0.22·hd the tapered form leaves.
-   - It guards the untapered sv of §5.3 and is shown RED against the prototype's tapered form.
+6. **Settling in the bottom layer:** still water, `ised = 1` (particles get a settling velocity), and no turbulent diffusivity, so the walk sees only the molecular floor.
+   - The stock settling speeds (3e-6 to 3e-5 m/s) are too slow for "reach the bed" to beat the walk's spread within hours. So the test measures drift instead: the fastest class's mean depth change over 5 h, in bottom layers far enough from the bed, must equal the settling speed × t within 5 %.
+   - The tapered form gives about 0.5–0.8 of that, and the script asserts it can tell the two apart.
+   - It guards the untapered sv of §5.3 and is shown RED against the prototype's tapered form. The plan, Task 4, has the exact rule.
+
+   *(Restated 2026-11-25 while writing the plan.)*
 
    *(My call: this is the one place where the bed fix could break sediment runs.)*
 7. **Updated:** `check_lgr_fixes.sh ilagr3`. The calls per step and the cap lines change.

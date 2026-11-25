@@ -45,9 +45,9 @@ Together these fix #286, #287, #299 and part 1 of #283.
 - Wait for runs by their exit status, never with a `pgrep`/`sleep` loop.
 - Scratch goes only in your own `mktemp -d` under the session scratchpad, with `TMPDIR` set to it.
 
-**The reference binary ("main"):**
-- origin/main 576abae5, built in a throwaway work tree `/home/razinka/wt-walk-ref` with the same command.
-- The RED runs and the cost baseline use it. Remove it at the end.
+**Two reference binaries.** Remove both work trees at the end.
+- **"main":** origin/main 576abae5, built in a throwaway work tree `/home/razinka/wt-walk-ref`. Used for the RED runs that need no hook and for the unchanged-results battery.
+- **"base":** Task 1's commit (the old walk plus the test hooks), built in a throwaway work tree `/home/razinka/wt-walk-base` right after Task 1 is committed. Task 1 step 1 proves it equals main with no hook set. It is the baseline for every run that needs a hook on today's walk, including the cost baseline (Task 7). main ignores the hooks, so it cannot serve there.
 
 **Constants, exactly:**
 - the gradient factor f = 0.07 and its floor g_floor = 0.2 s;
@@ -119,6 +119,7 @@ f and g_floor are named parameters in the code, not STR parameters.
   - The case is the full forced `mm_hyd_41`: GOTM, wind, boundaries as in the STR, tilt lines removed, one day.
   - Use the `$lagrg` section `ilagr = 3 nbdymax = 50000 / nbdy = 2000 idtl = 0 idtlgr = '1h' / rwhpar = 0 ipvert = 20 / lgrseed = S`, as `docs/investigation/2026-11-lgr-walk-redesign/str/lgr_wm.str`.
   - Run with `LGR_TEST_NOADV=1`, plus `LGR_TEST_KPROF=1` (linear) or `2` (parabolic), on seeds 1, 2 and 3, with the hydro output hourly so `read_geom` has a header.
+  - Each run gets `timeout 7200`, not the 1800 of `const`. B07 on `parabolic` makes about 426 calls per step, about 4.9e9 calls in a day, which is about 1800 s on its own. Run the three seeds in parallel.
   - For each seed, `lgr_vprof.py` computes the unweighted χ² of all active particles at each hourly output from 12:00 to 24:00 and takes the mean.
   - Required: every seed below `CHI2MAX=31`, and 39,960 particles released and active at every output.
   - Print each seed's χ² and the top 5 % ratio `bin_ratio(s, None, 0.0, 0.05)` at 12:00–24:00, mean over the outputs.
@@ -131,8 +132,8 @@ f and g_floor are named parameters in the code, not STR parameters.
     - K_eff is the mean of the 23 values.
   - Required: |K_eff/K − 1| ≤ 0.1.
 
-- [ ] **Step 4: Show the modes RED on main and reproducing the measurement.**
-  - Run all four new modes with the reference binary on PATH.
+- [ ] **Step 4: Show the modes RED on today's walk and reproducing the measurement.**
+  - Run all four new modes with this task's build: the old walk plus the hooks.
   - Expected RED:
     - `linear` about 3198 and `parabolic` about 148 (seed 1);
     - `thin` K_eff/K about 0.14 (M286's value for main at 0.5 m and K = 1e-2: 0.142).
@@ -285,22 +286,25 @@ f and g_floor are named parameters in the code, not STR parameters.
     - The bottom 5 % at 24:00 is `bin_ratio` over [0.95, 1.0) of `lgr_vprof.rel_depths` with the release-column weight 'rel', anaA's measure.
     - Required: ≥ 0.80 on both seeds.
     - Print it and the χ² 12–24 h.
-  - **Part 2, settling (spec §6 test 6):**
-    - `mm_hyd_41` in still water as `check_lgr_wellmixed.sh const`, but with `diftur = 0.` and `vistur = 1.e-3`, so the walk sees only `difmol`/3. Add `ised = 1`, which gives each particle a sediment class and a settling velocity.
-    - Release the particles in the bottom layer of columns with lmax ≥ 2. The builder chooses the release (a release file or `ipvert`) and documents it.
-    - At t = 1.5·hd/sv for the slowest class present, at least 95 % of these particles must be within δ of the bed, deposited ones (`lb = -1`) included.
-    - δ = max(3·√(2·K_floor·t), 0.01 m), with K_floor = 1e-6/3 m²/s. It must stay below a quarter of 0.22·hd; the script asserts that before judging.
+  - **Part 2, settling (spec §6 test 6, restated as a drift test).**
+    - **Why "reach the bed" cannot be tested:** the stock classes settle at 3e-6, 1e-5 and 3e-5 m/s (`lagrange_sedim.f90`). The walk's molecular floor spreads particles by √(2·K_floor·t) with K_floor = 1e-6/3 m²/s, and over the hours a particle needs to reach the bed that spread hides the taper.
+    - **The case:** `mm_hyd_41` in still water as `check_lgr_wellmixed.sh const`, but with `diftur = 0.` and `vistur = 1.e-3` (the walk sees only K_floor), plus `ised = 1` (each particle gets a class and its settling speed, field `"s"` of `lgr_compare`). Same uniform release (ipvert = 20), 5 hours, hourly output.
+    - **The particles judged:** those of the fastest class (s = 3e-5 m/s) that start in the bottom layer of a column with lmax ≥ 2, and whose distance to the bed, d_b = (1 − z0)·hd, is at least s·t + 4σ at t = 5 h. Here hd is the bottom layer's thickness from `read_geom`, and σ = √(2·K_floor·t).
+    - **The statistic:** R = Σ(depth at 5 h − depth at release) / Σ(s·t).
+    - **Required:** 0.95 ≤ R ≤ 1.05. Untapered settling gives R ≈ 1.
+    - **The script also checks that it can tell the forms apart.** It computes the tapered expectation R_tap = Σ d_b·(1 − exp(−s·t/hd)) / Σ(s·t) and asserts R_tap ≤ 0.85 before judging.
+    - It is GREEN on main and RED against the tapered form.
 - [ ] **Step 3: Show the checks failing.**
   - Run `./check_lgr_fixes.sh bed-w` (FAIL: no routines yet).
-  - Run `./check_lgr_bed.sh` with the reference binary. Expected: part 1 FAILS (0.49 / 0.49); part 2 passes on main, which has no taper.
-  - Then temporarily taper sv as the prototype did, in your branch build: part 2 must FAIL. Paste that output and revert the edit.
+  - Run `./check_lgr_bed.sh` with main. Expected: part 1 FAILS (0.49 / 0.49); part 2 PASSES (main has no taper).
 - [ ] **Step 4: Implement the routines and the `track_xi` change.**
+- [ ] **Step 5: Show part 2 is RED against the tapered form.** In your build, temporarily taper sv as the prototype did, (wt − sv)·(1 − z). Run part 2: it must FAIL with R near R_tap. Paste that output, then undo the edit by editing the code back (never `git checkout <file>`).
 
-- [ ] **Step 5: Run the checks again.**
+- [ ] **Step 6: Run the checks again.**
   - Commands: `./check_lgr_fixes.sh bed-w`, `./check_lgr_bed.sh`, `./check_lgr_wellmixed.sh const` and `./check_lgr_fixes.sh ilagr3`.
   - Expected: all PASS. Part 1 is near the measured 0.88 / 0.89; it may differ slightly, because the measurement did not have the layer-switch fix.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
   ```bash
   git add src/shyfem/lagrange_vertical.f90 testcases/examples/mar_menor/check_lgr_fixes.sh testcases/examples/mar_menor/check_lgr_bed.sh
   git commit -m "fix(lgr): bottom-layer vertical velocity linear to 0 at the bed, settling not tapered (#299)"
@@ -333,7 +337,7 @@ f and g_floor are named parameters in the code, not STR parameters.
 
 What changes, by the spec §6 test 7:
 - calls per step and the measured numbers in the comments (the reproducer measured 154.8 calls per step);
-- "M > 100" no longer holds, because the walk now makes ⌈T/dtvd⌉ calls. Require 1 ≤ M ≤ ⌈300/0.2⌉ = 1500;
+- the most calls in a step, M: require 100 < M ≤ 1501. The reproducer averages 154.8 calls per step, and ⌈300/0.2⌉ = 1500, plus one call for the single-precision rounding of the time left;
 - the cap count N = 0 at T = 300 s;
 - E = 0;
 - each line is still written exactly once, including in the 12-hour run with `itlend = 06:02:30`.
@@ -372,14 +376,19 @@ What changes, by the spec §6 test 7:
   - **Reproducer:** the `lgr_ilagr3` case of `check_lgr_fixes.sh`.
   - **Heavy case:** `gotm` mode, seed 1 (39,960 particles, no advection).
   - **Runs on each case:**
-    - main;
+    - base (today's walk with the hooks; the heavy case needs `LGR_TEST_NOADV`);
     - the branch;
     - the branch with `LGR_TEST_KPROF=3`, the fixed part: one walk call per step.
-  - **Walk-only** = (user_branch − user_fixed)/(user_main − user_fixed).
+  - **Walk-only** = (user_branch − user_fixed)/(user_base − user_fixed).
   - Record calls per step from the log for each run.
   - Required: walk-only ≤ 2.1 on both cases. If it is over, stop and report; do not retune.
 - [ ] **Step 3: Surface excess:** the GOTM top 5 % on seeds 1–3 from Task 3's run, recorded in `battery.md`. If any is above 1.06, stop and report.
-- [ ] **Step 4: Run the battery and the cost on the final head.** Re-run Step 1 if any code changed after it.
+- [ ] **Step 4: Run everything on the final head.** Tasks 4 and 5 change inputs of checks that passed earlier: the set-up move affects `gotm`, and the layer-switch fix affects `const` and `thin`. So run:
+  - every acceptance check: `./check_lgr_wellmixed.sh const`, `linear`, `parabolic`, `gotm` and `thin`; `./check_lgr_bed.sh`; `./check_setup_order.sh`;
+  - `./check_lgr_fixes.sh ilagr3`, `vdiff-events`, `vdiff-dt`, `walk-fold`, `bed-w`, `seed`, `sedbeach` and `int-fail`;
+  - Step 1's battery and Step 2's cost.
+
+  If any code changes after this, run it all again.
 - [ ] **Step 5: Commit**
   ```bash
   git add CHANGELOG.md docs/investigation/2026-11-lgr-walk-redesign/battery.md
