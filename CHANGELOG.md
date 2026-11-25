@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed — Tools
 
+- **`shyelab -outformat nc` converts a file with several tracers (#292).** The tracer ids 301, 302, ... were all named `concentration` and NetCDF refused the second define ("name in use"), so a `.conz.shy` file with `iconz > 1` could not be converted. With more than one id in 301..399 (367, the river index, has its own name) each gets the name `concentration_<id-300>` (`concentration_1`, `concentration_2`); a file with one tracer keeps `concentration`. Only the NetCDF writer changes: model results are unchanged. New gate `testcases/examples/mar_menor/check_nc_tracers.sh`.
 - **`shyelab -outformat nc` now converts EUTRO and mercury output (#222).** The ulva variables (741, 742) and the mercury variables (251-299) had no name in the NetCDF writer (`src/tools/shynetcdf/netcdf.f90`), NetCDF refused the empty name and `shyelab` left a 32-byte `out.nc` of zeros behind and exited 0. They now have names and units (`ulva_biomass`, `hg0_water`, ...), an id that still has no name gets `var_<id>` and a log line, and a failed NetCDF call removes the unfinished `out.nc` and exits with status 1 (it exited 0). Only the NetCDF writer changes: model results are unchanged. New gate `testcases/examples/weutro_box/check_nc.sh`.
 
 ### Fixed — MPI
