@@ -101,6 +101,7 @@
 ! 08.03.2025    ggu     extracted mod_restart in its own file
 ! 09.03.2025    ggu     call shympi_barrier after finishing restart file
 ! 24.11.2026    arb     restart_write_start: labels of the ghost check (#268)
+! 24.11.2026    arb     3D restart read on a process with fewer levels (#278)
 !
 ! notes :
 !
@@ -1069,7 +1070,7 @@
 	use mod_ts
 	use mod_hydro_vel
 	use mod_hydro
-	use levels, only : nlvdi,nlv,hlv,ilhv,ilhkv
+	use levels, only : nlvdi,nlv,ilhv,ilhkv
 	use basin
 	use mod_restart
 	use shympi
@@ -1166,7 +1167,11 @@
 	  !read from the restart file against the running basin's own
 	  !vertical structure -- aborts on mismatch instead of silently
 	  !loading 3d fields onto an incompatible layer geometry
-	  call rst_get_vertical(nkn,nel,nlv,nvers,hlv,ilhv,ilhkv)
+	  !the file holds the layer depths of the whole basin (nlv_global
+	  !of them, hlv_global), also when a process has fewer levels
+	  !(nlv < nlv_global) - compare them with the whole basin's (#278)
+	  call rst_get_vertical(nkn,nel,nlv_global,nvers,hlv_global &
+     &				,ilhv,ilhkv)
 
 	  id = id_hydro_rst
 	  call rst_add_flag(id,iflag)
@@ -1438,7 +1443,12 @@
 	  ilhkrst = 0
 	end if
 
-	if( nvers .ge. 14 .and. nlv == 1 ) then
+	! the writer writes the vertical structure when the WHOLE basin has
+	! more than one level (nlv_global > 1, rst_write_record), so decide
+	! on nlvaux: a process with one level of its own (nlv == 1) in a 3D
+	! basin must read the three records too, or it reads them as the
+	! records that follow (iwegv, znv, zenv, ...) (#278)
+	if( nvers .ge. 14 .and. nlvaux == 1 ) then
 	  hlvrst = 10000.
 	  ilhrst = 1
 	  ilhkrst = 1
@@ -1475,16 +1485,22 @@
 ! present from version 10 on, ilhv/ilhkv only from version 13 on (see
 ! rst_read_vertical) -- older files legitimately have nothing to
 ! validate here and must not be flagged as incompatible.
+!
+! nkn,nel are local, nlv and hlv those of the whole basin (nlv_global,
+! hlv_global): the file holds the layer depths of the whole basin, and
+! a process may have fewer levels of its own (#278). ilhrst/ilhkrst
+! hold the values of the process's local elements and nodes (ghosts
+! included), as ilhv/ilhkv.
 
 	use mod_restart
 	use shympi
 
 	implicit none
 
-	integer nkn,nel,nlv,nvers
-	real hlv(nlv)
-	integer ilhv(nel)
-	integer ilhkv(nkn)
+	integer, intent(in) :: nkn,nel,nlv,nvers
+	real, intent(in) :: hlv(nlv)
+	integer, intent(in) :: ilhv(nel)
+	integer, intent(in) :: ilhkv(nkn)
 
 	logical bhlv,bilh
 
