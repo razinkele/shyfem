@@ -472,7 +472,11 @@ ranks_msg() { echo "$(basename "$1"): the log does not show $2 MPI processes ($(
 
 #--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
 if [ "$MODE" = perturb ]; then
-  nlost() { grep -c 'loosing particle adv' "$1"; }
+  # particles lost with time left by the advection: the sum of the counts
+  # of the lines "lgr advection: [rank R:] lost with time left: N in the
+  # step to ..." (#294; until then one line "loosing particle adv" each)
+  nlost() { awk '/ lgr advection:.* lost with time left: [0-9]+ in the step to / {
+    sub(/.* lost with time left: /, ""); n += $1 } END { print n + 0 }' "$1"; }
   PERTURB_VALUE=85
   # value of MALLOC_PERTURB_ a process launched by mpirun sees, in brackets;
   # stderr is kept out of the value; $1 = plain | perturbed
@@ -547,7 +551,7 @@ if [ "$MODE" = perturb ]; then
     if [ ! -f "$D1/$b" ]; then echo "  missing in the plain run: $b"; ndiff=$((ndiff + 1)); fi
   done
   echo "  $nfiles dump files compared, $ndiff differing or missing"
-  echo "  'loosing particle adv' lines: plain $(nlost "$HERE/$CASE.np$NP.log"), perturbed $(nlost "$HERE/$CASE.np$NP.perturb.log")"
+  echo "  particles lost with time left by the advection: plain $(nlost "$HERE/$CASE.np$NP.log"), perturbed $(nlost "$HERE/$CASE.np$NP.perturb.log")"
   [ "$nfiles" -gt 0 ] || fail "no dump file exists"
   [ "$ndiff" = 0 ] || fail "the dump files of the plain and the perturbed run differ"
   if [ "$rc" = 0 ]; then echo "LGR GATE: PASS"; else echo "LGR GATE: FAIL"; fi

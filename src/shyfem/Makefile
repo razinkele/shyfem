@@ -738,6 +738,7 @@ lagrange_cont.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_lagrange.mod \
 		../../lib/mod/mod_lagrange_random.mod
+lagrange_data.o: ../../lib/mod/shympi.mod
 lagrange_decay.o: ../../lib/mod/femtime.mod \
 		../../lib/mod/mod_lagrange.mod \
 		../../lib/mod/mod_lagrange_random.mod \

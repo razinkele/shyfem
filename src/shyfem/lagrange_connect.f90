@@ -494,7 +494,8 @@
 ! the shared counts are OMP atomic; the particle's bitmaps are its own;
 ! serial only, icnn stops on several processes). The guards go through
 ! lgr_internal_error (#256): recorded inside the loop, nothing is counted
-! and the run stops after the loop
+! and the run stops after the loop; their values go to lgr_event (#294:
+! until then written from inside the loop)
 
 	use mod_lagrange
 	use connectivity
@@ -525,7 +526,8 @@
 	end if
 
 	if( is_nan(time) ) then
-	  write(6,*) 'nan found: ',ibdy,ie_to,time
+	  call lgr_event(lgr_ev_conn_nan,lgr_ar(ibdy)%id			&
+     &		,(/lgr_ar(ibdy)%id,ibdy,ie_to/),(/dble(time)/))
 	  call lgr_internal_error(					&
      &		'error stop lagr_connect_count: time is nan')
 	  return			!recorded in the loop: not counted
@@ -557,10 +559,8 @@
 	ip_orig = i_connect_elems(ie_orig)
 
 	if( ip_orig .le. 0 ) then
-	  write(6,*) 'particle not coming from source: ' &
-     &				,ibdy,ie_orig,ip_orig
-	  write(6,*) 'particle not coming from source: ' &
-     &				,ibdy,ieext(ie_orig),ip_orig
+	  call lgr_event(lgr_ev_conn_source,lgr_ar(ibdy)%id		&
+     &		,(/lgr_ar(ibdy)%id,ibdy,ie_orig,ieext(ie_orig),ip_orig/))
 	  call lgr_internal_error('error stop lagr_connect_count: no source')
 	  return			!recorded in the loop: not counted
 	end if
