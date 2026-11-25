@@ -79,6 +79,7 @@
 ! 22.11.2026	arb	model_bottom_z0: owner's sums on a node partition (#230)
 ! 22.11.2026	arb	bnstress: the same (#230)
 ! 24.11.2026	arb	handle_gotm_init: visv/difv only with iturb > 0 (#248)
+! 25.11.2026	arb	handle_gotm_init: k-eps and Munk-Anderson own state (#283)
 !
 !**************************************************************
 
@@ -723,15 +724,28 @@
 
 	subroutine handle_gotm_init
 
-! handles initialization of gotm
+! handles initialization of the turbulence closure (the GOTM arrays and
+! the visv/difv of step 1)
 !
 ! The GOTM arrays are initialized (or read from the restart file) whatever
-! iturb is. visv/difv are set from them only with a turbulence closure
-! (iturb > 0): with iturb <= 0 (no closure, as in turb_closure) visv/difv
+! iturb is. With iturb <= 0 (no closure, as in turb_closure) visv/difv
 ! keep the constant vistur/diftur that set_eddy put in (#248). Before,
 ! they were replaced by GOTM's initial 1e-6 (or, on a restart from a GOTM
 ! run, by its last profile, never updated after), so vistur and diftur
 ! had no effect with iturb = 0.
+!
+! With a closure (iturb > 0) visv/difv are set here to the closure's own
+! mixing. The closure first steps in turb_closure, after hydro and
+! run_scalar of the first time step, so step 1 uses what is set here
+! (#283):
+!   iturb = 1 (GOTM): GOTM's arrays (its initial 1e-6, or its profile
+!     read from the restart file)
+!   iturb = 2 (k-epsilon): keps_init, k-epsilon's initial state
+!     (visv 1.3e-6, difv 1.1e-9)
+!   iturb = 3 (Munk-Anderson): the closure itself, evaluated on the
+!     initial (or restart) state; at rest it gives vistur/diftur
+! Before #283 step 1 of k-epsilon and Munk-Anderson used GOTM's arrays
+! too, so Munk-Anderson ignored vistur/diftur in step 1.
 
 	use basin
 	use levels
@@ -770,6 +784,23 @@
 
 	iturb = nint(getpar('iturb'))
 	if( iturb <= 0 ) return		!no closure: keep vistur/diftur (#248)
+
+	! k-epsilon and Munk-Anderson: step 1 starts from the closure's own
+	! mixing, not from GOTM's arrays (#283). This only initialises and
+	! adds no closure step: keps_init sets constants, which keps_shell
+	! sets again on its first call, and munk_anderson_shell is a
+	! diagnostic of the present shear and stratification, with no state
+	! of its own to advance.
+	! This runs after rst_perform_restart: k-epsilon saves no state in
+	! the restart file (N25), and if restart hooks for it are ever added,
+	! keps_init here would wipe the restored tken, eps, rls, visv, difv
+	if( iturb == 2 ) then
+	  call keps_init		!k-epsilon initial state (tken, eps, rls, visv, difv)
+	  return
+	else if( iturb == 3 ) then
+	  call munk_anderson_shell	!evaluated on the initial (or restart) state
+	  return
+	end if
 
 	visv = 0.
 	difv = 0.
