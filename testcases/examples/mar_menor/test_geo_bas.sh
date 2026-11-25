@@ -25,6 +25,7 @@
 #   4. if the file of the live tree (the one built on 2026-06-12, which the
 #      shypre before 9abe01a4 wrote) is found, row 3 again with it; set
 #      MM_GEO_STALE_FILE to name another file, or to "none" to skip.
+#   3b. the same file as a symlink: exit 1, the link kept, the advice.
 #   5. a missing basin: exit 1 and the advice; with --build-missing one line
 #      with "missing", exit 0, the fresh bytes.
 #   6. no shypre on PATH: exit 1 and "shypre is not on PATH".
@@ -131,6 +132,16 @@ else
   stale_rows live "$LIVE"
   [ "$rc" = "$r0" ] && echo "  $LIVE: found, advice given, replaced (in a copy), then silent"
 fi
+
+echo "=== 3b. symlink to a stale file: not replaced"
+r0=$rc
+mkwork w3b || exit 1
+ln -s "$T/stale_synth.bas" "$T/w3b/GRID/MM_geo.bas" || exit 1
+out="$("$HERE/check_geo_bas.sh" "$T/w3b" "T" 2>&1)"; r=$?
+[ "$r" = 1 ] || fail "symlink: exit $r, not 1: $out"
+case "$out" in *symlink*"$ADVICE"*) ;; *) fail "symlink: message: $out" ;; esac
+[ -L "$T/w3b/GRID/MM_geo.bas" ] || fail "symlink: the link was replaced"
+[ "$rc" = "$r0" ] && echo "  exit 1, link kept, advice given"
 
 echo "=== 5. missing basin"
 r0=$rc

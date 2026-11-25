@@ -17,7 +17,7 @@
 # single precision number; nothing else: the nodes and the coordinates are
 # the same bytes).  The file of the live tree (2026-06-12) is byte-identical
 # to what the shypre before 9abe01a4 writes.  Every case that reads it
-# (mm_lgr, mm_lgr_a, c, e, w, mm_hyd_01 on it) then gives other bytes, at
+# (mm_lgr, mm_lgr_a, c, e, w) then gives other bytes, at
 # round-off size: measured on one binary, hydro |d| up to 2.6e-5 (transport)
 # and 1.4e-6 m (level), 3 to 24 particles of 80 to 648 beyond 1e-5 degrees at
 # the end, the largest distance at any output 2.3e-4 to 2.1e-2 degrees (the
@@ -88,11 +88,17 @@ if cmp -s "$T/MM_geo.bas" "$BAS"; then
   exit 0
 fi
 nbytes="$(cmp -l "$T/MM_geo.bas" "$BAS" 2> /dev/null | wc -l)"
+SHYPRE="$(command -v shypre)"
+WHY="differs from what $SHYPRE writes in $nbytes bytes (likely built before 9abe01a4, the old parser's depths; or $SHYPRE is an older build)"
+if [ -L "$BAS" ]; then
+  echo "$LABEL FAIL: GRID/MM_geo.bas is a symlink to a stale file ($WHY), not replaced: $HINT"
+  exit 1
+fi
 if [ "$CHECK_ONLY" = 1 ]; then
-  echo "$LABEL FAIL: GRID/MM_geo.bas is stale (differs from what shypre writes today in $nbytes bytes; a file built before 9abe01a4 keeps the old parser's depths): $HINT"
+  echo "$LABEL FAIL: GRID/MM_geo.bas is stale ($WHY): $HINT"
   exit 1
 fi
 cp "$T/MM_geo.bas" "$BAS.new.$$" && mv "$BAS.new.$$" "$BAS" \
   || { rm -f "$BAS.new.$$"; echo "$LABEL FAIL: GRID/MM_geo.bas is stale and cannot be replaced: $HINT"; exit 1; }
-echo "$LABEL NOTE: GRID/MM_geo.bas was stale (differed from what shypre writes today in $nbytes bytes: built before 9abe01a4, the old parser's depths): replaced; results of runs made with the old file differ at round-off"
+echo "$LABEL NOTE: GRID/MM_geo.bas was stale ($WHY): replaced with what $SHYPRE writes; results of runs made with the old file differ at round-off"
 exit 0
