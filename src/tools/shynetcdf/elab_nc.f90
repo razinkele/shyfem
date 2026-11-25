@@ -96,7 +96,7 @@
 
 	logical bhydro
 	integer date0,time0
-	integer lmax,i,iztype,idim,ivar,ncnlv,idir,ierr
+	integer lmax,i,iztype,idim,ivar,ncnlv,idir,ierr,ntrac
 	real, save :: ncflag = -999.
 
 	logical has_direction_ivar
@@ -141,6 +141,16 @@
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 	var_ids = 0
 
+	! several tracers (ids 301..399, 367 is the river index and has its
+	! own name) all map to 'concentration': NetCDF refuses the same name
+	! twice (#292), so with more than one the name gets the id: concentration_N
+	ntrac = 0
+	do i=1,nvar
+	  if( ivars(i) > 300 .and. ivars(i) < 400 .and. ivars(i) /= 367 ) then
+	    ntrac = ntrac + 1
+	  end if
+	end do
+
 	idir = 0
         do i=1,nvar
 	  ivar = ivars(i)
@@ -153,7 +163,7 @@
 	  if( is_2d(ivar) ) idim = 2
 	  !write(6,*) 'nc_output_init: ivar,idim: ',i,ivar,idim,idir
 	  var_dims(i) = idim
-          call nc_init_variable(ncid,breg,idim,ivar,idir,ncflag,var_ids(i))
+          call nc_init_variable(ncid,breg,idim,ivar,idir,ncflag,ntrac,var_ids(i))
         end do
 
         call nc_end_define(ncid)
