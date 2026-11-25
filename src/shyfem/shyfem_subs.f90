@@ -390,7 +390,12 @@
 ! initialize barene data structures
 !-----------------------------------------------------------
 
-	if( .not. bmpi ) call setweg(-1,n)	!shympi - FIXME
+!	setweg(-1) starts the dry-element counter iwetv of the elements that are
+!	dry at the start. It is a loop over all elements (ghosts included) with
+!	a constant, so it needs no exchange and must run on every process: if
+!	only a serial run calls it, elements dry at the start count from -1
+!	instead of +1 and re-wet one step early (#295)
+	call setweg(-1,n)
 	call setnod
 	call update_geom	!update ieltv - needs inodv
 	call populate_strings	!populate strings here
