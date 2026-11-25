@@ -705,14 +705,20 @@
 ! described in mod_lagrange at lgr_vdev_n), called inside the particle
 ! loop of drogue by any thread; writes nothing there. The event is
 ! counted (OMP atomic); its values replace those kept for its kind if
-! its key is lower (critical section lgr_vdiff_event, entered only for an
-! event, which is rare), so the event kept is the same on any number of
-! threads. lgr_vdiff_events writes them after the loop.
+! its key is lower (critical section lgr_vdev, entered only for an
+! event, which is rare). lgr_vdiff_events writes them after the loop.
+! For kinds 1 and 2 (the run goes on) the count and the event kept are
+! the same on any number of threads. Kinds 3 and 4 are internal errors
+! and the run stops after them: once one is recorded the other threads
+! leave their particles (lgr_internal_failed in track_single and
+! lgr_diff_vert), so with several threads their count and the event
+! kept depend on the scheduling, and on one thread the run aborts at the
+! first one in the order of the loop; harmless, as the run stops anyway.
 ! Kinds 3 and 4 are followed by lgr_internal_error, which aborts at once
 ! outside an active parallel region (outside the loop, or a loop on one
 ! thread, run by the main thread): there they are written at once
 ! (lgr_vdiff_events), as their lines were before #288
-! Must not be called inside the critical section lgr_vdiff_event
+! Must not be called inside the critical section lgr_vdev
 
         use mod_lagrange
         use mod_lagrange_mpi, only : lgr_omp_loop
@@ -730,13 +736,13 @@
 !$OMP ATOMIC
         lgr_vdev_n(kind) = lgr_vdev_n(kind) + 1
 
-!$OMP CRITICAL (lgr_vdiff_event)
+!$OMP CRITICAL (lgr_vdev)
         if( key < lgr_vdev_key(kind) ) then
           lgr_vdev_key(kind) = key
           lgr_vdev_ival(:,kind) = ival
           lgr_vdev_dval(:,kind) = dval
         end if
-!$OMP END CRITICAL (lgr_vdiff_event)
+!$OMP END CRITICAL (lgr_vdev)
 
         if( kind < 3 ) return		!written after the loop
         bnow = .not. lgr_omp_loop
