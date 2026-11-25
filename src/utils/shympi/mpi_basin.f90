@@ -1173,6 +1173,7 @@
 	integer ia,nempty
 	integer ierr
 	integer, allocatable :: area_elem(:)	!N28: was automatic (nel)
+	integer, allocatable :: elem_part(:)	!element partition for the grd file
 	integer ierr1,ierr2
 
 	logical, save :: bwritegrd = .true.
@@ -1203,9 +1204,24 @@
 	    write(6,*) 'we will do partitioning for domains: ',nparts
 	  end if
 	  call do_partition(nkn,nel,nen3v,nparts,area_node,area_elem)
+	  !check_partition works on the basin of the master (it replaces the
+	  !element areas there with those of one domain) and so leaves
+	  !area_elem different on the master than on the other processes.
+	  !the element partition of the file is therefore the one from the
+	  !partitioner, and it is written by the master alone: all processes
+	  !writing the same file at once gave a different file at every run
+	  !(#279). the file is for inspection only, nothing reads it
+	  allocate(elem_part(nel),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('error stop handle_partition: allocation failed')
+	  end if
+	  elem_part = area_elem
 	  call check_partition(area_node,area_elem,bdebug_grd,ierr1,ierr2)
-	  call write_partition_to_grd(grdname,bdebug_grd &
-     &				,nparts,area_node,area_elem)
+	  if( shympi_is_master() ) then
+	    call write_partition_to_grd(grdname,bdebug_grd &
+     &				,nparts,area_node,elem_part)
+	  end if
+	  deallocate(elem_part)
 	  area_node = area_node - 1	!gives back 1-nparts
 	else if( nnp == nparts ) then
 	  if( shympi_is_master() ) then
