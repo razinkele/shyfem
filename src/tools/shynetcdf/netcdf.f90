@@ -3236,7 +3236,7 @@
 !*****************************************************************
 !*****************************************************************
 
-	subroutine nc_init_variable(ncid,breg,dim,ivar,idir,flag,var_id)
+	subroutine nc_init_variable(ncid,breg,dim,ivar,idir,flag,ntrac,var_id)
 
 	use netcdf_params
 
@@ -3248,6 +3248,7 @@
 	integer ivar
 	integer idir
 	real flag
+	integer ntrac		! number of tracer ids 301..399 (not 367) in the file
 	integer var_id		! id to be used for other operations (return)
 
 	character*256 name,what,std,units
@@ -3452,6 +3453,7 @@
 	  cmax = 360.
 	else if( ivar > 300 .and. ivar < 400 ) then	! concentration
 	  name = 'concentration'
+	  if( ntrac > 1 ) write(name,'(a,i0)') 'concentration_',ivar-300
 	  what = 'long_name'
 	  std = 'concentration'		! no CF convention name available
 	  units = ''
