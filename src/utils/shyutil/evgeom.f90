@@ -548,6 +548,10 @@
 	subroutine xy2xi(ie,x,y,xi)
 
 ! given x/y returns internal coordinates xi
+!
+! stops on an error, with the lines it wrote before #294 (xy2xi_ierr,
+! which does the work, returns the error instead: the particle tracker
+! calls that one inside its OpenMP loop, where nothing may write or stop)
 
 	use basin
 
@@ -560,13 +564,64 @@
 	integer ii
 	integer ierr
 	double precision a(3),b(3),c(3)
+	double precision xiorig(3)
 	real xp,yp
 
 	logical in_element
 
-	if( ie < 1 .or. ie > nel ) then
+	call xy2xi_ierr(ie,x,y,xi,ierr)
+	if( ierr == 0 ) return
+
+	if( ierr < 0 ) then
 	  write(6,*) 'element number is out of range: ',ie,nel
 	  stop 'error stop xy2xi: ie<=0'
+	end if
+
+	call xi_abc(ie,a,b,c)		!the xi that adjust_xi could not adjust
+	do ii=1,3
+	  xiorig(ii) = a(ii) + b(ii)*x + c(ii)*y
+	end do
+	if( ierr == 1 ) then
+	  write(6,*) 'xi is wrong... cannot adjust'
+	else
+	  write(6,*) 'xi is still wrong... cannot adjust'
+	end if
+	write(6,*) xiorig
+	write(6,*) 'xy2xi: ',ie,x,y,ierr
+	xp = x
+	yp = y
+	if( .not. in_element(ie,xp,yp) ) then
+	  write(6,*) 'point is not in element...'
+	end if
+	stop 'error stop xy2xi: wrong xi'
+
+	end
+
+!***********************************************************
+
+	subroutine xy2xi_ierr(ie,x,y,xi,ierr)
+
+! given x/y returns internal coordinates xi, as xy2xi, but writes
+! nothing and never stops (#294): ierr 0 no error, -1 ie out of range
+! (xi is 0), 1 or 3 the error of adjust_xi (xi could not be adjusted;
+! xi as adjust_xi leaves it)
+
+	use basin
+
+	implicit none
+
+	integer, intent(in) :: ie
+	double precision, intent(in) :: x,y
+	double precision, intent(out) :: xi(3)
+	integer, intent(out) :: ierr
+
+	integer ii
+	double precision a(3),b(3),c(3)
+
+	if( ie < 1 .or. ie > nel ) then
+	  xi = 0.d0
+	  ierr = -1
+	  return
 	end if
 
 	call xi_abc(ie,a,b,c)
@@ -577,16 +632,6 @@
 
 	call adjust_xi(xi,ierr)
 
-	if( ierr /= 0 ) then
-	  write(6,*) 'xy2xi: ',ie,x,y,ierr
-	  xp = x
-	  yp = y
-	  if( .not. in_element(ie,xp,yp) ) then
-	    write(6,*) 'point is not in element...'
-	  end if
-	  stop 'error stop xy2xi: wrong xi'
-	end if
-
 	end
 	
 !***********************************************************
@@ -594,6 +639,11 @@
 	subroutine adjust_xi(xi,ierr)
 
 ! adjusts internal coodinates xi
+!
+! writes nothing on an error (#294: called by xy2xi_ierr, also inside
+! the OpenMP particle loop): ierr 1 xi is wrong, cannot adjust, 3 xi is
+! still wrong after the adjustment; xy2xi writes the lines of the error
+! (the debug lines need bdebug_internal, which nothing sets)
 
 	use evgeom
 
@@ -627,9 +677,7 @@
 	  xisum = xisum + xi(ii)
 	end do
 
-	if( it == 3 .or. abs(xiso-1.) > 1.e-8 ) then
-	  write(6,*) 'xi is wrong... cannot adjust'
-	  write(6,*) xiorig
+	if( it == 3 .or. abs(xiso-1.) > 1.e-8 ) then	!xi is wrong
 	  ierr = 1
 	  return
 	  !stop 'error stop adjust_xi'
@@ -665,9 +713,7 @@
 	  write(6,*) xi
 	end if
 
-	if( abs(xiso-1.) > 1.e-8 ) then
-	  write(6,*) 'xi is still wrong... cannot adjust'
-	  write(6,*) xiorig
+	if( abs(xiso-1.) > 1.e-8 ) then		!xi is still wrong
 	  ierr = 3
 	  return
 	  !stop 'error stop adjust_xi'
@@ -685,12 +731,48 @@
 	subroutine xi2xy(ie,x,y,xi)
 
 ! given internal coordinates xi returns x/y
+!
+! stops on an error (xi2xy_ierr, which does the work, returns it
+! instead: the particle tracker calls that one inside its OpenMP loop,
+! where nothing may write or stop, #294)
 
 	implicit none
 
 	integer, intent(in) :: ie
 	double precision, intent(out) :: x,y
 	double precision, intent(in) :: xi(3)
+
+	integer ierr
+	double precision a(3),b(3),c(3)
+
+	call xi2xy_ierr(ie,x,y,xi,ierr)
+
+        if( ierr /= 0 ) then
+	  call xi_abc(ie,a,b,c)
+	  write(6,*) 'det too small: ',ie
+	  write(6,*) xi
+	  write(6,*) a
+	  write(6,*) b
+	  write(6,*) c
+	  stop 'error stop xi2xy: det == 0'
+	end if
+
+	end
+
+!***********************************************************
+
+	subroutine xi2xy_ierr(ie,x,y,xi,ierr)
+
+! given internal coordinates xi returns x/y, as xi2xy, but writes
+! nothing and never stops (#294): ierr 1 if the determinant of every
+! pair of coordinates is too small (x, y are 0), else 0
+
+	implicit none
+
+	integer, intent(in) :: ie
+	double precision, intent(out) :: x,y
+	double precision, intent(in) :: xi(3)
+	integer, intent(out) :: ierr
 
 	!double precision, parameter :: eps = 1.e-8 !this should depend on max area
 	double precision, parameter :: eps = 1.e-10
@@ -715,17 +797,14 @@
 	  end do
 	end if
 
-        if( abs(det) < eps ) then
-	  write(6,*) 'det too small: ',ie,det
-	  write(6,*) i1,i2
-	  write(6,*) x,y
-	  write(6,*) xi
-	  write(6,*) a
-	  write(6,*) b
-	  write(6,*) c
-	  stop 'error stop xi2xy: det == 0'
+        if( abs(det) < eps ) then	!det too small
+	  x = 0.d0
+	  y = 0.d0
+	  ierr = 1
+	  return
 	end if
 
+	ierr = 0
 	a1 = (xi(i1)-a(i1))
 	a2 = (xi(i2)-a(i2))
 	y = (a1*b(i2) - a2*b(i1)) / det
@@ -741,6 +820,44 @@
 ! computes distance between two points given in internal coordinates
 !
 ! the two points must be lying on the sides of the triangle
+!
+! stops on an error (xi_dist_ierr, which does the work, returns it
+! instead: the particle tracker calls that one inside its OpenMP loop,
+! where nothing may write or stop, #294)
+
+	implicit none
+
+	integer, intent(in) :: ie			!element number
+	double precision, intent(in) :: xia(3)		!internal coordinates of point a
+	double precision, intent(in) :: xib(3)		!internal coordinates of point b
+	double precision, intent(out) :: l		!length of segment (return)
+
+	integer ierr
+
+	call xi_dist_ierr(ie,xia,xib,l,ierr)
+
+	if( ierr /= 0 ) then
+	  if( ierr == 1 ) then
+	    write(6,*) 'points not on side of triangle...'
+	  else
+	    write(6,*) 'impossible... internal error'
+	  end if
+	  write(6,*) 'error in computing distance:'
+	  write(6,*) xia
+	  write(6,*) xib
+	  stop 'error stop xi_dist: generic error'
+	end if
+
+	end
+
+!***********************************************************
+
+	subroutine xi_dist_ierr(ie,xia,xib,l,ierr)
+
+! computes distance between two points given in internal coordinates,
+! as xi_dist, but writes nothing and never stops (#294): ierr 1 a point
+! does not lie on a side, 2 impossible (an internal error), l is 0;
+! 0 no error
 
 	use evgeom
 
@@ -750,6 +867,7 @@
 	double precision, intent(in) :: xia(3)		!internal coordinates of point a
 	double precision, intent(in) :: xib(3)		!internal coordinates of point b
 	double precision, intent(out) :: l		!length of segment (return)
+	integer, intent(out) :: ierr			!0 no error, 1 or 2
 
 	double precision pi,rad
 	parameter (pi=4.D+0*atan(1.D+0),rad=pi/180.D+0)
@@ -782,13 +900,12 @@
 
 	!write(6,*) ia0,ib0,na0,nb0
 
+	l = 0.d0
+	ierr = 0
+
 	if( na0 == 0 .or. nb0 == 0 ) then	!points must lie on side
-	  write(6,*) 'points not on side of triangle...'
-	  write(6,*) 'error in computing distance:'
-	  write(6,*) ia0,ib0,na0,nb0
-	  write(6,*) xia
-	  write(6,*) xib
-	  stop 'error stop xi_dist: generic error'
+	  ierr = 1
+	  return
 	end if
 
 	if( na0 == 2 .and. nb0 == 2 ) then	!line through two vertices
@@ -836,13 +953,9 @@
 	    dla = xia(ib1) * length(ib3)
 	    cc = cosine(ib2)
 	  end if
-	else
-	  write(6,*) 'impossible... internal error'
-	  write(6,*) 'error in computing distance:'
-	  write(6,*) ia0,ib0,na0,nb0
-	  write(6,*) xia
-	  write(6,*) xib
-	  stop 'error stop xi_dist: generic error'
+	else				!impossible... internal error
+	  ierr = 2
+	  return
 	end if
 
 	l = sqrt( dla**2 + dlb**2 - 2.*dla*dlb*cc )

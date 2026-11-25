@@ -77,9 +77,10 @@
 ! the cause unknown (no run gets there: the walk ends only with no time
 ! left, at the cap or after two calls in a row that used no time, since
 ! lgr_diff_vert never sets lb < 1; the test hook LGR_TEST_VDIFF_END
-! forces it), is an event of lgr_vdiff_event (kinds 1 and 2: counted,
-! the first kept) and written after the loop by lgr_vdiff_events; until
-! #288 each such particle step wrote a line from inside the loop
+! forces it), is an event of lgr_event (lgr_ev_vd_lost, lgr_ev_vd_unknown:
+! counted, the first kept) and written at the end of the pass by
+! lgr_events; until #288 each such particle step wrote a line from
+! inside the loop
 !
 ! the vertical walk makes at most lgr_nvdiff_max calls of lgr_diff_vert
 ! in a step (#261). A call ends at dtvd or where the particle reaches an
@@ -131,6 +132,7 @@
         double precision 	:: xx,yy,zz
         logical			:: bstall	!ended by two such calls in a row
         logical			:: btend	!walk ended by the test hook
+        integer			:: ierr		!error of xy2xi_ierr
 
         integer			:: ndraw	!vertical draws made (#225)
         logical			:: lgr_internal_failed
@@ -229,7 +231,12 @@
 	  end if
 	  xx = x
 	  yy = y
-	  call xy2xi(abs(iel),xx,yy,xi)
+	  call xy2xi_ierr(abs(iel),xx,yy,xi,ierr)
+	  if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	    call lgr_event(lgr_ev_xy2xi,id,(/id,iel,ierr/),(/xx,yy/))
+	    call lgr_internal_error('error stop diff_body: error of xy2xi')
+	    return			!recorded in the loop: left as it is
+	  end if
 	end if
 
 !---------------------------------------------------------------
@@ -248,11 +255,10 @@
 !$OMP ATOMIC
             lgr_tvdiff_cap = lgr_tvdiff_cap + dtime
           else if( iel < 1 ) then	!out of the domain: counted (#288)
-            call lgr_vdiff_event(1,i,(/id,iel,n,0/)			&
-     &			,(/dble(dtime),0.d0,0.d0,0.d0,0.d0,0.d0/))
+            call lgr_event(lgr_ev_vd_lost,i,(/id,iel,n/),(/dble(dtime)/))
           else				!cause unknown: counted (#288)
-            call lgr_vdiff_event(2,i,(/id,iel,n,0/)			&
-     &			,(/dble(dtime),0.d0,0.d0,0.d0,0.d0,0.d0/))
+            call lgr_event(lgr_ev_vd_unknown,i,(/id,iel,n/)		&
+     &			,(/dble(dtime)/))
           end if
         end if
 
@@ -284,10 +290,10 @@
 ! lgr_internal_error here or in diff_get_vert) returns time = 0 (the
 ! caller's loop ends) with defined values; the run stops after the loop.
 ! The values of the guard here (z outside 0..1) and in diff_get_vert (no
-! such layer) go to lgr_vdiff_event (kinds 3 and 4), which writes them
-! at once where lgr_internal_error aborts at once (outside an active
-! parallel region) and keeps them for lgr_vdiff_events after the loop
-! otherwise; until #288 they were written from inside the loop. The
+! such layer) go to lgr_event (lgr_ev_vd_depth, lgr_ev_vd_layer), which
+! writes them at once where lgr_internal_error aborts at once (outside an
+! active parallel region) and keeps them for lgr_events otherwise; until
+! #288 they were written from inside the loop. The
 ! debug lines (bdebug) are off at compile time: until #288 bdebug was
 ! true for a particle with id 0, which no release gives (ids start at
 ! 1), and it was set through the module variable blgrdebug, written by
@@ -469,7 +475,8 @@
 	end if
 
 	if( z < 0. .or. z > 1. ) then
-	  call lgr_vdiff_event(3,id,(/id,iel,lb,lmax/),(/tv,t,dz,w,hd,z/))
+	  call lgr_event(lgr_ev_vd_depth,id,(/id,iel,lb,lmax/)		&
+     &			,(/tv,t,dz,w,hd,z/))
 	  call lgr_internal_error(					&
      &		'error stop lgr_diff_vert: internal error (2)')
 	  z = min(max(z,0.d0),1.d0)	!recorded in the loop
@@ -496,7 +503,7 @@
 ! the time step and the site lgr_rnd_vdiff, numbered by ndraw
 !
 ! the guard of the layer goes through lgr_internal_error (#256), its
-! values through lgr_vdiff_event (kind 4, #288)
+! values through lgr_event (lgr_ev_vd_layer, #288)
 !
 ! hda and hdb are the thicknesses of the layers above and below lb (0 at
 ! the surface and at the bottom), for a particle of lgr_diff_vert that
@@ -552,8 +559,7 @@
 	end do
 
         if( lb > lmax ) then
-          call lgr_vdiff_event(4,id,(/id,iel,lb,lmax/)			&
-     &			,(/0.d0,0.d0,0.d0,0.d0,0.d0,0.d0/))
+          call lgr_event(lgr_ev_vd_layer,id,(/id,iel,lb,lmax/))
           call lgr_internal_error(					&
      &		'error stop diff_get_vert: no such layer')
           dt = 0.			!recorded in the loop (#256): defined
@@ -696,163 +702,6 @@
      &		,'; calls that used no time: ',lgr_nvdiff_zero
 
         end subroutine lgr_vdiff_stats
-
-!******************************************************************
-
-        subroutine lgr_vdiff_event(kind,key,ival,dval)
-
-! an event of the vertical walk (#288; the kinds and the arrays are
-! described in mod_lagrange at lgr_vdev_n), called inside the particle
-! loop of drogue by any thread; writes nothing there. The event is
-! counted (OMP atomic); its values replace those kept for its kind if
-! its key is lower (critical section lgr_vdev, entered only for an
-! event, which is rare). lgr_vdiff_events writes them after the loop.
-! For kinds 1 and 2 (the run goes on) the count and the event kept are
-! the same on any number of threads. Kinds 3 and 4 are internal errors
-! and the run stops after them: once one is recorded the other threads
-! leave their particles (lgr_internal_failed in track_single and
-! lgr_diff_vert), so with several threads their count and the event
-! kept depend on the scheduling, and on one thread the run aborts at the
-! first one in the order of the loop; harmless, as the run stops anyway.
-! Kinds 3 and 4 are followed by lgr_internal_error, which aborts at once
-! outside an active parallel region (outside the loop, or a loop on one
-! thread, run by the main thread): there they are written at once
-! (lgr_vdiff_events), as their lines were before #288
-! Must not be called inside the critical section lgr_vdev
-
-        use mod_lagrange
-        use mod_lagrange_mpi, only : lgr_omp_loop
-
-        implicit none
-
-        integer, intent(in)		:: kind		!1 ... 4
-        integer, intent(in)		:: key		!slot (1, 2) or id (3, 4)
-        integer, intent(in)		:: ival(4)	!integer values
-        double precision, intent(in)	:: dval(6)	!real values
-
-        logical				:: bnow		!write at once
-        logical				:: openmp_in_parallel
-
-!$OMP ATOMIC
-        lgr_vdev_n(kind) = lgr_vdev_n(kind) + 1
-
-!$OMP CRITICAL (lgr_vdev)
-        if( key < lgr_vdev_key(kind) ) then
-          lgr_vdev_key(kind) = key
-          lgr_vdev_ival(:,kind) = ival
-          lgr_vdev_dval(:,kind) = dval
-        end if
-!$OMP END CRITICAL (lgr_vdev)
-
-        if( kind < 3 ) return		!written after the loop
-        bnow = .not. lgr_omp_loop
-        if( .not. bnow ) bnow = .not. openmp_in_parallel()
-        if( bnow ) call lgr_vdiff_events	!lgr_internal_error aborts next
-
-        end subroutine lgr_vdiff_event
-
-!******************************************************************
-
-        subroutine lgr_vdiff_events
-
-! writes the events of the vertical walk counted by lgr_vdiff_event
-! (#288) and clears the counts of the pass; called by drogue after its
-! particle loop, outside any parallel region, before lgr_mpi_list_check
-! (which stops the run after an internal error found in the loop), and
-! by lgr_vdiff_event before an internal error aborts at once. Writes
-! nothing when nothing was counted. One line per kind with events:
-!   1 "lgr vertical diffusion: lost with time left:"
-!   2 "lgr vertical diffusion: walk ended with time left, cause unknown:"
-!     the events in the pass ("in the step to" the time of the step) and
-!     in the run, the percentage of the run's events in the particles
-!     released (idbdy, the percentage of the lines "loosing particle dif"
-!     and "unknown error dif" written until #288 for each particle step)
-!     and the first event of the pass: id, element, calls of the walk
-!     left, time left [s]
-!   3 "lgr vertical diffusion: depth outside 0..1 after a call of
-!     lgr_diff_vert:"
-!   4 "lgr vertical diffusion: no such layer in diff_get_vert:"
-!     the events in the pass and the first (lowest id): id, element,
-!     layer, layers of the element, for 3 also tv, t, dz, w, hd and z
-! No collective call: each process writes its own events, on several
-! processes with its rank, so a process with none writes nothing and
-! waits for nobody. The events need vertical diffusion (ilagr = 3), and
-! ilagr = 3 stops on several processes, so there they are always 0
-
-        use mod_lagrange
-        use shympi, only : my_id, shympi_is_parallel
-
-        implicit none
-
-        integer				:: k
-        double precision		:: dtime
-        double precision		:: perc
-        character(len=20)		:: aline
-        character(len=24)		:: crank
-        character(len=16)		:: cperc,ctime
-        character(len=48)		:: ctext
-
-        if( all( lgr_vdev_n == 0 ) ) return
-
-        call get_act_dtime(dtime)
-        call get_timeline(dtime,aline)
-        crank = ' '
-        if( shympi_is_parallel() ) write(crank,'(a,i0,a)') ' rank ',my_id,':'
-
-        do k=1,2
-          if( lgr_vdev_n(k) == 0 ) cycle
-          if( k == 1 ) then
-            ctext = 'lost with time left'
-          else
-            ctext = 'walk ended with time left, cause unknown'
-          end if
-          lgr_vdev_ntot(k) = lgr_vdev_ntot(k) + lgr_vdev_n(k)
-          perc = 0.d0
-          if( idbdy > 0 ) perc = (100.d0*lgr_vdev_ntot(k))/idbdy
-          write(cperc,'(f16.2)') perc
-          write(ctime,'(f16.3)') lgr_vdev_dval(1,k)
-          write(6,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a)')			&
-     &		' lgr vertical diffusion:'//trim(crank)//' '		&
-     &		//trim(ctext)//': ',lgr_vdev_n(k)			&
-     &		,' in the step to '//trim(aline)//', ',lgr_vdev_ntot(k)	&
-     &		,' in the run ('//trim(adjustl(cperc))//' % of the '	&
-     &		,idbdy,' particles released); first: id '		&
-     &		,lgr_vdev_ival(1,k),', element ',lgr_vdev_ival(2,k)	&
-     &		,', calls left ',lgr_vdev_ival(3,k)			&
-     &		,', time left [s] '//trim(adjustl(ctime))
-        end do
-
-        ! the internal errors: the run stops right after (the values in
-        ! full precision, as the lines before #288 wrote them)
-        if( lgr_vdev_n(3) > 0 ) then
-          lgr_vdev_ntot(3) = lgr_vdev_ntot(3) + lgr_vdev_n(3)
-          write(6,'(a,i0,a,i0,a,i0,a,i0,a,i0,6(a,g0))')			&
-     &		' lgr vertical diffusion:'//trim(crank)			&
-     &		//' depth outside 0..1 after a call of lgr_diff_vert: '	&
-     &		,lgr_vdev_n(3),' in the step to '//trim(aline)		&
-     &		//'; first: id ',lgr_vdev_ival(1,3)			&
-     &		,', element ',lgr_vdev_ival(2,3)				&
-     &		,', layer ',lgr_vdev_ival(3,3),' of ',lgr_vdev_ival(4,3)	&
-     &		,', tv ',lgr_vdev_dval(1,3),', t ',lgr_vdev_dval(2,3)	&
-     &		,', dz ',lgr_vdev_dval(3,3),', w ',lgr_vdev_dval(4,3)	&
-     &		,', hd ',lgr_vdev_dval(5,3),', z ',lgr_vdev_dval(6,3)
-        end if
-        if( lgr_vdev_n(4) > 0 ) then
-          lgr_vdev_ntot(4) = lgr_vdev_ntot(4) + lgr_vdev_n(4)
-          write(6,'(a,i0,a,i0,a,i0,a,i0,a,i0)')				&
-     &		' lgr vertical diffusion:'//trim(crank)			&
-     &		//' no such layer in diff_get_vert: '			&
-     &		,lgr_vdev_n(4),' in the step to '//trim(aline)		&
-     &		//'; first: id ',lgr_vdev_ival(1,4)			&
-     &		,', element ',lgr_vdev_ival(2,4)				&
-     &		,', layer ',lgr_vdev_ival(3,4),' of ',lgr_vdev_ival(4,4)
-        end if
-        flush(6)
-
-        lgr_vdev_n = 0
-        lgr_vdev_key = huge(1)
-
-        end subroutine lgr_vdiff_events
 
 !******************************************************************
 ! Compute vertical diffusivity in element and random walk time step
@@ -1033,6 +882,7 @@
         integer				:: ieold,ienew
         double precision 		:: ddx,ddy,xc,yc
         double precision 		:: dlat0,dlon0  !center of projection
+        logical				:: lgr_internal_failed
 
 	! the type of coordinates, blgr_sphe, is set once by lagr_init_common
 	! before the first particle loop: this routine runs inside the OpenMP
@@ -1083,6 +933,7 @@
 	if( bmpi_lagr ) then
 	  call lgr_mpi_locate(i,1,ieold,x,y,xnew,ynew,ienew,bpark)
 	  if( bpark ) return	!parked: resumed by lag_diff_hor_resume
+	  if( lgr_internal_failed() ) return	!the run stops after the loop
 	else
           call find_elem_from_old(ieold,xnew,ynew,ienew)
 	  if( blgr_dbg ) call lgr_mpi_relocate_check(ieold,xnew,ynew,ienew)

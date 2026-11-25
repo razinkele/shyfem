@@ -364,8 +364,16 @@
 ! by position, they finish the step where a serial search puts them)
 !---------------------------------------------------------------
 
+	if( bmpi_lagr ) call lgr_mpi_handover(dtime)
+
+	! the events of the tracker counted by the particles of this pass
+	! (lgr_event, #288, #294: until then they wrote their lines from the
+	! worker threads of the loop), written once per pass by the main
+	! thread after the loop and the hand-over (whose rounds track
+	! particles too); nothing if none was counted
+	call lgr_events
+
 	if( bmpi_lagr ) then
-	  call lgr_mpi_handover(dtime)
 	  call lgr_mpi_check_consistency(dtime)	!levdbg >= 2, aborts if wrong
 	  if( dtime >= dtlend ) call lgr_mpi_handover_stats !once, levdbg >= 3
 	end if
@@ -480,8 +488,6 @@
 	nbdy = 0 		!number of particles to insert
 	idbdy = 0		!id body unique 
 	tdecay = 0		!not used anymore
-
-	blgrdebug = .false.
 
 ! ilagr = 1	surface lagrangian
 ! ilagr = 2	2d lagrangian (without vertical adv and diff)
@@ -608,16 +614,12 @@
 
 	lgr_omp_loop = .false.
 
-	! the events of the vertical walk counted in the loop (#288: until then
-	! they wrote their lines from the worker threads), written here by the
-	! main thread before the check below stops the run after an internal
-	! error found in the loop; nothing if none was counted
-	call lgr_vdiff_events
-
 	! a failure of the hand-over lists or an internal-error guard of the
 	! tracker found inside the loop (a worker thread must not call
 	! MPI_ABORT) stops the run here, on the main thread, before the first
-	! collective call (#242, #256); a no-op otherwise
+	! collective call (#242, #256), after writing the events of the
+	! tracker counted in the loop (#288, #294); a no-op otherwise (the
+	! events are then written at the end of the pass, lagrange)
 	call lgr_mpi_list_check('drogue, after the particle loop')
 
         tempo = openmp_get_wtime() - tempo
@@ -755,6 +757,7 @@
 	double precision sv
 	double precision xi(3)
 	integer ty
+	integer ierr
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -765,7 +768,12 @@
 	do ii=1,3
 	  xi(ii) = lgr_ar(i)%actual%xi(ii)
 	end do
-	call xi2xy(abs(ie),xx,yy,xi)
+	call xi2xy_ierr(abs(ie),xx,yy,xi,ierr)
+	if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	  call lgr_event(lgr_ev_xi2xy,lgr_ar(i)%id,(/lgr_ar(i)%id,ie/),xi)
+	  call lgr_internal_error('error stop track_advect: error of xi2xy')
+	  return			!recorded in the loop: left as it is
+	end if
 	x  = xx
 	y  = yy
 	z  = lgr_ar(i)%actual%z
@@ -841,6 +849,7 @@
 	integer ty
 	real dt,ttime,tmax
 	logical bpark
+	integer ierr
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -871,7 +880,13 @@
 	! it, the same because the tracker never lowers lb below 1
 	if( lb > 0 .and. blgrxi ) then
 	  if( phase == 0 ) then
-	    call xi2xy(abs(ie),xx,yy,xi)
+	    call xi2xy_ierr(abs(ie),xx,yy,xi,ierr)
+	    if( ierr /= 0 ) then	!internal error (#294: was a stop)
+	      call lgr_event(lgr_ev_xi2xy,id,(/id,ie/),xi)
+	      call lgr_internal_error(				&
+     &		'error stop track_finish: error of xi2xy')
+	      return			!recorded in the loop: left as it is
+	    end if
 	    x  = xx
 	    y  = yy
 	  else				!resumed: the old point of the parked move
@@ -930,8 +945,15 @@
 ! ends, as in a serial run.
 !
 ! after an internal-error guard of the tracker was recorded in the
-! particle loop (lgr_internal_failed, #256) it returns at once; the
-! warning counters nk, nl, nu are shared by the threads (OMP atomic)
+! particle loop (lgr_internal_failed, #256) it returns at once. An
+! advection that ended with time left (the crossings used up, the
+! particle out of the domain, or the cause unknown) is an event of
+! lgr_event (lgr_ev_adv_cross, lgr_ev_adv_lost, lgr_ev_adv_unknown:
+! counted, the first kept), written at the end of the pass by lgr_events
+! (#294: until then each wrote a line "warning particle adv", "loosing
+! particle adv" or "unknown error adv" from inside the loop). The debug
+! lines for a particle with id 0, which no release gives (ids start at
+! 1), are off at compile time (bdebug, #294)
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_mpi_mark_side
@@ -953,18 +975,13 @@
 	integer, intent(inout) :: n		!element crossings allowed, crossings left
         
 	integer ie_from,ie_to
-	integer iperc
 	integer icut
 	logical bmark
 	real torig
-	real perc
 	double precision xx,yy,zz
-	integer nc			!the counter after this particle
+	integer ierr
 	logical lgr_internal_failed
-
-	integer, save :: nk = 0
-	integer, save :: nl = 0
-	integer, save :: nu = 0
+	logical, parameter :: bdebug = .false.	!debug lines (#294)
 
         if(iel <= 0 .or. ty < 0) return	!particle out of domain or beached
 
@@ -1012,12 +1029,17 @@
 
 	lgr_ncross(i) = 100 - n		!crossings used (own slot: OMP safe)
 
-	call xi2xy(abs(iel),xx,yy,xi)
+	z = zz
+	call xi2xy_ierr(abs(iel),xx,yy,xi,ierr)
+	if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	  call lgr_event(lgr_ev_xi2xy,id,(/id,iel/),xi)
+	  call lgr_internal_error('error stop track_body_xi: error of xi2xy')
+	  return			!recorded in the loop: x, y as they were
+	end if
 	x = xx
 	y = yy
-	z = zz
 
-	if( id == 0 ) then
+	if( bdebug ) then
 	  write(6,*) 'lgrggu: ',iel,lb,ttime
 	  write(6,*) 'lgrggu: ',x,y,z
 	  write(6,*) 'lgrggu: ',xi
@@ -1027,32 +1049,15 @@
 ! special treatment and finish up
 !---------------------------------------------------------------
 
-	if( ttime > 0. ) then 		!not finished advecting
-	  if( n == 0 ) then
-!$OMP ATOMIC CAPTURE
-	    nk = nk + 1
-	    nc = nk
-!$OMP END ATOMIC
-	    perc = 0.
-	    if( idbdy > 0 ) perc = (100.*nc)/idbdy
-	    write(6,1000) 'warning particle adv',id,iel,n,ttime,perc
+	if( ttime > 0. ) then 		!not finished advecting: counted (#294)
+	  if( n == 0 ) then		!crossings used up
+	    call lgr_event(lgr_ev_adv_cross,id,(/id,iel,n/),(/dble(ttime)/))
 	    !iel = -iel
-	  else if( iel < 1 ) then
-!$OMP ATOMIC CAPTURE
-	    nl = nl + 1
-	    nc = nl
-!$OMP END ATOMIC
-	    perc = 0.
-	    if( idbdy > 0 ) perc = (100.*nc)/idbdy
-	    write(6,1000) 'loosing particle adv',id,iel,n,ttime,perc
-	  else
-!$OMP ATOMIC CAPTURE
-	    nu = nu + 1
-	    nc = nu
-!$OMP END ATOMIC
-	    perc = 0.
-	    if( idbdy > 0 ) perc = (100.*nc)/idbdy
-	    write(6,1000) 'unknown error adv',id,iel,n,ttime,perc
+	  else if( iel < 1 ) then	!out of the domain
+	    call lgr_event(lgr_ev_adv_lost,id,(/id,iel,n/),(/dble(ttime)/))
+	  else				!cause unknown
+	    call lgr_event(lgr_ev_adv_unknown,id,(/id,iel,n/)		&
+     &			,(/dble(ttime)/))
 	  end if
 	end if
 
@@ -1066,7 +1071,6 @@
 ! end of routine
 !---------------------------------------------------------------
 
- 1000	format(a,3i10,2f10.2)
 	end
 
 !**********************************************************************

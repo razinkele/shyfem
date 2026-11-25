@@ -232,14 +232,14 @@
 	character(len=80), save :: lgr_list_msg = ' '
 
 	! internal-error guards of the tracker reached inside the OpenMP
-	! particle loop of drogue (#256): lgr_omp_loop is true while that loop
-	! runs (set and cleared by drogue, outside the parallel region); a
-	! guard hit there by a team of more than one thread is recorded by
+	! particle loop of drogue (#256): lgr_omp_loop (in mod_lagrange since
+	! #294, passed on by this module) is true while that loop runs (set
+	! and cleared by drogue, outside the parallel region); a guard hit
+	! there by a team of more than one thread is recorded by
 	! lgr_internal_error (kind 5 above, and lgr_internal_flag = 1, written
 	! and read with OMP ATOMIC: lgr_internal_failed) and the run stops in
 	! lgr_mpi_list_check after the loop; anywhere else the guard aborts at
 	! once, as before
-	logical, save :: lgr_omp_loop = .false.
 	integer, save :: lgr_internal_flag = 0
 
 	! test hook of the internal-error guards (read once by lgr_mpi_init,
@@ -2048,7 +2048,9 @@
 ! (lgr_mpi_list_fail), writes what failed and stops every process
 ! through shympi_abort_internal with the message of the routine that
 ! found it; the other processes wait in their next collective call until
-! MPI_ABORT ends them. Nothing is recorded in a run that works: then it
+! MPI_ABORT ends them. Before that it writes the events of the tracker
+! recorded in the pass (lgr_events, #288, #294: among them the values of
+! the internal error). Nothing is recorded in a run that works: then it
 ! returns at once and changes nothing (#242)
 
 	use shympi, only : my_id
@@ -2060,6 +2062,8 @@
 	integer :: k(6)
 
 	if( lgr_list_fail == 0 ) return
+
+	call lgr_events			!the events of the pass (#294)
 
 	k = lgr_list_info
 	select case( lgr_list_fail )
@@ -2391,6 +2395,13 @@
 ! ienew is 0 (not to be used). At levdbg >= 3 the classes are counted.
 ! Called inside the parallel loop of drogue or outside any parallel
 ! region.
+!
+! the guard of the old element cannot fire (both callers return on an
+! element <= 0 before); it goes through lgr_internal_error (#294: until
+! then a write and shympi_abort_internal, from a worker thread inside
+! the loop) with its values through lgr_event: recorded in the loop it
+! returns ienew = 0 and bpark false, and the callers leave the particle
+! (lgr_internal_failed); the run stops after the loop
 
 	implicit none
 
@@ -2405,8 +2416,11 @@
 	integer :: iclass
 
 	if( ieold < 1 ) then
-	  write(6,*) 'lgr_mpi_locate: i,phase,ieold: ',i,phase,ieold
-	  call shympi_abort_internal('lgr_mpi_locate: no old element')
+	  call lgr_event(lgr_ev_locate,i,(/i,phase,ieold/))
+	  call lgr_internal_error('error stop lgr_mpi_locate: no old element')
+	  ienew = 0			!recorded in the loop: the callers
+	  bpark = .false.		!leave the particle
+	  return
 	end if
 
 	call find_elem_from_old(ieold,xn,yn,ienew)

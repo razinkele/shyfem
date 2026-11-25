@@ -214,17 +214,60 @@
 ! find start and end point of line through point xip
 !
 ! natural coordinates in triangle:   xi(i) = a(i) + b(i)*x + c(i)*y    i=1,3
+!
+! stops on an internal error, as always (xit_start_end_ierr, which does
+! the work, returns it instead: the particle tracker calls that one
+! inside its OpenMP loop, where nothing may write or stop, #294)
 
 	implicit none
 
-	integer iflux			!index of flux point [1-3]
-	double precision alpha		!ratio of flux exit at side iflux [0-1]
-	double precision xip(3)		!coordinates of point
-	double precision xis(3)		!start coordinate (return)
-	double precision xie(3)		!end coordinate (return)
-	double precision s		!point parameter [0-1] (return)
+	integer, intent(in) :: iflux		!index of flux point [1-3]
+	double precision, intent(in) :: alpha	!ratio of flux exit at side iflux [0-1]
+	double precision, intent(in) :: xip(3)	!coordinates of point
+	double precision, intent(out) :: xis(3)	!start coordinate (return)
+	double precision, intent(out) :: xie(3)	!end coordinate (return)
+	double precision, intent(out) :: s	!point parameter [0-1] (return)
 
-	integer i1,i2,i3,ii
+	integer ierr
+
+	call xit_start_end_ierr(iflux,alpha,xip,xis,xie,s,ierr)
+
+	if( ierr == 2 ) then
+	  write(6,*) iflux,alpha
+	  write(6,*) xip
+	  stop 'error stop xit_start_end: internal error (2)'
+	else if( ierr /= 0 ) then
+	  write(6,*) 'error computing s: ',s
+	  write(6,*) iflux,alpha
+	  write(6,*) xip
+	  write(6,*) xis
+	  write(6,*) xie
+	  stop 'error stop xit_start_end: internal error (1)'
+	end if
+
+	end
+
+!***********************************************************
+
+	subroutine xit_start_end_ierr(iflux,alpha,xip,xis,xie,s,ierr)
+
+! find start and end point of line through point xip, as xit_start_end,
+! but writes nothing and never stops: an internal error returns ierr /= 0
+! (#294): 2 the point lies beyond the line of the flux (xis, xie and s
+! are 0), 1 the point parameter s is outside 0..1 (xis, xie and s as
+! computed); 0 no error
+
+	implicit none
+
+	integer, intent(in) :: iflux		!index of flux point [1-3]
+	double precision, intent(in) :: alpha	!ratio of flux exit at side iflux [0-1]
+	double precision, intent(in) :: xip(3)	!coordinates of point
+	double precision, intent(out) :: xis(3)	!start coordinate (return)
+	double precision, intent(out) :: xie(3)	!end coordinate (return)
+	double precision, intent(out) :: s	!point parameter [0-1] (return)
+	integer, intent(out) :: ierr		!0 no error, 1 or 2 (see above)
+
+	integer i1,i2,i3
 	integer iflag,ielem
 	double precision as,ae
 	double precision beta,xi3,a,gamma
@@ -232,6 +275,8 @@
 
 	xis = 0.d0
 	xie = 0.d0
+	s = 0.d0
+	ierr = 0
 
 	gamma = -1.d0			!not yet computed
 	i1 = iflux
@@ -256,11 +301,9 @@
 
 	if( a .eq. 0.d0 ) then
 	  beta = 0.d0
-	else if( xip(i3) > a ) then
-	  write(6,*) iflux,alpha
-	  write(6,*) i1,i2,i3,a
-	  write(6,*) xip
-	  stop 'error stop xit_start_end: internal error (2)'
+	else if( xip(i3) > a ) then	!internal error (2)
+	  ierr = 2
+	  return
 	else
 	  beta = 1.d0 - xip(i1) - xip(i3)/a
 	end if
@@ -299,14 +342,8 @@
         s = 1.d0 - gamma
 	if( gamma .eq. 1.d0 ) s = 0.d0
 
-	if( s < 0.d0 .or. s > 1.d0 ) then
-	  write(6,*) 'error computing s: ',s,gamma
-	  write(6,*) alpha,a,beta
-	  write(6,*) i1,iflag,ielem
-	  write(6,*) xip
-	  write(6,*) xis
-	  write(6,*) xie
-	  stop 'error stop xit_start_end: internal error (1)'
+	if( s < 0.d0 .or. s > 1.d0 ) then	!internal error (1)
+	  ierr = 1
 	end if
 
 	end
