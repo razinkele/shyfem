@@ -488,10 +488,10 @@
 	call tvd_init
         call qhdist(qdistv) !DWNH
 	call renewal_time
-        call lagrange
 	call tidepar_init
 	call submud_init
 	call handle_gotm_init
+	call lagrange		!after handle_gotm_init: visv/difv final (#283)
 	call tripple_points_init
 
 	call trace_point('cstsetup')
