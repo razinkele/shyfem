@@ -18,7 +18,7 @@ Together these fix #286, #287, #299 and part 1 of #283.
 - `shyfem_subs.f90` moves `call lagrange` after `handle_gotm_init`.
 - Two test hooks (`LGR_TEST_KPROF`, `LGR_TEST_NOADV`) and one Python helper make the acceptance runs possible.
 
-**Tech stack:** Fortran 90 (gfortran, OpenMPI build), bash check scripts in `testcases/examples/mar_menor`, Python 3 (standard library only) with the repo's `lgr_compare.py`.
+**Tech stack:** Fortran 90 (gfortran, OpenMPI build), bash check scripts in `testcases/examples/mar_menor`, Python 3 (standard library and numpy) with the repo's `lgr_compare.py`.
 
 **Spec:** `docs/superpowers/specs/2026-11-25-lgr-vertical-walk-design.md` (approved by the owner on 2026-11-25). Its evidence is in `docs/investigation/2026-11-lgr-walk-redesign/`:
 - the reports `reportMwalk.md`, `reportMwalk2.md` and `reportM299.md`;
@@ -44,10 +44,17 @@ Together these fix #286, #287, #299 and part 1 of #283.
 - Run with `PATH=/home/razinka/wt-walk/bin:/usr/bin:$PATH`, under `nice -n 10`, after `make init` and `(cd GRID && shypre -noopti MM_geo.grd)` in `testcases/examples/mar_menor`.
 - Wait for runs by their exit status, never with a `pgrep`/`sleep` loop.
 - Scratch goes only in your own `mktemp -d` under the session scratchpad, with `TMPDIR` set to it.
+- Check scripts delete their scratch on PASS. For a `cmp` between two binaries, make your own runs of the same STR with each binary in your scratch.
 
-**Two reference binaries.** Remove both work trees at the end.
+**Two reference binaries.** Task 1 builds them (step 0 and step 6) and Task 7 removes them.
 - **"main":** origin/main 576abae5, built in a throwaway work tree `/home/razinka/wt-walk-ref`. Used for the RED runs that need no hook and for the unchanged-results battery.
-- **"base":** Task 1's commit (the old walk plus the test hooks), built in a throwaway work tree `/home/razinka/wt-walk-base` right after Task 1 is committed. Task 1 step 1 proves it equals main with no hook set. It is the baseline for every run that needs a hook on today's walk, including the cost baseline (Task 7). main ignores the hooks, so it cannot serve there.
+- **"base":** Task 1's commit (the old walk plus the test hooks), built in a throwaway work tree `/home/razinka/wt-walk-base`. Task 1 step 1 proves it equals main with no hook set. It is the baseline for every run that needs a hook on today's walk, including the cost baseline (Task 7). main ignores the hooks, so it cannot serve there.
+
+**Routines a check compiles alone** (`lgr_vdiff_gradstep`, `lgr_walk_locate`, `lgr_walk_fold`, `lgr_bed_move`, `lgr_bed_exit`) are self-contained (no `use`) and end with `end subroutine NAME`: the check's awk cut-out needs that line (check_lgr_fixes.sh, mode `vdiff-dt`). Each new mode of `check_lgr_fixes.sh` goes into its mode list and usage line.
+
+**Python helpers** use the standard library and numpy only.
+
+**Reproduction tolerance.** A check that must reproduce a measured χ² aims for each seed within 1.0 of the measured value. A seed off by more than 1.0, but within that cell's measured seed range (max − min of its three seeds; spec §6), is reported and is not a stop. A seed beyond that range is a stop.
 
 **Constants, exactly:**
 - the gradient factor f = 0.07 and its floor g_floor = 0.2 s;
@@ -71,14 +78,19 @@ f and g_floor are named parameters in the code, not STR parameters.
   - the serial guard `./check_lgr_serial.sh /home/razinka/wt-walk-ref/bin`.
 
 **Stop and report to the coordinator instead of retuning** if any of these happens:
-- the walk-only cost exceeds 2.1x main on either reference case;
+- the walk-only cost exceeds 2.1x base on either reference case;
 - the GOTM top 5 % exceeds 1.06 on any seed;
-- a check's χ² does not reproduce the measured values within the tolerance its task states.
+- a check's χ² falls outside the reproduction tolerance above.
 
 ## Review Focus
 
-1. **A column with a layer of zero thickness** (a z-level element whose bottom layer has no water). The walk must never divide by `hl(l) = 0`, never place a particle in such a layer, and the step rule must skip it. Pinned by the `vdiff-dt` unit cases (Task 2) and by the walk's layer search (Task 3, step 3).
-2. **A one-layer column** (`lmax = 1`, all of `mm_lgr_a`'s elements and the shallow Mar Menor edges). The gradient rule and the reflecting walk apply there too. The old "z = random(0, 1)" rule is gone, so a one-layer column must stay well mixed. Pinned by the `vdiff-dt` lmax = 1 case and by the thin-layer and constant-K modes (Task 3).
+1. **A column with a layer of zero thickness** (a z-level element whose bottom layer has no water: `sigma.f90` leaves the deeper layers at 0, so hle(lmax−1) = hle(lmax)). Neither the walk, its K interpolation, the step rule nor the bed velocity may divide by a zero thickness, and no particle may be placed in such a layer. Pinned by:
+   - the `vdiff-dt` zero-layer case (Task 2, step 1);
+   - the `walk-fold` cases, including K evaluated at d = H on layers (1, 2, 3, 0) (Task 3, step 1);
+   - the `bed-w` hd = 0 rule (Task 4, step 1).
+2. **A one-layer column** (`lmax = 1`, all of `mm_lgr_a`'s elements and the shallow Mar Menor edges). The gradient rule and the reflecting walk apply there too. The old "z = random(0, 1)" rule is gone, so a one-layer column must stay well mixed. Pinned by:
+   - the `vdiff-dt` lmax = 1 case;
+   - the one-layer χ² that `const` and `gotm` print separately (Task 1, step 2). It is gated at 31 when those columns hold at least 2000 particles, otherwise reported.
 3. **A particle that starts exactly on the surface (z = 0, lb = 1) or exactly on the bed (z = 1, lb = lmax).** The fold must give a depth in [0, H], and the layer search must give a layer with z in [0, 1]. Pinned by `walk-fold` (Task 3, step 1).
 4. **A particle step longer than 2000 s** (a long `idt`): with the 0.2 s floor binding, it reaches the 10,000-call cap. The cap's existing counting and log line must still apply, without a write in the loop. Pinned in Task 6, step 3: a throwaway build with the cap lowered.
 5. **Settling particles at the bed** (`ised = 1`). The bed velocity must not taper the settling speed. Pinned by `check_lgr_bed.sh` part 2 (Task 4) and the `bed-w` unit cases.
@@ -107,12 +119,15 @@ f and g_floor are named parameters in the code, not STR parameters.
 - Produces in `lgr_vprof.py`:
   - `read_geom(shy_path) -> dict` with the keys `hlv`, `hev`, `ilhv`;
   - `rel_depths(times, geom) -> list` of per-output lists of `(pid, s, weight_rel)`, with s = depth / column depth in the particle's current column at the output time. Zeta is recovered from the particle records, as in anaA's `zeta_of`;
+  - binning everywhere as anaA's (`anaA.py` line 76): bin k = min(max(int(s·nb), 0), nb − 1), so s < 0 goes to the first bin and s ≥ 1 to the last;
   - `chi2(values, weights=None, nb=20) -> float`, the effective-count χ² of anaA (unweighted when `weights` is None);
-  - `bin_ratio(values, weights, lo, hi) -> float`, the weighted share in [lo, hi) divided by (hi − lo).
+  - `bin_ratio(values, weights, k0, k1, nb=20) -> float`: the weighted share in bins k0 ... k1−1, divided by (k1 − k0)/nb. The top 5 % is `bin_ratio(..., 0, 1)` and the bottom 5 % is `bin_ratio(..., 19, 20)`.
+
+- [ ] **Step 0: Build "main".** From `/home/razinka/shyfem`, run `git worktree add --detach /home/razinka/wt-walk-ref 576abae5`, build it with the Global Constraints command, and check it with `ldd`.
 
 - [ ] **Step 1: Check that the hooks are inert.**
   - Build, then run `./check_lgr_fixes.sh ilagr3` and `./check_lgr_serial.sh /home/razinka/wt-walk-ref/bin` with no hook set.
-  - Also `cmp` the `lgr_ilagr3` particle file of this build against the reference build's (the same STR, no hook).
+  - Also run the `lgr_ilagr3` STR (as `check_lgr_fixes.sh ilagr3` makes it) once with each binary in your scratch, and `cmp` the two particle files.
   - Expected: both checks PASS and `cmp` exits 0.
 
 - [ ] **Step 2: Write the `linear`, `parabolic` and `gotm` modes.**
@@ -120,9 +135,11 @@ f and g_floor are named parameters in the code, not STR parameters.
   - Use the `$lagrg` section `ilagr = 3 nbdymax = 50000 / nbdy = 2000 idtl = 0 idtlgr = '1h' / rwhpar = 0 ipvert = 20 / lgrseed = S`, as `docs/investigation/2026-11-lgr-walk-redesign/str/lgr_wm.str`.
   - Run with `LGR_TEST_NOADV=1`, plus `LGR_TEST_KPROF=1` (linear) or `2` (parabolic), on seeds 1, 2 and 3, with the hydro output hourly so `read_geom` has a header.
   - Each run gets `timeout 7200`, not the 1800 of `const`. B07 on `parabolic` makes about 426 calls per step, about 4.9e9 calls in a day, which is about 1800 s on its own. Run the three seeds in parallel.
+  - Each mode first checks that its hooks took: the log must hold the master's lines ` test hook LGR_TEST_NOADV: ...` and, for `linear`/`parabolic`, ` test hook LGR_TEST_KPROF: ... profile N` with the right N. If a line is missing, the mode fails, as `vdiff-events` does for `LGR_TEST_VDIFF_END`. A binary without the hooks would otherwise measure the wrong case and could pass.
   - For each seed, `lgr_vprof.py` computes the unweighted χ² of all active particles at each hourly output from 12:00 to 24:00 and takes the mean.
   - Required: every seed below `CHI2MAX=31`, and 39,960 particles released and active at every output.
-  - Print each seed's χ² and the top 5 % ratio `bin_ratio(s, None, 0.0, 0.05)` at 12:00–24:00, mean over the outputs.
+  - Print each seed's χ² and the top 5 % ratio `bin_ratio(s, None, 0, 1)`, as the mean over the outputs 12:00–24:00.
+  - `const` and `gotm` also print the χ² of the particles in one-layer columns, with their count (Review Focus 2).
 
 - [ ] **Step 3: Write the `thin` mode.**
   - Still water as `const`, with `iturb = 0`, `diftur = 1.e-2` and uniform 0.5 m levels down to at least 74.62 m. Build the `$levels` lines as `py/mkstr.py` does with LEVELS = 0.5.
@@ -137,8 +154,8 @@ f and g_floor are named parameters in the code, not STR parameters.
   - Expected RED:
     - `linear` about 3198 and `parabolic` about 148 (seed 1);
     - `thin` K_eff/K about 0.14 (M286's value for main at 0.5 m and K = 1e-2: 0.142).
-  - `gotm` must PASS on main: today's walk measured 17.6 and 20.8 on seeds 1 and 2.
-  - Reproduction tolerance: seeds 1 and 2 of `gotm` within 1.0 of 17.6 and 20.8; `thin` within 0.03 of 0.142. Otherwise stop and report: the check does not measure what the measurement measured.
+  - `gotm` must PASS on today's walk (this build, not main, which ignores the hooks): it measured 17.6 and 20.8 on seeds 1 and 2.
+  - Reproduction: `gotm` seeds 1 and 2 against 17.6 and 20.8, by the Global Constraints tolerance (seed range 3.2); `thin` within 0.03 of 0.142. Otherwise stop and report: the check does not measure what the measurement measured.
   - Paste the outputs into the task report.
 
 - [ ] **Step 5: Commit**
@@ -146,6 +163,8 @@ f and g_floor are named parameters in the code, not STR parameters.
   git add src/shyfem/lagrange_mpi.f90 src/shyfem/lagrange_dif.f90 src/shyfem/lagrange_main.f90 testcases/examples/mar_menor/lgr_vprof.py testcases/examples/mar_menor/check_lgr_wellmixed.sh
   git commit -m "test(lgr): LGR_TEST_KPROF/NOADV hooks and the smooth-profile, GOTM and thin-layer modes of check_lgr_wellmixed.sh (#286 #287)"
   ```
+
+- [ ] **Step 6: Build "base".** From `/home/razinka/shyfem`, run `git worktree add --detach /home/razinka/wt-walk-base <this task's commit>`, build it, and check it with `ldd`. Put its path in the task report.
 
 ### Task 2: The gradient step rule (`lag_vdiff_ele`)
 
@@ -171,7 +190,7 @@ f and g_floor are named parameters in the code, not STR parameters.
   - then `if( dtg < dtd ) dtd = min(dtd, max(lgr_vdiff_dtming, dtg))`.
 
   Count `lgr_dtvd_ngrad` when the gradient term lowered dtd, and `lgr_dtvd_nfloor` when it lowered dtd to exactly `lgr_vdiff_dtming`.
-- Produces: the log line ` lgr vertical diffusion: random walk time step set by the gradient rule in N element steps, at its floor 0.2 s in M`. It is a new line, so the existing line's format, which the checks grep, is unchanged.
+- Produces: the log line ` lgr vertical diffusion step rule: the gradient term set the step in N element steps, its floor 0.2 s in M`. Its prefix differs from the existing ` lgr vertical diffusion: random walk time step` line, whose format the checks grep, so that line is unchanged.
 
 - [ ] **Step 1: Write the failing unit cases in `vdiff-dt` part 1.** Compile `lgr_vdiff_gradstep` cut out of the source, as part 1 does for the curvature routine. Use the same six layers (1, 2, 4, 0.5, 3, 1.5 m), facg = 0.07, starting dtg = 300:
   - **linear K** = 1e-3 + 2e-3·depth: dtg = 0.07·1e-3/(2e-3)² = 17.5 (within 1e-5 relative);
@@ -205,32 +224,39 @@ f and g_floor are named parameters in the code, not STR parameters.
 - Produces: `subroutine lgr_diff_vert(id,iel,lmax,hl,hle,lb,z,time,ndraw)`.
   - Arguments: `integer, intent(in) :: id, iel, lmax`; `real, intent(in) :: hl(lmax), hle(0:lmax)`; `integer, intent(inout) :: lb, ndraw`; `double precision, intent(inout) :: z`; `real, intent(inout) :: time`.
   - One call makes one displacement over dt = min(dtvd(iel), time) and sets time = time − dt.
-- Produces: `subroutine lgr_walk_fold(lmax,hl,hle,d,lb,z)`.
-  - Self-contained (no `use`), so that `walk-fold` can compile it alone.
-  - Arguments: `integer, intent(in) :: lmax`; `real, intent(in) :: hl(lmax), hle(0:lmax)`; `double precision, intent(in) :: d` (depth after the displacement, any real value); `integer, intent(out) :: lb`; `double precision, intent(out) :: z`.
-  - It folds d into [0, H], H = hle(lmax), modulo 2H (d = 0 if H ≤ 0). lb is the first l with d ≤ hle(l) and hl(l) > 0 (lmax if none). z = (d − hle(lb−1))/hl(lb), clamped to [0, 1], or 0.5 when hl(lb) ≤ 0.
+- Produces: `subroutine lgr_walk_locate(lmax,hl,hle,d,lb,z)`.
+  - Arguments: `integer, intent(in) :: lmax`; `real, intent(in) :: hl(lmax), hle(0:lmax)`; `double precision, intent(in) :: d` (a depth in [0, hle(lmax)]); `integer, intent(out) :: lb`; `double precision, intent(out) :: z`.
+  - lb is the first l with d ≤ hle(l) and hl(l) > 0 (lmax if none). z = (d − hle(lb−1))/hl(lb), clamped to [0, 1], or 0.5 when hl(lb) ≤ 0.
   - This is `lgr_diff_vert_last`'s search on `investigate/lgr-vdiff-cap` 97a7ad46.
+- Produces: `subroutine lgr_walk_fold(lmax,hl,hle,d,lb,z)`, with the same arguments, except that d may be any real value.
+  - It folds d into [0, H], H = hle(lmax), modulo 2H (d = 0 if H ≤ 0), then calls `lgr_walk_locate`.
+  - Both routines are cut out and compiled together by `walk-fold`.
 - Consumes: `dtvd(iel)` from Task 2.
 
-- [ ] **Step 1: Write the failing `walk-fold` unit cases.** Compile `lgr_walk_fold` cut out of the source. Use layers (1, 2, 0, 3) m, so hle = (0, 1, 3, 3, 6), H = 6:
+- [ ] **Step 1: Write the failing `walk-fold` unit cases.** Compile `lgr_walk_locate` and `lgr_walk_fold`, cut out of the source. Use layers (1, 2, 0, 3) m, so hle = (0, 1, 3, 3, 6), H = 6:
   - d = 2.5 → lb = 2, z = 0.75;
   - d = −0.5 (above the surface) → depth 0.5, lb = 1, z = 0.5;
   - d = 6.5 (below the bed) → depth 5.5, lb = 4, z = 2.5/3;
   - d = 13 → 13 mod 12 = 1, depth 1, lb = 1, z = 1;
   - d = 3 (on the interface above the zero layer) → lb = 2, z = 1, never lb = 3;
   - d = 0 → lb = 1, z = 0; d = 6 → lb = 4, z = 1;
-  - H = 0 (every hl = 0) → lb = lmax, z = 0.5, no division.
+  - H = 0 (every hl = 0) → lb = lmax, z = 0.5, no division;
+  - **a zero bottom layer**, layers (1, 2, 3, 0) (hle = (0, 1, 3, 6, 6)): `lgr_walk_locate` at d = 6 → lb = 3, z = 1. The interpolated K there is therefore wde(3), and nothing divides by hl(4) = 0. This is the case where today's `exxpp` would divide 0/0.
 
 - [ ] **Step 2: Run `./check_lgr_fixes.sh walk-fold`.** Expected: FAIL (no routine).
 
 - [ ] **Step 3: Implement the walk.**
-  - **`diff_body`:** once per particle step, before the loop, call `lagr_layer_thickness(iel,lmax,hl,htot,htotz)` (lmax = nlv on entry) and build hle(0:lmax). Pass both to each `lgr_diff_vert` call. Drop `mode`. Keep the loop, the cap, the counters and the two-zero-time-calls rule with its log line (it cannot fire now, and keeping it keeps the log format the checks read).
+  - **`diff_body`:** once per particle step, inside `if( bvdiff )` and before the loop, call `lagr_layer_thickness(iel,lmax,hl,htot,htotz)` (lmax = nlv on entry) and build hle(0:lmax). Inside `if( bvdiff )` means no extra cost for `ilagr` 1 and 2, and none for resumed particles. Pass both to each `lgr_diff_vert` call. Drop `mode`. Keep the loop, the cap, the counters and the two-zero-time-calls rule with its log line: it cannot fire now, and keeping it keeps the log format the checks read.
   - **`lgr_diff_vert`:**
     - keep the `lb > lmax` guard (`lgr_ev_vd_layer`, `lgr_internal_error`, time = 0);
     - dk = (wde(lb,iel) − wde(lb−1,iel))/hl(lb) if hl(lb) > 0, else 0;
     - dt = min(dtvd(iel), time);
-    - zp = hle(lb−1) + z·hl(lb) + 0.5·dk·dt, clamped to [0, hle(lmax)];
-    - K = `exxpp(2,lmax+1,hle,wde(0:lmax,iel),zp,iact)`, a negative value counted in `lgr_nvdiff_neg` and set to 0, as today;
+    - zp (double precision) = hle(lb−1) + z·hl(lb) + 0.5·dk·dt, clamped to [0, hle(lmax)];
+    - **K by linear interpolation inside the layer that holds zp,** not `exxpp`: `call lgr_walk_locate(lmax,hl,hle,zp,l,zl)`, then K = wde(l−1,iel) + zl·(wde(l,iel) − wde(l−1,iel)).
+      - Away from duplicate interfaces this equals today's `exxpp(2,...)` up to rounding.
+      - At a duplicate interface (a zero-thickness layer), `exxpp` divides 0/0 in `intp_neville` (intp.f90:285). The clamp to hle(lmax) makes that exact case common next to such a bed.
+      - Reproduction against the prototype (step 4) is therefore by tolerance, not bit for bit.
+      - A negative K is counted in `lgr_nvdiff_neg` and set to 0, as today.
     - R = 2·`lgr_random(id,lgr_rnd_vdiff,ndraw)` − 1, then ndraw = ndraw + 1;
     - w = R·√(6K/dt) − dk;
     - d = hle(lb−1) + z·hl(lb) − w·dt;
@@ -238,20 +264,21 @@ f and g_floor are named parameters in the code, not STR parameters.
   - **Removed:** the stop at interfaces, the #284 thickness and tv²/dt corrections, the one-layer random z, the Milstein branch, the mode argument, `rgauss`, and `lgr_ev_vd_depth`'s guard in this routine (the fold makes it unreachable).
   - **`lgr_ev_vd_depth`:** keep the event constant in `lagrange_data.f90`, documented as no longer raised.
   - **Comments:** replace the #284 explanations in `diff_body` and `lgr_diff_vert` with the new scheme and its measured numbers, from the spec §4 and §5.2 table. Do not attribute the gradient rule to Visser (1997).
+  - **`check_lgr_wellmixed.sh` header:** the `const` part's remarks (the "0.75 of 2 K T" spreading, the measured table) describe the old walk. Update them: the walk now takes the model step in one call at constant K (spec §6 test 1), with this step's measured χ².
 
 - [ ] **Step 4: Run the walk's checks.**
   - Commands: `./check_lgr_fixes.sh walk-fold`, `./check_lgr_wellmixed.sh const`, `linear`, `parabolic`, `gotm` and `thin`.
   - Expected: all PASS.
-  - Reproduction tolerance against B07 in `reportMwalk2.md`: each seed within 1.0 of
-    - linear 25.3 / 21.8 / 21.6;
-    - parabolic 20.4 / 20.6 / 18.6;
-    - GOTM 18.7 / 21.9 / 19.5.
-  - If a seed is outside that, stop and report: the production walk does not reproduce the measured one, so the limits do not apply.
+  - Reproduction against B07 in `reportMwalk2.md`, by the Global Constraints tolerance:
+    - linear 25.3 / 21.8 / 21.6 (seed range 3.7);
+    - parabolic 20.4 / 20.6 / 18.6 (range 2.0);
+    - GOTM 18.7 / 21.9 / 19.5 (range 3.2).
+  - Beyond the range, stop and report: the production walk does not reproduce the measured one, so the limits do not apply.
   - Report the GOTM top 5 % per seed. If it is above 1.06, stop and report.
 
 - [ ] **Step 5: Commit**
   ```bash
-  git add src/shyfem/lagrange_data.f90 src/shyfem/lagrange_dif.f90 testcases/examples/mar_menor/check_lgr_fixes.sh
+  git add src/shyfem/lagrange_data.f90 src/shyfem/lagrange_dif.f90 testcases/examples/mar_menor/check_lgr_fixes.sh testcases/examples/mar_menor/check_lgr_wellmixed.sh
   git commit -m "fix(lgr): no-stop Visser vertical walk across layer interfaces, reflected at surface and bed (#286 #287)"
   ```
 
@@ -267,30 +294,41 @@ f and g_floor are named parameters in the code, not STR parameters.
   - `subroutine lgr_bed_move(wt,sv,hd,z0,t,z1)`, with all arguments `double precision`: the relative depth z1 after time t in the bottom layer of thickness hd, with w(z) = wt·(1 − z) − sv (w > 0 upward, z = 0 at the layer top). Valid while the particle stays inside the layer.
   - `subroutine lgr_bed_exit(wt,sv,hd,z0,texit,bup)`, with `double precision :: wt, sv, hd, z0, texit` and `logical, intent(out) :: bup`: the time to reach the layer top (bup true) or the bed (bup false), and `huge(1.d0)` if neither is ever reached.
   - Closed form, with u = 1 − z: for wt ≠ 0, u(t) = a + (u0 − a)·exp(wt·t/hd) with a = sv/wt; for wt = 0, u(t) = u0 − sv·t/hd.
-- Produces in `track_xi`, only when lb = lmax, lmax > 1 and neither `blgrsurf` nor `blgr2d`:
+  - Both require hd > 0 (the caller guarantees it).
+  - **Edge returns of `lgr_bed_exit`, with no log of zero or of a negative number:**
+    - texit = huge when the particle never leaves: u0 = a exactly (at the equilibrium), or u0 = 0 (on the bed) with sv = 0;
+    - texit = 0 when it sits on a boundary and moves out: z0 = 0 with wt − sv > 0 (bup true), or z0 = 1 with sv > 0 (bup false). The bed case stops there, as today's `bbott` rule does.
+- Produces in `track_xi`, only when lb = lmax, lmax > 1, hd > 0, and neither `blgrsurf` nor `blgr2d`. With hd = 0 (the particle has entered a zero-thickness bottom layer), today's path stays: its tv = 0 means "not moving", with no division.
   - wt = the mean over the element's 3 nodes of 0.5·(wlov(lmax−1,k) + wlnv(lmax−1,k)), as in `hooks2.diff`;
   - the particle moves with `lgr_bed_move`/`lgr_bed_exit` in place of the constant w;
   - **sv is not tapered** (spec §5.3);
   - one-layer columns and interior layers keep today's layer-mean w.
-- Also in `track_xi`: after the layer switch at its start (`if ( w > 0 .and. z == 0 )` / `if ( w < 0 .and. z == 1 )`), call `track_xi_get_vertical` again for the new lb, so that w and hd belong to the layer the particle is in (M299's minor defect).
+- Also in `track_xi`, the layer switch at its start (lagrange_vertical.f90 about lines 372–379, `if ( w > 0.d0 .and. z == 0.d0 )` / `if ( w < 0.d0 .and. z == 1.d0 )`):
+  - **inside each of the two branches only**, call `track_xi_get_vertical` again for the new lb, followed by `w = w - sv`. Then w and hd belong to the layer the particle is in (M299's minor defect).
+  - Not after the block: there it would overwrite the `if( blgrsurf .or. blgr2d ) w = 0.d0` above and change `ilagr` 1 and 2. Their w is 0, so they never enter the branches.
 
 - [ ] **Step 1: Write the failing `bed-w` unit cases.** Compile the two routines alone. Compare against an RK4 integration of du/dt = (wt·u − sv)/hd with 10⁵ steps, to 1e-7 absolute:
   - sv = 0, wt = −1e-4, hd = 2, z0 = 0.3, t = 3600 (the measured tapered case);
   - wt = 0, sv = 1e-3: linear; the bed is reached at texit = hd·(1 − z0)/sv exactly;
   - wt = 2e-4, sv = 1e-4: equilibrium at u = 0.5. From z0 = 0.6 (u0 = 0.4 < 0.5) the particle reaches the bed; from z0 = 0.4 it reaches the top;
   - wt = −2e-4, sv = 1e-4: the bed is reached in finite time from any z0;
-  - for each exit, `lgr_bed_move(..., texit, z1)` gives z1 = 0 (top) or 1 (bed) within 1e-9.
+  - for each exit, `lgr_bed_move(..., texit, z1)` gives z1 = 0 (top) or 1 (bed) within 1e-9;
+  - the edge returns: z0 = 1 with sv = 0 and wt = 2e-4 → huge; u0 = a (wt = 2e-4, sv = 1e-4, z0 = 0.5) → huge; z0 = 1 with sv = 1e-4 → 0, bed; z0 = 0 with wt = 2e-4, sv = 1e-4 → 0, top. None of them may trap in the `-ffpe-trap` build.
 
 - [ ] **Step 2: Write `check_lgr_bed.sh` (FAIL on main).**
-  - **Part 1, #299:** the closed forced case, `docs/investigation/2026-11-lgr-walk-redesign/str/gc_s1.str` (mm_hyd_41, both boundaries `ibtyp = 0`, wind kept, GOTM, 39,960 particles, one day), seeds 1 and 2.
-    - The bottom 5 % at 24:00 is `bin_ratio` over [0.95, 1.0) of `lgr_vprof.rel_depths` with the release-column weight 'rel', anaA's measure.
+  - **Part 1, #299:** the closed forced case, seeds 1 and 2.
+    - The STR is made from `mm_hyd_41.str` with `sed`, as the other checks do: both `ibtyp = 0`, tilt lines removed, one day, wind and GOTM kept, plus the `$lagrg` section of `check_lgr_wellmixed.sh` with `lgrseed` 1 or 2 (39,960 particles). It must equal `docs/investigation/2026-11-lgr-walk-redesign/str/gc_s1.str` apart from the name and seed; check that once and do not reference the docs file from the script.
+    - The bottom 5 % at 24:00 is `bin_ratio(..., 19, 20)` of `lgr_vprof.rel_depths`, with the release-column weight 'rel', anaA's measure.
     - Required: ≥ 0.80 on both seeds.
     - Print it and the χ² 12–24 h.
   - **Part 2, settling (spec §6 test 6, restated as a drift test).**
     - **Why "reach the bed" cannot be tested:** the stock classes settle at 3e-6, 1e-5 and 3e-5 m/s (`lagrange_sedim.f90`). The walk's molecular floor spreads particles by √(2·K_floor·t) with K_floor = 1e-6/3 m²/s, and over the hours a particle needs to reach the bed that spread hides the taper.
     - **The case:** `mm_hyd_41` in still water as `check_lgr_wellmixed.sh const`, but with `diftur = 0.` and `vistur = 1.e-3` (the walk sees only K_floor), plus `ised = 1` (each particle gets a class and its settling speed, field `"s"` of `lgr_compare`). Same uniform release (ipvert = 20), 5 hours, hourly output.
-    - **The particles judged:** those of the fastest class (s = 3e-5 m/s) that start in the bottom layer of a column with lmax ≥ 2, and whose distance to the bed, d_b = (1 − z0)·hd, is at least s·t + 4σ at t = 5 h. Here hd is the bottom layer's thickness from `read_geom`, and σ = √(2·K_floor·t).
-    - **The statistic:** R = Σ(depth at 5 h − depth at release) / Σ(s·t).
+    - **The elapsed time:** t = the output time at 05:00 minus the release record's `tt`. The release lies 300 s before 00:00 (check_lgr_wellmixed.sh header), so t = 18,300 s, not 18,000. Use t in both s·t and σ.
+    - **The particles judged:** those of the fastest class that start in the bottom layer of a column with lmax ≥ 2, and whose distance to the bed, d_b = (1 − z0)·hd, is at least s·t + 4σ.
+      - Select the class by `type == 3` (the sediment class index; class 3 settles at 3e-5 m/s), not by comparing the float32 `s` with 3e-5.
+      - hd is the bottom layer's thickness from `read_geom`, and σ = √(2·K_floor·t).
+    - **The statistic:** R = Σ(depth at 05:00 − depth at release) / Σ(s·t).
     - **Required:** 0.95 ≤ R ≤ 1.05. Untapered settling gives R ≈ 1.
     - **The script also checks that it can tell the forms apart.** It computes the tapered expectation R_tap = Σ d_b·(1 − exp(−s·t/hd)) / Σ(s·t) and asserts R_tap ≤ 0.85 before judging.
     - It is GREEN on main and RED against the tapered form.
@@ -298,7 +336,10 @@ f and g_floor are named parameters in the code, not STR parameters.
   - Run `./check_lgr_fixes.sh bed-w` (FAIL: no routines yet).
   - Run `./check_lgr_bed.sh` with main. Expected: part 1 FAILS (0.49 / 0.49); part 2 PASSES (main has no taper).
 - [ ] **Step 4: Implement the routines and the `track_xi` change.**
-- [ ] **Step 5: Show part 2 is RED against the tapered form.** In your build, temporarily taper sv as the prototype did, (wt − sv)·(1 − z). Run part 2: it must FAIL with R near R_tap. Paste that output, then undo the edit by editing the code back (never `git checkout <file>`).
+- [ ] **Step 5: Show part 2 is RED against the tapered form.**
+  - In your build, temporarily taper sv as the prototype did: (wt − sv)·(1 − z).
+  - Run part 2: it must FAIL with R near R_tap. Paste that output.
+  - Edit the code back (never `git checkout <file>`), rebuild, and check with `git diff` that only the intended change remains before step 6.
 
 - [ ] **Step 6: Run the checks again.**
   - Commands: `./check_lgr_fixes.sh bed-w`, `./check_lgr_bed.sh`, `./check_lgr_wellmixed.sh const` and `./check_lgr_fixes.sh ilagr3`.
@@ -322,7 +363,7 @@ f and g_floor are named parameters in the code, not STR parameters.
   Today's part 2 stays as it is. Merge the two headers into one.
 
 - [ ] **Step 1: Add part 1** and run `./check_setup_order.sh` with the reference binary. Expected: FAIL in part 1 (the `lgr.shy` files differ, the hydro and ts files do not); part 2 PASSES.
-- [ ] **Step 2: Move the call** and confirm by reading that `tidepar_init` and `submud_init` touch nothing in the Lagrangian module.
+- [ ] **Step 2: Move the call.** Confirm by reading that `tidepar_init`, `submud_init` and `handle_gotm_init` (apart from visv and difv) write nothing the particle step reads: velocities, zeta, depths, difv, difhv. The serial guard in Task 7 backs this up.
 - [ ] **Step 3: Run `./check_setup_order.sh`.** Expected: PASS for both parts.
 - [ ] **Step 4: Commit**
   ```bash
@@ -346,10 +387,10 @@ What changes, by the spec §6 test 7:
 
 - [ ] **Step 1: Run the three modes on the branch** before editing. Note which assertions fail, and why each failure is the expected effect of the new walk.
 - [ ] **Step 2: Update the assertions and header texts.** Each new limit must come with the measured value it was derived from, in the header.
-- [ ] **Step 3: Test the cap path in a throwaway build (not committed).**
-  - Build with `lgr_nvdiff_max` = 100 and run the `ilagr3` case: B07 makes up to 1500 calls in a 300 s step, so the cap binds.
+- [ ] **Step 3: Test the cap path in a separate throwaway work tree** at your current commit, so that your own build stays untouched.
+  - Build it with `lgr_nvdiff_max` = 100 and run the `ilagr3` case: B07 makes up to 1500 calls in a 300 s step, so the cap binds.
   - The run must end. The cap line must report N > 0 steps stopped, with the time not diffused. There must be no `warning particle dif` line, or any other line written from the loop.
-  - Paste the output into the task report, then discard the build.
+  - Paste the output into the task report, then remove that work tree.
 - [ ] **Step 4: Run `./check_lgr_fixes.sh ilagr3`, `vdiff-events`, `vdiff-dt`, `seed`, `sedbeach` and `int-fail`.** Expected: all PASS. `seed`, `sedbeach` and `int-fail` must pass unchanged.
 - [ ] **Step 5: Commit**
   ```bash
@@ -368,21 +409,23 @@ What changes, by the spec §6 test 7:
   - `./check_lgr_serial.sh repro`;
   - `./check_mpi.sh 4`;
   - `./check_lgr_mpi.sh`;
-  - the `.hydro.shy`, `.ts.shy` and `.inf` of `lgr_ilagr3` and of the #299 closed case.
+  - the `.hydro.shy`, `.ts.shy` and `.inf` of `lgr_ilagr3` and of the #299 closed case, from your own runs with each binary (the checks delete their scratch on PASS).
 
   Expected: PASS and `cmp` 0 everywhere. A case with `ilagr = 3` inside these must be named, and is the only allowed difference.
 
 - [ ] **Step 2: Cost** (spec §2 and §6). Sequential runs, median of 3, each at load < 8 (record the load at start and end).
-  - **Reproducer:** the `lgr_ilagr3` case of `check_lgr_fixes.sh`.
-  - **Heavy case:** `gotm` mode, seed 1 (39,960 particles, no advection).
+  - **Reproducer:** the `lgr_ilagr3` STR of `check_lgr_fixes.sh`, run directly.
+  - **Heavy case:** the `gotm` mode's STR, seed 1 (39,960 particles), run directly as single sequential runs, not through the check script (which runs 3 seeds in parallel).
   - **Runs on each case:**
-    - base (today's walk with the hooks; the heavy case needs `LGR_TEST_NOADV`);
+    - base (today's walk with the hooks);
     - the branch;
     - the branch with `LGR_TEST_KPROF=3`, the fixed part: one walk call per step.
-  - **Walk-only** = (user_branch − user_fixed)/(user_base − user_fixed).
+
+    On the heavy case, all three get `LGR_TEST_NOADV=1`.
+  - **Walk-only** = (user_branch − user_fixed)/(user_base − user_fixed). Also record the **whole-run** ratio user_branch/user_base (spec §6).
   - Record calls per step from the log for each run.
   - Required: walk-only ≤ 2.1 on both cases. If it is over, stop and report; do not retune.
-- [ ] **Step 3: Surface excess:** the GOTM top 5 % on seeds 1–3 from Task 3's run, recorded in `battery.md`. If any is above 1.06, stop and report.
+- [ ] **Step 3: Surface excess:** the GOTM top 5 % on seeds 1–3 from step 4's final-head `gotm` run (after the set-up move of Task 5), recorded in `battery.md`. If any is above 1.06, stop and report.
 - [ ] **Step 4: Run everything on the final head.** Tasks 4 and 5 change inputs of checks that passed earlier: the set-up move affects `gotm`, and the layer-switch fix affects `const` and `thin`. So run:
   - every acceptance check: `./check_lgr_wellmixed.sh const`, `linear`, `parabolic`, `gotm` and `thin`; `./check_lgr_bed.sh`; `./check_setup_order.sh`;
   - `./check_lgr_fixes.sh ilagr3`, `vdiff-events`, `vdiff-dt`, `walk-fold`, `bed-w`, `seed`, `sedbeach` and `int-fail`;
@@ -394,3 +437,4 @@ What changes, by the spec §6 test 7:
   git add CHANGELOG.md docs/investigation/2026-11-lgr-walk-redesign/battery.md
   git commit -m "docs: CHANGELOG and results/cost record of the ilagr = 3 walk change (#286 #287 #283 #299)"
   ```
+- [ ] **Step 6: Clean up.** From `/home/razinka/shyfem`, run `git worktree remove /home/razinka/wt-walk-ref` and `git worktree remove /home/razinka/wt-walk-base`, plus any throwaway tree left. Leave no background process running.

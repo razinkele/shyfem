@@ -82,7 +82,7 @@ Each call of `lgr_diff_vert` makes **one** displacement over dt = min(dtvd(ie), 
 
 where:
 - R is uniform on [−1, 1], one `lgr_random` draw;
-- K(z*) is interpolated between the column's interface values `wde(0:lmax,ie)` (exxpp, as today);
+- K(z*) is interpolated linearly between the interface values `wde` of the layer that holds z*. Away from layers of zero thickness this is what today's `exxpp` gives. At a duplicate interface (a zero-thickness bottom layer), `exxpp` divides 0/0. *(My call, from the plan review, 2026-11-25.)*
 - K′ is the gradient in the layer the particle starts in.
 
 The displacement crosses layer interfaces freely. It is reflected at the surface and at the bed (fold the depth into [0, H] modulo 2H), and then the layer and relative depth are found again. Each call uses exactly dt, so a step takes exactly ⌈T/dtvd⌉ calls.
