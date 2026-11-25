@@ -1,0 +1,182 @@
+# M-walk2 results (debug build of 97a7ad46 + hooks2.diff; frozen binary bin/shyfem; serial, 1 thread, nice 10)
+
+## pass and cost rules (written before the results they judge)
+# Pass rule, written before any chi2 of this round (2026-11-25)
+chi2: in-model vprof chi2 (P7, tag 1, cat 1 = all columns), mean over hours 12-24 (vsum.py chi2all); limit 31.
+A cell (setting x test) passes when all 3 seeds are below 31 AND worst + spread <= 31,
+  spread = max - min of the 3 seeds of that same cell (the "seed-to-seed spread").
+Sensitivity column only (does not change verdicts): worst + pooled seed SD of that test (over all
+  N2-candidate cells of this round) <= 31.
+"A1 fails GOTM" (trigger for A3) and "f = 0.05 fails anything" (trigger for f = 0.04) use this same rule.
+"Better floor setting from A" (for B): the cheaper passing one (higher floors = fewer calls);
+  if none passes, the one with the smallest max over tests of (worst + spread).
+Pick: the cheapest setting run (largest f, highest floors) with every test passing AND walk-only cost
+  (calls per step x fitted us per call) <= 2x S on the reproducer and on the particle-heavy GOTM case.
+
+# Cost rule, added after the A/B chi2 and call counts, before any timing result (timing block started)
+Primary walk-only ratio = (median user of the setting - fixed) / (median user of S - fixed), where
+  fixed = median user of N2 + LGR_DBG_KCONST=0.01 on the same case (1 walk call per particle step,
+  so it measures everything but the walk), 3 sequential rounds, runs above load 8 discarded.
+Cross-check = calls per step x per-call cost from the joint least-squares fit of the reproducer runs
+  (one intercept, one slope for the N2 family N2/A1/B07/A3, one for the S family S/Sdt5/Sdt2), and in
+  the heavy case the in-situ N2 line (N2 to B07).
+If the primary and the cross-check land on opposite sides of 2.0, the cost condition is reported as unresolved.
+
+## setup checks
+### inertness (reproducer, HDFIX=1 TFIX=1 VCAP=10000, no new variable): new binary vs frozen mwalk.FIRs9L/bin/shyfem
+cmp rc=0
+9798c1b2a7ff6730a443b9ae186ea025  inert_new/inert_new.lgr.shy
+9798c1b2a7ff6730a443b9ae186ea025  inert_frozen/inert_frozen.lgr.shy
+inert_frozen/inert_frozen.vdbg.txt:counts  777212 32976828 1705535 1 141.8223114 59817 36590 0 0 39490 0 10000 35588
+inert_new/inert_new.vdbg.txt:counts  777212 32976828 1705535 1 141.8223114 59817 36590 0 0 39490 0 10000 35588
+### edited floor line with DTMING unset (N2 + DTCRIT=1 FACV=0.1 DTMIN=0.5): new vs frozen, and new with DTMING=0.5
+cmp inert2_new vs inert2_frozen rc=0
+cmp inert2_new vs inert2_newg rc=0
+counts  772670 69881189 0 0 0.000000000 120402 97363 69881189 2765863 6008 0 600 600 calls/step 90.44
+counts  772670 69881189 0 0 0.000000000 120402 97363 69881189 2765863 6008 0 600 600 calls/step 90.44
+counts  772670 69881189 0 0 0.000000000 120402 97363 69881189 2765863 6008 0 600 600 calls/step 90.44
+
+## A and B (cells.py)
+pooled seed SD per test: p1 1.17, p2 1.77, g 3.13
+| setting | test | chi2 s1 / s2 / s3 | worst | spread | worst + spread | verdict | worst + pooled SD | top 5 %% s1 / s2 / s3 | calls per step |
+|---|---|---|---|---|---|---|---|---|---|
+| A1 | linear | 22.6 / 22.6 / 23.4 | 23.4 | 0.9 | 24.3 | pass | 24.6 (pass) | 1.012 / 1.024 / 1.022 | 95.39 |
+| A1 | parabolic | 20.4 / 17.6 / 16.6 | 20.4 | 3.8 | 24.1 | pass | 22.1 (pass) | 1.008 / 1.007 / 1.011 | 300.42 |
+| A1 | GOTM no adv | 17.3 / 23.4 / 24.7 | 24.7 | 7.3 | 32.0 | FAIL | 27.8 (pass) | 1.030 / 1.050 / 1.058 | 135.76 |
+| A2 | linear | 22.6 / 22.6 / 23.4 | 23.4 | 0.9 | 24.3 | pass | 24.6 (pass) | 1.012 / 1.024 / 1.022 | 95.39 |
+| A2 | parabolic | 20.4 / 17.6 / 16.6 | 20.4 | 3.8 | 24.1 | pass | 22.1 (pass) | 1.008 / 1.007 / 1.011 | 300.42 |
+| A2 | GOTM no adv | 17.4 / 24.5 / 25.5 | 25.5 | 8.0 | 33.5 | FAIL | 28.6 (pass) | 1.029 / 1.051 / 1.060 | 136.93 |
+| A3 | linear | 20.8 / 22.4 / 21.4 | 22.4 | 1.6 | 24.0 | pass | 23.6 (pass) | 1.007 / 1.022 / 1.023 | 140.57 |
+| A3 | parabolic | 18.6 / 20.3 / 16.5 | 20.3 | 3.8 | 24.1 | pass | 22.0 (pass) | 1.000 / 1.007 / 1.003 | 532.64 |
+| A3 | GOTM no adv | 17.4 / 19.3 / 20.1 | 20.1 | 2.7 | 22.8 | pass | 23.2 (pass) | 1.018 / 1.040 / 1.038 | 195.52 |
+| B07 | linear | 25.3 / 21.8 / 21.6 | 25.3 | 3.7 | 29.0 | pass | 26.5 (pass) | 1.019 / 1.023 / 1.034 | 112.61 |
+| B07 | parabolic | 20.4 / 20.6 / 18.6 | 20.6 | 2.0 | 22.6 | pass | 22.3 (pass) | 1.006 / 1.008 / 1.006 | 426.49 |
+| B07 | GOTM no adv | 18.7 / 21.9 / 19.5 | 21.9 | 3.2 | 25.0 | pass | 25.0 (pass) | 1.036 / 1.052 / 1.034 | 162.79 |
+
+## GOTM relative density per 5 % bin (surface -> bottom), hours 12-24
+g_A1_s1            1.03 1.02 1.00 1.00 0.99 1.00 0.99 0.99 1.00 1.00 1.00 0.99 1.00 1.00 0.99 1.00 1.00 1.00 0.99 1.00
+g_A1_s2            1.05 1.03 1.02 1.00 1.01 1.00 1.00 1.00 1.01 0.99 0.99 0.99 0.98 0.99 0.99 0.99 0.99 0.99 1.00 0.99
+g_A1_s3            1.06 1.04 1.01 1.00 0.99 1.00 1.00 0.99 1.00 1.00 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99
+g_A2_s1            1.03 1.02 1.00 1.00 0.99 1.00 0.99 1.00 1.00 1.00 1.00 0.99 1.00 1.00 0.99 1.00 1.00 1.00 0.99 1.00
+g_A2_s2            1.05 1.03 1.01 1.00 1.01 1.00 1.00 1.00 1.00 0.99 0.99 0.99 0.98 0.99 0.99 0.99 0.99 0.99 1.00 0.99
+g_A2_s3            1.06 1.04 1.01 1.00 0.99 1.00 1.00 0.99 1.00 1.00 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99 1.00
+g_A3_s1            1.02 1.01 0.99 1.00 1.00 1.00 1.00 0.99 1.00 1.00 1.00 1.00 1.00 1.00 0.99 1.00 0.99 1.00 0.99 1.00
+g_A3_s2            1.04 1.02 1.01 1.01 1.00 1.00 1.00 1.00 1.00 0.99 0.98 1.00 0.99 0.99 0.99 0.99 1.01 0.99 0.99 1.00
+g_A3_s3            1.04 1.02 1.01 0.99 1.00 1.00 0.99 1.00 1.00 1.00 1.00 0.99 0.99 1.00 1.00 0.99 1.00 0.99 0.99 1.00
+g_B07_s1           1.04 1.00 1.00 1.00 0.99 0.98 1.00 1.00 1.00 0.99 1.01 1.00 1.01 1.01 0.99 1.00 0.99 1.01 0.99 0.99
+g_B07_s2           1.05 1.02 1.01 1.01 1.00 1.01 1.00 0.99 0.99 1.00 0.97 0.98 0.99 1.00 0.99 0.99 0.99 1.00 0.99 1.00
+g_B07_s3           1.03 1.03 1.00 1.00 0.99 0.99 0.99 1.00 1.00 1.01 0.99 1.00 1.01 0.99 0.99 1.00 0.99 0.99 1.00 0.99
+
+## C (still water, K = 1e-2, default levels, seed 1)
+cmp sw_N2 vs sw_A1 rc=0
+cmp sw_N2 vs sw_A2 rc=0
+sw_N2 calls/step 1.0000 nsteps 11548440 ncalls 11548440
+ lgr vertical diffusion: random walk time step [s] min 300.000 mean 300.000, sub-steps per step 1.000, element
+sw_A1 calls/step 1.0000 nsteps 11548440 ncalls 11548440
+ lgr vertical diffusion: random walk time step [s] min 300.000 mean 300.000, sub-steps per step 1.000, element
+sw_A2 calls/step 1.0000 nsteps 11548440 ncalls 11548440
+ lgr vertical diffusion: random walk time step [s] min 300.000 mean 300.000, sub-steps per step 1.000, element
+run                       chi2all chi2deep  top15  bot15  nout calls/st   maxc   ncap     tlost subs
+sw_N2                        19.9     22.0  1.004  0.993    13     1.00      1      0       0.0  1.0
+sw_A1                        19.9     22.0  1.004  0.993    13     1.00      1      0       0.0  1.0
+sw_A2                        19.9     22.0  1.004  0.993    13     1.00      1      0       0.0  1.0
+cmp sw_N2b vs sw_A3 rc=0
+sw_A3 calls/step 1.0000
+cmp sw_N2b vs sw_B07 rc=0
+sw_B07 calls/step 1.0000
+
+## reproducer calls per step
+r_S calls/step 42.43
+r_N2 calls/step 40.93
+r_A1 calls/step 129.30
+r_A2 calls/step 129.80
+r_A3 calls/step 185.50
+r_B07 calls/step 154.84
+
+## D (closed forced mm_hyd_41, GOTM, 39,960 particles, anaA 'rel' weight)
+| run | chi2 12-24 h | chi2 at 24 h | bottom 5 % at 24 h | bottom 15 % at 24 h | bottom 5 % 12-24 h | bottom 15 % 12-24 h | top 5 % at 24 h | top 5 % 12-24 h | calls per step | user s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| D_S_s1 | 221.1 | 450 | 0.49 | 0.75 | 0.638 | 0.856 | 1.00 | 1.015 | 37.22 | 333.74 |
+| D_S_s2 | 213.0 | 425 | 0.49 | 0.75 | 0.640 | 0.859 | 1.03 | 1.037 | 37.20 | 335.25 |
+| D_Sv1_s1 | 60.4 | 161 | 0.89 | 0.90 | 0.963 | 0.960 | 0.98 | 1.011 | 37.19 | 335.28 |
+| D_Sv1_s2 | 59.2 | 154 | 0.89 | 0.91 | 0.968 | 0.962 | 1.02 | 1.033 | 37.21 | 336.11 |
+| D_B07_s1 | 212.7 | 444 | 0.48 | 0.76 | 0.643 | 0.861 | 1.05 | 1.019 | 100.80 | 443.84 |
+| D_B07_s2 | 215.1 | 440 | 0.49 | 0.75 | 0.643 | 0.861 | 1.03 | 1.030 | 101.20 | 446.06 |
+| D_B07v1_s1 | 54.5 | 156 | 0.88 | 0.91 | 0.964 | 0.965 | 1.04 | 1.015 | 100.88 | 446.15 |
+| D_B07v1_s2 | 59.1 | 155 | 0.89 | 0.91 | 0.967 | 0.965 | 1.01 | 1.025 | 101.13 | 448.28 |
+
+D_S_s1.lgr.shy
+  current column     0-3     m (weight 0.8 %): top5 0.937 top15 0.960 bot15 0.966 bot5 0.934 | 0.94 0.95 0.99 1.02 0.98 1.07 1.06 1.03 0.99 1.04 1.01 1.03 1.00 1.00 1.00 1.00 0.98 1.03 0.94 0.93
+  current column     3-7     m (weight 9.7 %): top5 1.025 top15 1.010 bot15 0.963 bot5 0.937 | 1.02 1.01 0.99 1.00 1.03 1.02 1.02 1.02 0.99 1.01 1.03 1.01 0.99 1.01 1.00 0.98 0.98 0.97 0.99 0.94
+  current column     7-20    m (weight 10.4 %): top5 1.049 top15 1.060 bot15 0.474 bot5 0.192 | 1.05 1.06 1.07 1.05 1.07 1.05 1.07 1.07 1.03 1.06 1.02 1.06 1.12 1.15 1.23 1.27 1.14 0.80 0.43 0.19
+  current column    20-99    m (weight 79.1 %): top5 1.011 top15 1.032 bot15 0.892 bot5 0.657 | 1.01 1.04 1.04 1.07 1.06 1.07 1.05 1.04 1.03 0.98 0.98 1.00 0.98 0.96 0.96 0.98 1.07 1.05 0.97 0.66
+D_Sv1_s1.lgr.shy
+  current column     0-3     m (weight 0.8 %): top5 0.939 top15 0.956 bot15 0.970 bot5 0.938 | 0.94 0.95 0.98 1.02 1.00 1.02 1.08 1.04 1.00 1.03 0.99 1.05 1.02 0.98 1.02 1.00 0.98 1.01 0.97 0.94
+  current column     3-7     m (weight 9.7 %): top5 1.019 top15 1.007 bot15 0.967 bot5 0.954 | 1.02 1.01 0.99 0.99 1.03 1.02 1.02 1.02 1.00 1.00 1.03 1.02 0.99 1.01 0.99 0.99 0.98 0.97 0.98 0.95
+  current column     7-20    m (weight 10.4 %): top5 1.017 top15 1.031 bot15 0.861 bot5 0.844 | 1.02 1.04 1.03 1.00 1.03 1.03 1.04 1.03 1.00 1.03 0.97 0.99 1.03 1.01 1.06 1.05 1.05 0.94 0.80 0.84
+  current column    20-99    m (weight 79.1 %): top5 1.009 top15 1.031 bot15 0.972 bot5 0.980 | 1.01 1.04 1.04 1.07 1.06 1.07 1.05 1.04 1.03 0.98 0.98 0.99 0.95 0.94 0.93 0.93 0.99 0.98 0.95 0.98
+D_B07_s1.lgr.shy
+  current column     0-3     m (weight 0.7 %): top5 1.002 top15 0.974 bot15 1.023 bot5 1.061 | 1.00 0.95 0.97 1.03 1.02 0.94 0.93 1.01 1.01 0.99 1.02 0.99 1.08 1.00 0.96 1.00 1.01 1.00 1.01 1.06
+  current column     3-7     m (weight 9.7 %): top5 1.001 top15 0.993 bot15 0.982 bot5 0.963 | 1.00 0.98 0.99 0.98 1.00 1.02 1.01 1.00 1.02 1.00 1.02 0.98 1.00 1.02 1.01 1.02 1.01 1.01 0.98 0.96
+  current column     7-20    m (weight 10.5 %): top5 1.071 top15 1.064 bot15 0.477 bot5 0.188 | 1.07 1.06 1.06 1.04 1.06 1.03 1.06 1.06 1.05 1.05 1.00 1.09 1.12 1.15 1.25 1.27 1.16 0.82 0.43 0.19
+  current column    20-99    m (weight 79.1 %): top5 1.015 top15 1.025 bot15 0.896 bot5 0.659 | 1.01 1.02 1.04 1.07 1.06 1.09 1.05 1.02 1.03 0.98 0.99 0.99 0.99 0.96 0.97 0.99 1.06 1.06 0.97 0.66
+D_B07v1_s1.lgr.shy
+  current column     0-3     m (weight 0.8 %): top5 1.016 top15 0.967 bot15 1.020 bot5 1.074 | 1.02 0.94 0.94 1.04 1.02 0.96 0.96 0.97 1.01 1.04 1.00 0.99 1.09 0.99 0.96 1.02 0.99 1.01 0.97 1.07
+  current column     3-7     m (weight 9.7 %): top5 1.000 top15 0.993 bot15 0.995 bot5 0.983 | 1.00 0.99 0.99 0.97 1.00 1.02 0.99 1.00 1.02 1.00 1.01 0.98 1.01 1.01 1.01 1.02 1.00 1.02 0.98 0.98
+  current column     7-20    m (weight 10.5 %): top5 1.036 top15 1.029 bot15 0.851 bot5 0.803 | 1.04 1.03 1.02 1.02 1.04 1.00 1.03 1.04 1.00 1.01 0.98 1.00 1.05 1.02 1.06 1.05 1.07 0.93 0.82 0.80
+  current column    20-99    m (weight 79.0 %): top5 1.014 top15 1.024 bot15 0.976 bot5 0.982 | 1.01 1.02 1.04 1.06 1.06 1.09 1.05 1.02 1.03 0.98 0.99 0.98 0.96 0.93 0.93 0.93 0.98 1.00 0.95 0.98
+
+## E (tfit.py)
+## reproducer (2914 particles, GOTM, advection)
+| config | user s (rounds 1 / 2 / 3) | load start-end | median user s | calls per step | discarded |
+|---|---|---|---|---|---|
+| S | 33.23 / 33.11 / 33.74 | 3.2-2.2 ; 1.2-1.1 ; 1.1-1.3 | 33.23 | 42.43 | 0 |
+| Sdt5 | 46.70 / 46.38 / 48.12 | 2.2-1.7 ; 1.1-1.4 ; 1.3-2.0 | 46.70 | 68.57 | 0 |
+| Sdt2 | 89.36 / 90.04 / 89.97 | 1.7-1.3 ; 1.4-1.2 ; 2.0-1.6 | 89.97 | 152.39 | 0 |
+| N2 | 23.22 / 23.31 / 23.10 | 1.3-1.2 ; 1.2-1.1 ; 1.6-1.4 | 23.22 | 40.93 | 0 |
+| A1 | 48.72 / 49.96 / 48.40 | 1.2-1.2 ; 1.1-1.2 ; 1.4-1.3 | 48.72 | 129.30 | 0 |
+| B07 | 56.38 / 56.80 / 56.04 | 1.2-1.3 ; 1.2-1.1 ; 1.3-1.3 | 56.38 | 154.84 | 0 |
+| A3 | 64.94 / 65.07 / 64.54 | 1.3-1.2 ; 1.1-1.1 ; 1.3-1.2 | 64.94 | 185.50 | 0 |
+| K | 11.47 / 11.39 / 11.35 | 0.8-1.1 ; 1.1-1.1 ; 1.1-1.1 | 11.39 | 1.00 | 0 |
+
+joint fit (24 runs): fixed 11.50 s, N2 0.3740 us per call, S 0.6636 us per call, rms residual 0.44 s
+own line N2 (12 runs): fixed 11.50 s, 0.3740 us per call, rms 0.43 s
+own line S (9 runs): fixed 11.66 s, 0.6618 us per call, rms 0.51 s
+
+reproducer ratios against S (whole run = median user / median user of S; walk-only fit = calls per step x joint-fit us per call):
+  N2   whole 0.699  walk-only (fit) 0.544  (calls per step 40.93 against S 42.43)
+  A1   whole 1.466  walk-only (fit) 1.717  (calls per step 129.30 against S 42.43)
+  B07  whole 1.697  walk-only (fit) 2.057  (calls per step 154.84 against S 42.43)
+  A3   whole 1.954  walk-only (fit) 2.464  (calls per step 185.50 against S 42.43)
+fixed part (N2 at constant K, 1.00 calls per step): median 11.39 s
+  N2   walk-only (user - fixed) / (S - fixed) = (23.22 - 11.39) / (33.23 - 11.39) = 0.542; us per call 0.3745 (S 0.6623)
+  A1   walk-only (user - fixed) / (S - fixed) = (48.72 - 11.39) / (33.23 - 11.39) = 1.709; us per call 0.3739 (S 0.6623)
+  B07  walk-only (user - fixed) / (S - fixed) = (56.38 - 11.39) / (33.23 - 11.39) = 2.060; us per call 0.3759 (S 0.6623)
+  A3   walk-only (user - fixed) / (S - fixed) = (64.94 - 11.39) / (33.23 - 11.39) = 2.452; us per call 0.3738 (S 0.6623)
+  Sdt5 walk-only (user - fixed) / (S - fixed) = (46.70 - 11.39) / (33.23 - 11.39) = 1.617; us per call 0.6631 (S 0.6623)
+  Sdt2 walk-only (user - fixed) / (S - fixed) = (89.97 - 11.39) / (33.23 - 11.39) = 3.598; us per call 0.6653 (S 0.6623)
+  with the constant-K run's own walk calls removed (0.8 M calls x joint-fit N2 cost): fixed 11.09 s
+  N2   walk-only corrected 0.548
+  A1   walk-only corrected 1.700
+  B07  walk-only corrected 2.045
+  A3   walk-only corrected 2.432
+  Sdt5 walk-only corrected 1.608
+  Sdt2 walk-only corrected 3.562
+## 
+particle-heavy (39,960 particles, GOTM, no advection, seed 1)
+| config | user s (rounds 1 / 2 / 3) | load start-end | median user s | calls per step | discarded |
+|---|---|---|---|---|---|
+| S | 348.31 / 352.61 / 346.89 | 1.2-1.2 ; 1.2-1.6 ; 1.1-1.0 | 348.31 | 43.46 | 0 |
+| N2 | 197.56 / 197.89 / 195.14 | 1.2-1.3 ; 1.6-1.5 ; 1.0-1.1 | 197.56 | 42.02 | 0 |
+| B07 | 714.26 / 702.78 / 701.39 | 1.3-1.2 ; 1.5-1.1 ; 1.1-1.1 | 702.78 | 162.79 | 0 |
+| K | 21.00 / 21.13 / 20.99 | 1.1-1.1 ; 1.1-1.1 ; 1.1-1.1 | 21.00 | 1.00 | 0 |
+
+in-situ: N2 0.3622 us per call (N2 to B07), fixed 21.8 s, S 0.6507 us per call
+heavy whole-run ratio B07 / S 2.018; N2 / S 0.567
+heavy walk-only B07 / S: in-situ costs 2.086; reproducer joint-fit costs 2.111
+heavy fixed part (N2 at constant K, 1.00 calls per step): median 21.00 s
+  N2   walk-only (user - fixed) / (S - fixed) = (197.56 - 21.00) / (348.31 - 21.00) = 0.539; us per call 0.3638 (S 0.6522)
+  B07  walk-only (user - fixed) / (S - fixed) = (702.78 - 21.00) / (348.31 - 21.00) = 2.083; us per call 0.3627 (S 0.6522)
+  with the constant-K run's own walk calls removed (11.5 M calls x in-situ N2 cost): fixed 16.82 s
+  N2   walk-only corrected 0.545
+  B07  walk-only corrected 2.069
