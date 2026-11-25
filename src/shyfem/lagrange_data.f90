@@ -142,7 +142,7 @@
 	!at start-up, outside any parallel region; only read by the steps
 	!(lag_stk, lag_diff_hor) inside the particle loop of drogue
         logical, save :: blgr_sphe = .false.
-	!negative vertical diffusivities set to 0 by diff_get_vert (OMP
+	!negative vertical diffusivities set to 0 by lgr_diff_vert (OMP
 	!atomic in the particle loop; written once at the end of the particle
 	!run by lgr_vdiff_stats, #231)
         integer(kind=8), save :: lgr_nvdiff_neg = 0
@@ -217,8 +217,12 @@
 	! 1, 2 diff_body: the walk ended with time left, the particle out of
 	!      the domain ("loosing particle dif") or the cause unknown
 	!      ("unknown error dif")
-	! 3    lgr_diff_vert: a depth outside 0..1, stops
-	! 4    diff_get_vert: a layer below the bottom of the element, stops
+	! 3    lgr_diff_vert: a depth outside 0..1, stops; no longer raised
+	!      since #286 (the walk folds the depth into the column and
+	!      clamps z into 0..1), the kind kept so that the numbers of the
+	!      others stay
+	! 4    lgr_diff_vert: a layer below the bottom of the element, stops
+	!      (diff_get_vert until #286)
 	! 5    track_body_xi: the element crossings used up with time left
 	!      ("warning particle adv")
 	! 6    track_body_xi: out of the domain with time left ("loosing
@@ -694,7 +698,7 @@
           cname(1:4) = [character(len=20) :: 'id','element','layer','of']
           if( kind == lgr_ev_vd_layer ) then
             chead = cvd
-            ctext = 'no such layer in diff_get_vert'
+            ctext = 'no such layer in lgr_diff_vert'
           else
             ctext = 'no such layer in track_xi_get_vertical'
           end if

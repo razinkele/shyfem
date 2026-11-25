@@ -33,7 +33,9 @@
 #     lists diftur = 0.100000E-01, and its line "lgr vertical diffusion:
 #     random walk time step [s] min 300.000 mean 300.000, ... below the
 #     model step 0" shows a diffusivity constant over the depth in every
-#     element and step (K'' = 0, the random walk takes the model step);
+#     element and step (K'' = 0 and K' = 0: neither step rule of
+#     lag_vdiff_ele limits the step, and the walk takes the model step in
+#     one call of lgr_diff_vert, spec test 1 of #286);
 #   - the water is still: every particle keeps the position and element
 #     of its release at every output (so its column depth is that of the
 #     release: twice the mean depth of the particles released in the
@@ -53,30 +55,40 @@
 #     active particles over the hourly outputs 12:00 ... 24:00 is at most
 #     31 (19 degrees of freedom: 19 +- 6 per output if well mixed).
 #
+# Since #286 a call of lgr_diff_vert makes one displacement across the
+# layer interfaces, reflected at the surface and at the bed: here, at a
+# constant K, the walk takes the model step in one call (calls = particle
+# steps = 39960 x 289 = 11548440, at most 1 call and 1 draw in a step).
 # Measured (mean chi-square 12:00 ... 24:00 for lgrseed 1, 2, 3; mean
-# |dz| over the first hour / sqrt(2 K T)):
+# |dz| over the first hour / sqrt(2 K T), seed 1):
 #                                       seed 1  seed 2  seed 3   |dz|
+#   the walk of #286 (one call a step)    19.9    19.5    20.7  0.409
+#   before #286, the walk that stopped at every interface:
 #   origin/main 668acb4d                 331.4   313.1   371.4  0.315
 #   thickness of the layer entered only   53.5    56.0    42.5  0.311
 #   time tv**2/dt of a stopped call only 605.7   563.0          0.328
 #   both (the fix of #284)                20.4    18.6    17.7  0.324
 #   a walk that never moves                0.0     0.0          0.000
-# The limit 31 lies 10.6 above the highest value of the fix and 11.5
+# (the walk of #286: the upper / lower 15 % of the column at 1.004 /
+# 0.993 of uniform for seed 1; |dz| 0.406 and 0.411 for seeds 2 and 3;
+# the run takes about 25 s.)  The limit 31 lies 10.3 above the highest
+# value of the walk of #286, 10.6 above that of the fix of #284 and 11.5
 # below the lowest of the thickness alone; the floor 0.15 is about half
-# of what the walks that move give.  (A gaussian walk with the
-# diffusivity K, reflected at the surface and bottom, would give 0.41:
-# here the walk spreads the particles more slowly than that, before and
-# after #284; the variance of the hourly displacement of particles far
-# from the surface and bottom is about 0.75 of 2 K T, issue #287.)
-# On origin/main the particles drift to the bottom (11 % too few in the
-# upper 15 % of the column, 10 % too many in the lower 15 %).  Of the two
-# defects of lgr_diff_vert, the first drove them down: after a particle
-# crossed an interface it went on with the thickness of the layer it left
-# (with only the second fixed the upper / lower 15 % are at 0.842 /
-# 1.130 of uniform).  The second, a call that stopped at an interface
-# counted the time tv in which it had diffused for tv**2/dt, alone drove
-# them up (with only the first fixed: 1.045 / 0.979), so it partly masked
-# the first.
+# of what the walks that move give.  The walk of #286 gives 0.41, what a
+# gaussian walk with the diffusivity K, reflected at the surface and
+# bottom, gives; the walk before spread the particles more slowly than
+# that, before and after #284 (the variance of the hourly displacement of
+# particles far from the surface and bottom about 0.75 of 2 K T, issue
+# #287; mode thin).
+# Before #284 (origin/main 668acb4d) the particles drifted to the bottom
+# (11 % too few in the upper 15 % of the column, 10 % too many in the
+# lower 15 %).  Of the two defects of the walk then, the first drove them
+# down: after a particle crossed an interface it went on with the
+# thickness of the layer it left (with only the second fixed the upper /
+# lower 15 % are at 0.842 / 1.130 of uniform).  The second, a call that
+# stopped at an interface counted the time tv in which it had diffused
+# for tv**2/dt, alone drove them up (with only the first fixed: 1.045 /
+# 0.979), so it partly masked the first.  Both went with the stops (#286).
 #
 #================= modes linear, parabolic and gotm (#286) ================
 # Case: the forced mm_hyd_41 as it is (GOTM, iturb = 1; wind, heat flux,
@@ -99,7 +111,7 @@
 #   gotm       GOTM's (LGR_TEST_KPROF unset)
 # Where K changes over the depth, a random walk keeps a well-mixed state
 # well mixed only if it takes the gradient of K into account correctly
-# (Visser 1997); today's walk does not (#286).  These profiles are the
+# (Visser 1997); the walk before #286 did not.  These profiles are the
 # ones the measurements of #286 used.
 #
 # Required, for each run:
@@ -120,29 +132,45 @@
 #     column depth in the particle's column at the output time; the
 #     particle file holds no water level, so it is recovered from the
 #     particle records.
-# Printed for each run, not gated: the top 5 % ratio (the share of the
-# particles in the upper 5 % of the column over 5 %), mean over 12:00 ...
-# 24:00; and in mode gotm the mean chi-square of the particles in
-# one-layer columns, with their number (a one-layer column must stay well
-# mixed too; no measured spread exists to set a limit from).
+# Printed for each run, not gated: the walk's lines of the log
+# (lgr_vdiff_stats: the random walk time step, the step rule's gradient
+# term, the particle steps and calls of lgr_diff_vert, the cap); the top
+# 5 % ratio (the share of the particles in the upper 5 % of the column
+# over 5 %), mean over 12:00 ... 24:00; and in mode gotm the mean
+# chi-square of the particles in one-layer columns, with their number (a
+# one-layer column must stay well mixed too; no measured spread exists to
+# set a limit from).
 #
 # Measured (mean chi-square 12:00 ... 24:00 for lgrseed 1, 2, 3; top 5 %
 # ratio of seed 1):
 #                                        seed 1  seed 2  seed 3  top 5 %
-#   today's walk (#284), linear          3196.7  3206.9  3383.4   0.437
-#                        parabolic        147.2   124.6   128.1   0.844
-#                        gotm              17.6    20.8    19.0   0.981
-# (34103497 with these hooks; the walk made 2.55 calls per particle step
-# in mode linear, 76.8 in parabolic).  The measurements of #286, an
-# in-model histogram of the same relative depths on a debug build of
-# 97a7ad46 with today's walk, gave linear 3198 and parabolic 148 (seed
-# 1), gotm 17.6 and 20.8 (seeds 1, 2); the prototype of the new walk
-# (B07: f = 0.07, floors 2 s and 0.2 s) gave linear 25.3, 21.8, 21.6,
-# parabolic 20.4, 20.6, 18.6 and gotm 18.7, 21.9, 19.5 (top 5 % 1.036,
-# 1.052, 1.034).
-# Mode gotm passes on today's walk too: it guards against a regression
-# and does not show the fix.  Its one-layer columns (1400 particles) gave
-# 53.3, 54.0 and 57.4 on today's walk.
+#   the walk of #286, linear               25.4    22.0    21.7   1.019
+#                     parabolic            20.3    20.5    18.6   1.007
+#                     gotm                 18.8    22.0    19.6   1.036
+#   the walk before (#284), linear       3196.7  3206.9  3383.4   0.437
+#                           parabolic     147.2   124.6   128.1   0.844
+#                           gotm           17.6    20.8    19.0   0.981
+# The walk of #286 made 112.6 calls per particle step in mode linear
+# (most 1501 in a step; the gradient term of the step set it in 735504
+# element steps, its floor 0.2 s in 23575), 426.5 in parabolic (700536,
+# 65889) and 162.8 in gotm (528351, 35052), and no step reached the cap;
+# the walk before 2.55 in linear and 76.8 in parabolic (34103497 with
+# these hooks).  The measurements of #286, an in-model histogram of the
+# same relative depths on a debug build of 97a7ad46, gave with the walk
+# before linear 3198 and parabolic 148 (seed 1), gotm 17.6 and 20.8
+# (seeds 1, 2), and with the prototype of the walk of #286 (B07: f =
+# 0.07, floors 2 s and 0.2 s) linear 25.3, 21.8, 21.6, parabolic 20.4,
+# 20.6, 18.6 and gotm 18.7, 21.9, 19.5 (top 5 % 1.036, 1.052, 1.034):
+# the walk of #286 reproduces each seed within 0.2.  Its top 5 % for
+# seeds 1, 2, 3: linear 1.019, 1.023, 1.034, parabolic 1.007, 1.008,
+# 1.006, gotm 1.036, 1.052, 1.034.  With GOTM's K that is a small surface
+# excess the walk before did not have (0.98) and whose cause is not known
+# (spec of #286, section 6); it is printed and not gated.
+# Mode gotm passes with the walk before too: it guards against a
+# regression and does not show the fix.  Its one-layer columns (1400
+# particles) gave 18.0, 20.8 and 19.5 with the walk of #286, 53.3, 54.0
+# and 57.4 with the walk before (which put a particle that reached the
+# edge of a one-layer column at a random depth in it).
 #
 #=========================== mode thin (#287) ============================
 # Case: still water as in mode const (iturb = 0, diftur = 1.e-2), but with
@@ -167,27 +195,32 @@
 #     above the bed at the start of the hour; dz is their change of depth
 #     over the hour, and the column depth is that of mode const (twice
 #     the mean depth of the particles released in the element).
+# Printed, not gated: the walk's lines of the log, as in the modes above.
 #
-# Measured (K_eff/K, lgrseed 1): today's walk (#284; 34103497 with the
-# hooks of the other modes) 0.142 +- 0.003 (standard error of the mean of
-# the 23 hourly values, 0.113 ... 0.172; about 199 particles per hour far
-# enough from the surface and the bed).  The measurements of #287 gave
-# 0.142 for main and 1.02 +- 0.02 for the prototype of the new walk
-# (NOSTOP).
+# Measured (K_eff/K, lgrseed 1): the walk of #286 1.016 +- 0.026
+# (standard error of the mean of the 23 hourly values, 0.782 ... 1.337;
+# about 201 particles per hour far enough from the surface and the bed;
+# one call per particle step: at a constant K the walk takes the model
+# step); the walk before (#284; 34103497 with the hooks of the other
+# modes) 0.142 +- 0.003 (0.113 ... 0.172; about 199 particles per hour).
+# The measurements of #287 gave 0.142 for main and 1.02 +- 0.02 for the
+# prototype of the walk of #286 (NOSTOP).
 #
 # Usage:  ./check_lgr_wellmixed.sh [const | linear | parabolic | gotm | thin]
 # Needs shyfem and python3 on PATH (python3 with numpy for every mode but
 # const) and `make init` done.  The scratch folder is made with mktemp
 # under ${TMPDIR:-/tmp}; it is removed at the end when the check passes
 # and kept (its path is printed) when it fails.
-# Takes about a minute and 200 MB of scratch space in mode const; on
-# today's walk (wall clock, the three runs of a mode in parallel) about a
-# minute in mode linear, 9 minutes in gotm, 16 in parabolic and 1.5 in
-# thin, and up to 250 MB of scratch space.  A run of the modes linear,
-# parabolic and gotm stops after 7200 s (the walk can make several
-# hundred calls per particle step there), of mode thin after 3600 s.
+# Takes about half a minute and 200 MB of scratch space in mode const;
+# with the walk of #286 (wall clock, the runs of a mode in parallel,
+# measured with all modes running at once on 28 cores) about 5 minutes in
+# mode linear, 7 in gotm, 15 in parabolic and under a minute in thin, and
+# up to 250 MB of scratch space.  A run of the modes linear, parabolic and
+# gotm stops after 7200 s (the walk can make several hundred calls per
+# particle step there), of mode thin after 3600 s.
 # Prints "WELLMIXED: PASS" (exit 0) or "WELLMIXED: FAIL" (exit 1) in mode
-# const, "WELLMIXED MODE: PASS" or "WELLMIXED MODE: FAIL" in the others.
+# const, and in the others the same with the mode's name after WELLMIXED,
+# e.g. "WELLMIXED linear: PASS" or "WELLMIXED linear: FAIL".
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
@@ -309,6 +342,8 @@ if [ "$MODE" = linear ] || [ "$MODE" = parabolic ] || [ "$MODE" = gotm ]; then
       grep -qxF " test hook LGR_TEST_KPROF: the vertical diffusivity of the particles is profile $KPROF" "$log" \
         || fail "$c: the log does not acknowledge the test hook LGR_TEST_KPROF with profile $KPROF (a binary without the hooks?)"
     fi
+    # the walk's lines (lgr_vdiff_stats: step, step rule, calls), not gated
+    grep 'lgr vertical diffusion' "$log" | sed 's/^/  /'
     PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$CHI2MAX" "$MODE" <<'EOF' || fail "$c: see above"
 import sys
 sys.path.insert(0, sys.argv[1])
@@ -413,6 +448,8 @@ if [ "$MODE" = thin ]; then
   if grep -q 'test hook LGR_TEST_\(KPROF\|NOADV\)' "$log"; then
     fail "$c: the log acknowledges a test hook LGR_TEST_KPROF or LGR_TEST_NOADV"
   fi
+  # the walk's lines (lgr_vdiff_stats: step, step rule, calls), not gated
+  grep 'lgr vertical diffusion' "$log" | sed 's/^/  /'
   PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$KEFFTOL" <<'EOF' || fail "$c: see above"
 import math, sys
 sys.path.insert(0, sys.argv[1])
@@ -511,7 +548,8 @@ for s in $SEEDS; do
   mk wm_s$s $s || { fail "cannot make wm_s$s.str"; finish; }
 done
 for s in $SEEDS; do
-  ( cd "$P" && timeout 1800 nice -n 10 shyfem wm_s$s.str < /dev/null > wm_s$s.log 2>&1; echo $? > wm_s$s.rc ) &
+  ( cd "$P" && timeout 1800 nice -n 10 env -u LGR_TEST_KPROF -u LGR_TEST_NOADV \
+      shyfem wm_s$s.str < /dev/null > wm_s$s.log 2>&1; echo $? > wm_s$s.rc ) &
 done
 wait
 for s in $SEEDS; do

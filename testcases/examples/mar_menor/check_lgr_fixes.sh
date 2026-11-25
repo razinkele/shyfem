@@ -305,6 +305,32 @@
 #             where h**2/(400 K) is that small).  The code before #257 has
 #             neither the routine nor the line, so this mode cannot be red
 #             on it; its red evidence is the old formula put back.
+#   walk-fold (#286, #287) the reflection and the layer search of the
+#             vertical random walk of ilagr = 3 (lgr_diff_vert: one
+#             displacement per call, across the layer interfaces, reflected
+#             at the surface and at the bed).  lgr_walk_locate (the layer
+#             lb and the relative depth z of a depth d in 0 ... H) and
+#             lgr_walk_fold (d of any value folded into 0 ... H, H the
+#             column depth, modulo 2 H, then located), cut out of
+#             src/shyfem/lagrange_dif.f90 and compiled together on their
+#             own with a small test program (gfortran, -ffpe-trap=zero,
+#             invalid,overflow).  Layers (1, 2, 0, 3) m (the interfaces 0,
+#             1, 3, 3, 6, H = 6): d = 2.5 gives lb = 2, z = 0.75; d = -0.5
+#             (above the surface) the depth 0.5, lb = 1, z = 0.5; d = 6.5
+#             (below the bed) 5.5, lb = 4, z = 2.5/3; d = 13 (13 mod 12) 1,
+#             lb = 1, z = 1; d = 3 (the interface above the layer of zero
+#             thickness) lb = 2, z = 1, never lb = 3; d = 0 lb = 1, z = 0;
+#             d = 6 lb = 4, z = 1; every layer of zero thickness (H = 0) lb
+#             = lmax, z = 0.5 with no division; layers (1, 2, 3, 0), a
+#             bottom layer of zero thickness: lgr_walk_locate at d = 6
+#             gives lb = 3, z = 1, so the diffusivity interpolated there,
+#             K(lb-1) + z (K(lb) - K(lb-1)) as in lgr_diff_vert, is K(3),
+#             with no division by the zero thickness (where the
+#             interpolation of the walk before, exxpp, divides 0/0).  And
+#             for 2001 depths from -3 H to 3 H on layers (1, 2, 0, 3): a
+#             layer of non-zero thickness, z in 0 ... 1, and the depth of
+#             (lb, z) equal to the folded d.  Before #286 neither routine
+#             exists (the walk stopped at every interface).
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -474,8 +500,8 @@
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
 # and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here;
-# mode vdiff-dt also gfortran on PATH and the source tree three levels up
-# (../../../src/shyfem/lagrange_dif.f90, as in a checkout).
+# modes vdiff-dt and walk-fold also gfortran on PATH and the source tree
+# three levels up (../../../src/shyfem/lagrange_dif.f90, as in a checkout).
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
@@ -485,11 +511,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
 
@@ -1565,6 +1591,134 @@ EOF
     echo "$line" | grep -q 'gradient term set the step in 0 element steps, its floor 0.2 s in 0$' || fail "the gradient term set the step at a constant K"
   else
     fail "the run did not end"
+  fi
+  finish
+fi
+
+#=============================== walk-fold (#286, #287) ====================
+if [ "$MODE" = walk-fold ]; then
+  echo "=== lgr_walk_locate and lgr_walk_fold on their own: layers (1, 2, 0, 3) and (1, 2, 3, 0), every layer of zero thickness, depths from -3 H to 3 H"
+  SRCF="$HERE/../../../src/shyfem/lagrange_dif.f90"
+  if ! command -v gfortran > /dev/null 2>&1; then
+    fail "gfortran is not on PATH"
+  elif [ ! -f "$SRCF" ]; then
+    fail "no $SRCF"
+  else
+    awk '/^[ \t]*subroutine lgr_walk_locate[(]/,/^[ \t]*end subroutine lgr_walk_locate[ \t]*$/' "$SRCF" > "$W/walk.f90"
+    awk '/^[ \t]*subroutine lgr_walk_fold[(]/,/^[ \t]*end subroutine lgr_walk_fold[ \t]*$/' "$SRCF" >> "$W/walk.f90"
+    nfound=0
+    for r in lgr_walk_locate lgr_walk_fold; do
+      if grep -q "end subroutine $r" "$W/walk.f90"; then
+        nfound=$((nfound + 1))
+      else
+        fail "$r not found in $SRCF"
+      fi
+    done
+    if [ "$nfound" = 2 ]; then
+    cat > "$W/walk_test.f90" <<'EOF'
+	program walk_test
+! lgr_walk_fold (a depth d of any value folded into 0 ... H, then located)
+! and lgr_walk_locate (the layer lb and relative depth z of a depth in 0
+! ... H): the first layer of non-zero thickness whose bottom is at or
+! below d, z = (d - top)/thickness, 0.5 if every layer has zero thickness
+	implicit none
+	real :: hl(4), hle(0:4), wd(0:4)
+	double precision :: d, z, dd, zd, ak
+	integer :: lb, nfail, i, nbad
+	nfail = 0
+	! layers (1, 2, 0, 3) m: interfaces 0, 1, 3, 3, 6, H = 6
+	hl = (/ 1., 2., 0., 3. /)
+	hle = (/ 0., 1., 3., 3., 6. /)
+	call cfold(2.5d0,2,0.75d0,'d = 2.5')
+	call cfold(-0.5d0,1,0.5d0,'d = -0.5 (above the surface: 0.5)')
+	call cfold(6.5d0,4,2.5d0/3.d0,'d = 6.5 (below the bed: 5.5)')
+	call cfold(13.d0,1,1.d0,'d = 13 (13 mod 12 = 1)')
+	call cfold(3.d0,2,1.d0,'d = 3 (above the zero layer)')
+	call cfold(0.d0,1,0.d0,'d = 0 (the surface)')
+	call cfold(6.d0,4,1.d0,'d = 6 (the bed)')
+	call cloc(2.5d0,2,0.75d0,'locate d = 2.5')
+	call cloc(3.d0,2,1.d0,'locate d = 3 (above the zero layer)')
+	call cloc(0.d0,1,0.d0,'locate d = 0 (the surface)')
+	call cloc(6.d0,4,1.d0,'locate d = 6 (the bed)')
+	! the sweep: a layer of non-zero thickness, z in 0 ... 1, and the
+	! depth of (lb, z) equal to the folded d
+	nbad = 0
+	do i = 0,2000
+	  d = -18.d0 + 36.d0*i/2000.d0
+	  call lgr_walk_fold(4,hl,hle,d,lb,z)
+	  dd = modulo(d,12.d0)
+	  if( dd > 6.d0 ) dd = 12.d0 - dd
+	  if( lb < 1 .or. lb > 4 ) then
+	    nbad = nbad + 1
+	  else if( hl(lb) <= 0. ) then
+	    nbad = nbad + 1
+	  else if( z < 0.d0 .or. z > 1.d0 ) then
+	    nbad = nbad + 1
+	  else
+	    zd = hle(lb-1) + z*hl(lb)
+	    if( abs(zd-dd) > 1.d-9 ) nbad = nbad + 1
+	  end if
+	end do
+	write(6,'(2x,a,i0)') 'sweep of 2001 depths from -18 to 18 m, wrong: ',nbad
+	if( nbad > 0 ) nfail = nfail + 1
+	! every layer of zero thickness, H = 0: lb = lmax, z = 0.5, no
+	! division (the build traps zero, invalid)
+	hl = 0.
+	hle = 0.
+	call cfold(0.7d0,4,0.5d0,'H = 0, d = 0.7')
+	call cloc(0.d0,4,0.5d0,'H = 0, locate d = 0')
+	! a bottom layer of zero thickness, layers (1, 2, 3, 0): interfaces 0,
+	! 1, 3, 6, 6; d = 6 lies in layer 3 at z = 1, so the diffusivity
+	! interpolated there as in lgr_diff_vert is K(3)
+	hl = (/ 1., 2., 3., 0. /)
+	hle = (/ 0., 1., 3., 6., 6. /)
+	call cloc(6.d0,3,1.d0,'zero bottom layer, locate d = 6')
+	call cfold(6.d0,3,1.d0,'zero bottom layer, d = 6')
+	wd = (/ 1.e-3, 2.e-3, 5.e-3, 7.e-3, 9.e-3 /)
+	call lgr_walk_locate(4,hl,hle,6.d0,lb,z)
+	if( lb >= 1 .and. lb <= 4 ) then
+	  ak = wd(lb-1) + z*(wd(lb)-wd(lb-1))
+	  write(6,'(2x,a,es14.6,a,es14.6)') 'zero bottom layer, K at d = 6:'	&
+     &		,ak,', expected K(3) =',dble(wd(3))
+	  if( abs(ak-wd(3)) > 1.d-6*wd(3) ) nfail = nfail + 1
+	end if
+	write(6,'(2x,a,i0)') 'failed checks: ',nfail
+	if( nfail > 0 ) stop 1
+	contains
+	subroutine cfold(dv,lbw,zw,text)
+	double precision, intent(in) :: dv,zw
+	integer, intent(in) :: lbw
+	character(len=*), intent(in) :: text
+	integer :: l
+	double precision :: zz
+	call lgr_walk_fold(4,hl,hle,dv,l,zz)
+	call report(text,l,zz,lbw,zw)
+	end subroutine cfold
+	subroutine cloc(dv,lbw,zw,text)
+	double precision, intent(in) :: dv,zw
+	integer, intent(in) :: lbw
+	character(len=*), intent(in) :: text
+	integer :: l
+	double precision :: zz
+	call lgr_walk_locate(4,hl,hle,dv,l,zz)
+	call report(text,l,zz,lbw,zw)
+	end subroutine cloc
+	subroutine report(text,l,zz,lbw,zw)
+	character(len=*), intent(in) :: text
+	integer, intent(in) :: l,lbw
+	double precision, intent(in) :: zz,zw
+	write(6,'(2x,a,a,i0,a,f10.6,a,i0,a,f10.6,a)') text,': lb ',l,' z '	&
+     &		,zz,' (expected ',lbw,', ',zw,')'
+	if( l /= lbw .or. abs(zz-zw) > 1.d-12 ) nfail = nfail + 1
+	end subroutine report
+	end program walk_test
+EOF
+    if ( cd "$W" && gfortran -fcheck=bounds -ffpe-trap=zero,invalid,overflow -o walk_test walk_test.f90 walk.f90 > walk_build.log 2>&1 ); then
+      ( cd "$W" && ./walk_test ) || fail "lgr_walk_locate, lgr_walk_fold: wrong layer or relative depth"
+    else
+      fail "the test of lgr_walk_locate and lgr_walk_fold does not compile"; sed 's/^/    /' "$W/walk_build.log" | head -5
+    fi
+    fi
   fi
   finish
 fi
