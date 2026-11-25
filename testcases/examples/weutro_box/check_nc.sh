@@ -41,18 +41,22 @@ declare -A MERC=( [251]=hg0_water [252]=hg2_water [253]=mehg_water
   [291]=silt_sediment [292]=pom_sediment [297]=sea_bed_depth_change
   [298]=active_layer_thickness [299]=mercury_bottom_stress )
 
-# last-time "min max" of ivar at level 1, from shyelab -write
+# last-time "min max" of ivar at level 1, from shyelab -write; empty if none
 shy_minmax(){ shyelab -write "$1" 2>/dev/null | grep "l,ivar,min,aver,max" \
-    | awk -v v="$2" '$3==1 && $4==v {m=$5; x=$7} END{print m, x}'; }
+    | awk -v v="$2" '$3==1 && $4==v {m=$5; x=$7; f=1} END{if(f) print m, x}'; }
 
-# last-time "min max" of the nc variable, from ncdump
-nc_minmax(){ ncdump -v "$2" "$1" | awk -v nkn="$3" '
+# last-time "min max" of the nc variable, from ncdump. Every token keeps its
+# position (ncdump prints a fill value as _); the last nkn tokens must all be
+# numbers, otherwise "nan nan".
+nc_minmax(){ ncdump -v "$2" "$1" | awk -v nkn="$3" -v nm="$2" '
     /^data:/{d=1; next}
-    d && $1==ENVIRON["NCV"] {next}
-    d {gsub(/[;,]/," "); for(i=1;i<=NF;i++) if($i ~ /^[-+0-9.]/) a[n++]=$i}
+    d && $1==nm {next}
+    d {gsub(/[;,}]/," "); for(i=1;i<=NF;i++) a[n++]=$i}
     END{ if(n<nkn){print "nan nan"; exit}
-         for(i=n-nkn;i<n;i++){ v=a[i]+0; if(i==n-nkn||v<m)m=v; if(i==n-nkn||v>x)x=v }
-         printf "%.8g %.8g\n",m,x }' NCV="$2"; }
+         for(i=n-nkn;i<n;i++){
+           if(a[i] !~ /^[-+]?[0-9]*[.]?[0-9]+([eE][-+]?[0-9]+)?$/){print "nan nan"; exit}
+           v=a[i]+0; if(i==n-nkn||v<m)m=v; if(i==n-nkn||v>x)x=v }
+         printf "%.8g %.8g\n",m,x }'; }
 
 check_file(){
   local shyf="$1" arrname="$2"
@@ -81,8 +85,19 @@ check_file(){
     echo "FAIL: $nvarnc data variables in out.nc, expected $nvarmap"; rc=1
   fi
   local ids
-  ids=$(shyelab -write "$shyf" 2>/dev/null | grep "l,ivar,min,aver,max" \
+  if ! shyelab -write "$shyf" > "$TMP/write.txt" 2>/dev/null; then
+    echo "FAIL: shyelab -write $shyf failed"; rc=1; rm -f out.nc; return
+  fi
+  ids=$(grep "l,ivar,min,aver,max" "$TMP/write.txt" \
         | awk '{print $4}' | sort -un | tr '\n' ' ')
+  if [ -z "$ids" ]; then
+    echo "FAIL: shyelab -write $shyf lists no variable"; rc=1; rm -f out.nc; return
+  fi
+  local want
+  want=$(printf '%s\n' "${!map[@]}" | sort -n | tr '\n' ' ')
+  if [ "$ids" != "$want" ]; then
+    echo "FAIL: ids in $shyf are [$ids], expected [$want]"; rc=1
+  fi
   local id name mm_shy mm_nc
   for id in $ids; do
     name="${map[$id]:-}"
@@ -91,6 +106,9 @@ check_file(){
       echo "FAIL: id $id: variable $name missing in out.nc"; rc=1; continue
     fi
     mm_shy=$(shy_minmax "$shyf" "$id"); mm_nc=$(nc_minmax out.nc "$name" "$nkn")
+    if [ -z "$mm_shy" ]; then
+      echo "FAIL: id $id: no record in shyelab -write"; rc=1; continue
+    fi
     if awk -v a="$mm_shy" -v b="$mm_nc" 'BEGIN{
          split(a,s," "); split(b,c," ");
          for(i=1;i<=2;i++){ d=s[i]-c[i]; if(d<0)d=-d; r=(s[i]<0?-s[i]:s[i]);
