@@ -2982,8 +2982,15 @@
 	if( nc_created_file /= ' ' ) then
 	  open(newunit=iu,file=trim(nc_created_file),status='old' &
      &			,iostat=ios)
-	  if( ios == 0 ) close(iu,status='delete')
-	  write(6,*) 'invalid netcdf file removed: ',trim(nc_created_file)
+	  if( ios == 0 ) then
+	    close(iu,status='delete',iostat=ios)
+	  end if
+	  if( ios == 0 ) then
+	    write(6,*) 'invalid netcdf file removed: ',trim(nc_created_file)
+	  else
+	    write(6,*) 'cannot remove the unfinished netcdf file: ' &
+     &			,trim(nc_created_file)
+	  end if
 	  nc_created_file = ' '
 	end if
 
@@ -3581,12 +3588,13 @@
 	  cmax = 0.
 	else if( ivar .eq. 742 ) then	! ulva quota (weutro)
 	  ! bio3d.f90 "ulva quota"; weutro_ulva.f90 Quota = intratissual N
-	  ! UNIT UNCONFIRMED: the model comment says [gN/gC dw], not gN/gdw;
-	  ! model owner to confirm
+	  ! UNIT UNCONFIRMED: weutro_ulva.f90:81 documents Quota as
+	  ! [gN/gC dw] and :80 documents Wdt as dry weight [gC/l]; the units
+	  ! follow that comment, model owner to confirm
 	  name = 'ulva_nitrogen_quota'
 	  what = 'long_name'
 	  std = 'ulva_intratissue_nitrogen_quota'
-	  units = 'gN gdw-1'
+	  units = 'gN gC-1'
 	  cmin = 0.
 	  cmax = 0.
 	else if( ivar .eq. 0 ) then	! no variable description
