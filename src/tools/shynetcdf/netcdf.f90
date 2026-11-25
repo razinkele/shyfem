@@ -2829,6 +2829,7 @@
 
 	retval = nf_close(ncid)
 	call nc_handle_err(retval,'close')
+	nc_created_file = ' '	!finished: a later error must not delete it
 
 	end
 
@@ -3568,7 +3569,10 @@
 	  cmin = 0.
 	  cmax = 0.
 	else if( ivar .eq. 741 ) then	! ulva biomass (weutro)
-	  ! bio3d.f90 "ulva biomass"; weutro_ulva.f90 Wdt = dry weight, g/m3
+	  ! bio3d.f90 "ulva biomass"; weutro_ulva.f90 Wdt = dry weight
+	  ! UNIT UNCONFIRMED: weutro_ulva.f90:80 documents Wdt as dry
+	  ! weight [gC/l], its state comment says [mg/L]==[g/m3]; model owner
+	  ! to confirm
 	  name = 'ulva_biomass'
 	  what = 'long_name'
 	  std = 'ulva_dry_weight_biomass'
@@ -3577,6 +3581,8 @@
 	  cmax = 0.
 	else if( ivar .eq. 742 ) then	! ulva quota (weutro)
 	  ! bio3d.f90 "ulva quota"; weutro_ulva.f90 Quota = intratissual N
+	  ! UNIT UNCONFIRMED: the model comment says [gN/gC dw], not gN/gdw;
+	  ! model owner to confirm
 	  name = 'ulva_nitrogen_quota'
 	  what = 'long_name'
 	  std = 'ulva_intratissue_nitrogen_quota'
