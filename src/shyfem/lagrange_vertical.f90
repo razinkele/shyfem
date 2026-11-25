@@ -307,8 +307,26 @@
 ! particle with id 0, which no release gives (ids start at 1), and it
 ! was set through the module variable blgrdebug, written by every
 ! thread of the loop
+!
+! the bottom layer of a column of more than one layer (#299): the flow's
+! vertical velocity there is linear in z, from wt (the element mean of
+! the interface velocity at the layer top, old and new time level) to 0
+! at the bed, and the settling velocity sv is not tapered:
+! w(z) = wt*(1-z) - sv, integrated exactly over the time in the layer
+! (lgr_bed_move, lgr_bed_exit). Before, the whole layer had the layer
+! mean of w, which does not vanish at the bed: an upward mean lifted the
+! particles off the bed, a downward one held them there, and the bottom
+! 5 % of the column held about half its share of particles (0.49 in the
+! closed forced case of check_lgr_bed.sh, 0.88 and 0.89 with this form).
+! The bed condition belongs to the water; settling is the particle's
+! motion relative to it (a tapered (wt-sv)*(1-z) would make a settling
+! particle approach the bed exponentially, never reach it). One-layer
+! columns and the layers above keep the layer mean, and a bottom layer
+! of zero thickness keeps the path of before (tv = 0: not moving)
 
 	use mod_lagrange
+	use mod_hydro_vel, only : wlov,wlnv
+	use basin, only : nen3v
 
 	implicit none
 
@@ -324,14 +342,19 @@
 
 	logical, parameter :: bdebug = .false.	!debug lines (#294)
 	logical bsurf,bbott,bhas
+	logical bbed			!w linear in the bottom layer (#299)
+	logical bup			!leaving the layer upward
 	integer iflux,lmax,iside
 	integer ierr
 	integer ieorig,lborig
+	integer ii,k
 	double precision s,alpha
 	double precision dist,dh,dv,ds
 	double precision t,th,tv,tt
 	double precision vel,w
 	double precision dz,hd
+	double precision wt		!flow's w at the top of the bottom layer
+	double precision tex,z1
 	double precision xis(3)
 	double precision xie(3)
 
@@ -369,13 +392,41 @@
 	if( bbott .and. w < 0.d0 ) w = 0.d0
 	if( blgrsurf .or. blgr2d ) w = 0.d0	!advection only in surface layer
 
+	! a particle on an interface goes where w points; then w and hd are
+	! those of the layer it enters (#299: until then those of the layer
+	! it left). One switch per call: the else keeps the new layer's w from
+	! sending the particle back at once (w = 0 for ilagr 1 and 2: never)
 	if ( w > 0.d0 .and. z == 0.d0 ) then
 	  lb = lb - 1
 	  z  = 1.d0
-	end if
-	if ( w < 0.d0 .and. z == 1.d0 ) then
+	  call track_xi_get_vertical(id,iel,lb,lmax,hd,w)
+	  w = w - sv
+	else if ( w < 0.d0 .and. z == 1.d0 ) then
 	  lb = lb + 1
 	  z  = 0.d0
+	  call track_xi_get_vertical(id,iel,lb,lmax,hd,w)
+	  w = w - sv
+	end if
+
+	!-----------------------------------------------
+	! bottom layer of a column of more than one layer (#299): w linear
+	! in z, from wt at the layer top to 0 at the bed, sv not tapered
+	!-----------------------------------------------
+
+	bbed = .false.
+	wt = 0.d0
+	if( lb == lmax .and. lmax > 1 ) then
+	  if( .not. ( blgrsurf .or. blgr2d ) ) then
+	    if( hd > 0.d0 ) then		!hd of lb
+	      do ii=1,3
+	        k = nen3v(ii,iel)
+	        wt = wt + 0.5d0*(wlov(lmax-1,k)+wlnv(lmax-1,k))
+	      end do
+	      wt = wt / 3.d0
+	      w = wt*(1.d0-z) - sv		!at the particle
+	      bbed = .true.
+	    end if
+	  end if
 	end if
 
 	!-----------------------------------------------
@@ -449,8 +500,12 @@
 	!-----------------------------------------------
 
 	tv = 2.*time
+	bup = ( w > 0.d0 )
 
-	if( w /= 0. ) then
+	if( bbed ) then			!bottom layer (#299)
+	  call lgr_bed_exit(wt,sv,hd,z,tex,bup)
+	  if( tex < tv ) tv = tex	!huge (never) stays 2*time
+	else if( w /= 0. ) then
 	  if( w > 0. ) then
 	    dv = hd*z
 	    tv = dv / w
@@ -563,10 +618,16 @@
 	if( tv == 0. ) then		!body not moving
 	  !
 	else if( tv > t ) then		!body remains in layer
-	  dz = w*t/hd
-	  z = z - dz
+	  if( bbed ) then		!bottom layer (#299)
+	    call lgr_bed_move(wt,sv,hd,z,t,z1)
+	    dz = z - z1
+	    z = z1
+	  else if( hd > 0.d0 ) then	!hd = 0 here only with w = 0: no motion
+	    dz = w*t/hd
+	    z = z - dz
+	  end if
 	else
-	  if( w > 0. ) then
+	  if( bup ) then
 	    if( lb > 1 ) then
 	      lb = lb - 1
 	      z = 1.
@@ -620,6 +681,140 @@
 	!-----------------------------------------------
 
 	end
+
+!************************************************************
+
+	subroutine lgr_bed_move(wt,sv,hd,z0,t,z1)
+
+! relative depth z1 after the time t of a particle at z0 in the bottom
+! layer (thickness hd) of a column of more than one layer (#299, called
+! by track_xi). The flow's vertical velocity is linear in z, from wt at
+! the layer top to 0 at the bed, and the settling velocity sv is not
+! tapered:
+!
+!	w(z) = wt*(1-z) - sv		(w > 0 upward; z = 0 top, 1 bed)
+!
+! With u = 1-z, du/dt = (wt*u - sv)/hd: u(t) = a + (u0-a)*exp(x) with
+! a = sv/wt and x = wt*t/hd, u0 - sv*t/hd for wt = 0. It is computed as
+!
+!	u(t) = u0 + w0*(t/hd)*(exp(x)-1)/x	(w0 = wt*u0 - sv)
+!
+! the same function without a division by wt, so that a round-off wt
+! keeps the settling exact (wt = 0 is the limit x = 0). Valid while the
+! particle stays in the layer, t <= texit of lgr_bed_exit, as track_xi
+! calls it (exp(x) is then at most the ratio of the speeds at the exit
+! and at the start); z1 is kept in 0 ... 1. hd <= 0 (a layer of zero
+! thickness) or w0 = 0 (at rest) is no motion: z1 = z0.
+! Self-contained (no use): check_lgr_fixes.sh bed-w cuts it out and
+! tests it on its own (it needs this end line)
+
+	implicit none
+
+	double precision, intent(in) :: wt	!flow's w at the layer top [m/s]
+	double precision, intent(in) :: sv	!settling velocity [m/s], > 0 down
+	double precision, intent(in) :: hd	!thickness of the layer [m]
+	double precision, intent(in) :: z0	!relative depth: 0 top, 1 bed
+	double precision, intent(in) :: t	!time [s]
+	double precision, intent(out) :: z1	!relative depth after t
+
+	double precision w0,x,phi
+
+	z1 = z0
+	if( hd <= 0.d0 ) return		!no motion, no division
+
+	w0 = wt*(1.d0-z0) - sv		!w at the particle
+	if( w0 == 0.d0 ) return		!at rest
+
+	x = min(wt*t/hd,700.d0)		!exp(x) finite
+	if( abs(x) < 1.d-4 ) then
+	  phi = 1.d0 + x*(0.5d0 + x*(1.d0/6.d0 + x/24.d0))
+	else
+	  phi = (exp(x)-1.d0) / x
+	end if
+
+	z1 = z0 - w0*(t/hd)*phi		!z = 1 - u
+	z1 = min(max(z1,0.d0),1.d0)
+
+	end subroutine lgr_bed_move
+
+!************************************************************
+
+	subroutine lgr_bed_exit(wt,sv,hd,z0,texit,bup)
+
+! time texit for a particle at z0 in the bottom layer (thickness hd) to
+! reach the layer top (bup true) or the bed (bup false) with the w(z) of
+! lgr_bed_move (#299, called by track_xi); huge(1.d0), bup false, if
+! neither is ever reached
+!
+! The particle moves the way w0 = w(z0) points, over du = z0 up to the
+! top or 1-z0 down to the bed. w is linear in z, so the particle reaches
+! that boundary only if w1, w there (wt-sv at the top, -sv at the bed),
+! points the same way; otherwise w vanishes on the way (at the
+! equilibrium u = sv/wt) and the particle only approaches it. With the
+! speeds s0 = |w0| and s1 = |w1| > 0 the time is du*hd over their
+! logarithmic mean:
+!
+!	texit = hd*du * (log(s1)-log(s0))/(s1-s0)
+!
+! (a series of log(1+d)/d, d = (s1-s0)/s0, when s1 is close to s0: for
+! wt = 0 the linear hd*du/sv). The edge returns: w0 = 0 (on the bed with
+! sv = 0, or at the equilibrium) huge; on a boundary moving out (du = 0:
+! at the top with wt-sv > 0, on the bed with sv > 0) 0, as the rule bbott
+! of track_xi stops a particle on the bed. No log of a number <= 0, no
+! division by wt or by 0. hd <= 0 (a layer of zero thickness) is no
+! motion: huge.
+! Self-contained (no use): check_lgr_fixes.sh bed-w cuts it out and
+! tests it on its own (it needs this end line)
+
+	implicit none
+
+	double precision, intent(in) :: wt	!flow's w at the layer top [m/s]
+	double precision, intent(in) :: sv	!settling velocity [m/s], > 0 down
+	double precision, intent(in) :: hd	!thickness of the layer [m]
+	double precision, intent(in) :: z0	!relative depth: 0 top, 1 bed
+	double precision, intent(out) :: texit	!time to the top or the bed [s]
+	logical, intent(out) :: bup		!true: the top, false: the bed
+
+	double precision w0,s0,s1,du,d,vm
+
+	texit = huge(1.d0)
+	bup = .false.
+	if( hd <= 0.d0 ) return		!no motion, no division
+
+	w0 = wt*(1.d0-z0) - sv		!w at the particle
+	if( w0 > 0.d0 ) then		!up, to the top
+	  du = z0
+	  s0 = w0
+	  s1 = wt - sv
+	else if( w0 < 0.d0 ) then	!down, to the bed
+	  du = 1.d0 - z0
+	  s0 = -w0
+	  s1 = sv
+	else
+	  return			!at rest
+	end if
+	if( s1 <= 0.d0 ) return		!w vanishes on the way: never
+
+	bup = ( w0 > 0.d0 )
+	if( du <= 0.d0 ) then		!on the boundary, moving out
+	  texit = 0.d0
+	  return
+	end if
+
+	if( abs(s1-s0) < 1.d-4*s0 ) then	!log(1+d)/d by its series
+	  d = (s1-s0) / s0
+	  vm = s0 / (1.d0 - d*(0.5d0 - d*(1.d0/3.d0 - d/4.d0)))
+	else
+	  vm = (s1-s0) / (log(s1)-log(s0))
+	end if
+
+	if( hd*du/huge(1.d0) < vm ) then
+	  texit = hd*du / vm
+	else				!speeds too small: never (huge)
+	  bup = .false.
+	end if
+
+	end subroutine lgr_bed_exit
 
 !************************************************************
 

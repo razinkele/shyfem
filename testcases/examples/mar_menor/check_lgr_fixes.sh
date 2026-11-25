@@ -343,6 +343,36 @@
 #             interface at least, or the case no longer tests the clamp.
 #             Before #286 neither routine exists (the walk stopped at
 #             every interface).
+#   bed-w     (#299) the vertical velocity of an ilagr = 3 particle in the
+#             bottom layer of a column of more than one layer (track_xi):
+#             the flow's w is linear in the relative depth z of the layer,
+#             from wt (the element mean of the interface velocity at the
+#             layer top) to 0 at the bed, and the settling velocity sv is
+#             not tapered: w(z) = wt (1 - z) - sv (w > 0 upward, z = 0 at
+#             the layer top, 1 at the bed).  lgr_bed_move (the relative
+#             depth after a time t) and lgr_bed_exit (the time to reach the
+#             layer top or the bed, huge(1.d0) if neither is ever reached),
+#             cut out of src/shyfem/lagrange_vertical.f90 and compiled
+#             together on their own with a small test program (gfortran,
+#             -fcheck=bounds, -ffpe-trap=zero,invalid,overflow), against an
+#             RK4 integration of du/dt = (wt u - sv)/hd (u = 1 - z, 10**5
+#             steps) to 1e-7 absolute, hd = 2 m: sv = 0, wt = -1e-4, z0 =
+#             0.3 after 3600 s (the measured tapered case: the bed is never
+#             reached); wt = 0, sv = 1e-3 (linear: the bed at hd (1 - z0)/sv
+#             exactly); wt = 2e-4, sv = 1e-4 (equilibrium at u = 0.5: from
+#             z0 = 0.6 the bed, from z0 = 0.4 the top); wt = -2e-4, sv =
+#             1e-4 (the bed from any z0: 0, 0.3, 0.9); wt = 1e-18, sv = 3e-5
+#             (a round-off wt: the linear answer); a rising particle (sv <
+#             0) that reaches the top and one that approaches a stable
+#             equilibrium.  At each exit time the RK4 solution is at the top
+#             or the bed (1e-7) and lgr_bed_move gives z = 0 or 1 (1e-9);
+#             halfway the two agree (1e-7).  The edge returns: on the bed
+#             with sv = 0, and at the equilibrium u = sv/wt, never (huge;
+#             there lgr_bed_move keeps z exactly); on the bed with sv > 0
+#             (wt 2e-4, 0, -2e-4) 0 and the bed; at the top moving up 0 and
+#             the top.  A layer of zero thickness (hd = 0): no motion (z
+#             kept exactly, huge), with no division.  Before #299 neither
+#             routine exists (the bottom layer had the layer mean of w).
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -512,8 +542,9 @@
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
 # and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here;
-# modes vdiff-dt and walk-fold also gfortran on PATH and the source tree
-# three levels up (../../../src/shyfem/lagrange_dif.f90, as in a checkout).
+# modes vdiff-dt, walk-fold and bed-w also gfortran on PATH and the source
+# tree three levels up (../../../src/shyfem/lagrange_dif.f90, for bed-w
+# lagrange_vertical.f90, as in a checkout).
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
@@ -523,11 +554,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | bed-w | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|bed-w|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
 
@@ -1771,6 +1802,178 @@ EOF
       ( cd "$W" && ./walk_test ) || fail "lgr_walk_locate, lgr_walk_fold: wrong layer or relative depth"
     else
       fail "the test of lgr_walk_locate and lgr_walk_fold does not compile"; sed 's/^/    /' "$W/walk_build.log" | head -5
+    fi
+    fi
+  fi
+  finish
+fi
+
+#=============================== bed-w (#299) ==============================
+if [ "$MODE" = bed-w ]; then
+  echo "=== lgr_bed_move and lgr_bed_exit on their own: w(z) = wt (1 - z) - sv in the bottom layer, against RK4"
+  SRCF="$HERE/../../../src/shyfem/lagrange_vertical.f90"
+  if ! command -v gfortran > /dev/null 2>&1; then
+    fail "gfortran is not on PATH"
+  elif [ ! -f "$SRCF" ]; then
+    fail "no $SRCF"
+  else
+    awk '/^[ \t]*subroutine lgr_bed_move[(]/,/^[ \t]*end subroutine lgr_bed_move[ \t]*$/' "$SRCF" > "$W/bed.f90"
+    awk '/^[ \t]*subroutine lgr_bed_exit[(]/,/^[ \t]*end subroutine lgr_bed_exit[ \t]*$/' "$SRCF" >> "$W/bed.f90"
+    nfound=0
+    for r in lgr_bed_move lgr_bed_exit; do
+      if grep -q "end subroutine $r" "$W/bed.f90"; then
+        nfound=$((nfound + 1))
+      else
+        fail "$r not found in $SRCF"
+      fi
+    done
+    if [ "$nfound" = 2 ]; then
+    cat > "$W/bed_test.f90" <<'EOF'
+	program bed_test
+! lgr_bed_move and lgr_bed_exit (w(z) = wt (1 - z) - sv in the bottom
+! layer, z = 0 at its top, 1 at the bed) against an RK4 integration of
+! du/dt = (wt u - sv)/hd, u = 1 - z, with 10**5 steps
+	implicit none
+	double precision, parameter :: big = huge(1.d0)
+	double precision :: z1, te, tw
+	logical :: bup
+	integer :: nfail
+	nfail = 0
+	! the measured tapered case: sv = 0, the bed is never reached
+	call cmove(-1.d-4,0.d0,2.d0,0.3d0,3600.d0				&
+     &		,'sv = 0, wt = -1e-4, z0 = 0.3, t = 3600 s')
+	call cnever(-1.d-4,0.d0,2.d0,0.3d0,'sv = 0, wt = -1e-4, z0 = 0.3')
+	! wt = 0: linear, the bed at hd (1 - z0)/sv exactly
+	call cexit(0.d0,1.d-3,2.d0,0.3d0,.false.,'wt = 0, sv = 1e-3, z0 = 0.3')
+	call lgr_bed_exit(0.d0,1.d-3,2.d0,0.3d0,te,bup)
+	tw = 2.d0*(1.d0-0.3d0)/1.d-3
+	write(6,'(2x,a,es23.15,a,es23.15)') 'wt = 0: texit',te		&
+     &		,', hd (1 - z0)/sv',tw
+	if( abs(te-tw) > 1.d-12*tw ) nfail = nfail + 1
+	! equilibrium at u = sv/wt = 0.5: below it the bed, above it the top
+	call cexit(2.d-4,1.d-4,2.d0,0.6d0,.false.				&
+     &		,'wt = 2e-4, sv = 1e-4, z0 = 0.6 (below the equilibrium)')
+	call cexit(2.d-4,1.d-4,2.d0,0.4d0,.true.				&
+     &		,'wt = 2e-4, sv = 1e-4, z0 = 0.4 (above the equilibrium)')
+	! wt < 0, sv > 0: the bed in finite time from any z0
+	call cexit(-2.d-4,1.d-4,2.d0,0.d0,.false.,'wt = -2e-4, sv = 1e-4, z0 = 0')
+	call cexit(-2.d-4,1.d-4,2.d0,0.3d0,.false.,'wt = -2e-4, sv = 1e-4, z0 = 0.3')
+	call cexit(-2.d-4,1.d-4,2.d0,0.9d0,.false.,'wt = -2e-4, sv = 1e-4, z0 = 0.9')
+	! a round-off wt: the linear answer (no division by wt)
+	call cexit(1.d-18,3.d-5,2.d0,0.3d0,.false.,'wt = 1e-18, sv = 3e-5, z0 = 0.3')
+	call lgr_bed_exit(1.d-18,3.d-5,2.d0,0.3d0,te,bup)
+	tw = 2.d0*(1.d0-0.3d0)/3.d-5
+	write(6,'(2x,a,es23.15,a,es23.15)') 'wt = 1e-18: texit',te	&
+     &		,', linear',tw
+	if( abs(te-tw) > 1.d-9*tw ) nfail = nfail + 1
+	! a rising particle (sv < 0): the top; and one that approaches the
+	! stable equilibrium u = sv/wt = 0.5 from below, never the top
+	call cexit(-1.d-4,-3.d-4,2.d0,0.5d0,.true.,'wt = -1e-4, sv = -3e-4, z0 = 0.5')
+	call cnever(-2.d-4,-1.d-4,2.d0,0.8d0,'wt = -2e-4, sv = -1e-4, z0 = 0.8')
+	! the edge returns
+	call cnever(2.d-4,0.d0,2.d0,1.d0,'on the bed, sv = 0, wt = 2e-4')
+	call cnever(2.d-4,1.d-4,2.d0,0.5d0,'at the equilibrium u = sv/wt = 0.5')
+	call lgr_bed_move(2.d-4,1.d-4,2.d0,0.5d0,3600.d0,z1)
+	write(6,'(2x,a,f20.17)') 'at the equilibrium, z after 3600 s:',z1
+	if( z1 /= 0.5d0 ) nfail = nfail + 1
+	call lgr_bed_move(2.d-4,0.d0,2.d0,1.d0,3600.d0,z1)
+	write(6,'(2x,a,f20.17)') 'on the bed, sv = 0, z after 3600 s:',z1
+	if( z1 /= 1.d0 ) nfail = nfail + 1
+	call czero(2.d-4,1.d-4,2.d0,1.d0,.false.,'on the bed, sv = 1e-4, wt = 2e-4')
+	call czero(0.d0,1.d-4,2.d0,1.d0,.false.,'on the bed, sv = 1e-4, wt = 0')
+	call czero(-2.d-4,1.d-4,2.d0,1.d0,.false.,'on the bed, sv = 1e-4, wt = -2e-4')
+	call czero(2.d-4,1.d-4,2.d0,0.d0,.true.,'at the top, wt = 2e-4, sv = 1e-4')
+	! a layer of zero thickness: no motion, no division
+	call lgr_bed_move(-1.d-4,1.d-4,0.d0,0.3d0,3600.d0,z1)
+	call lgr_bed_exit(-1.d-4,1.d-4,0.d0,0.3d0,te,bup)
+	write(6,'(2x,a,f20.17,a,l2)') 'hd = 0: z after 3600 s',z1		&
+     &		,', texit huge',te == big
+	if( z1 /= 0.3d0 ) nfail = nfail + 1
+	if( te /= big ) nfail = nfail + 1
+	write(6,'(2x,a,i0)') 'failed checks: ',nfail
+	if( nfail > 0 ) stop 1
+	contains
+	double precision function rk4(wt,sv,hd,u0,t)
+	double precision, intent(in) :: wt,sv,hd,u0,t
+	integer, parameter :: n = 100000
+	integer :: i
+	double precision :: h,u,k1,k2,k3,k4
+	h = t/n
+	u = u0
+	do i = 1,n
+	  k1 = (wt*u-sv)/hd
+	  k2 = (wt*(u+0.5d0*h*k1)-sv)/hd
+	  k3 = (wt*(u+0.5d0*h*k2)-sv)/hd
+	  k4 = (wt*(u+h*k3)-sv)/hd
+	  u = u + h*(k1+2.d0*k2+2.d0*k3+k4)/6.d0
+	end do
+	rk4 = u
+	end function rk4
+	subroutine cmove(wt,sv,hd,z0,t,text)
+	! lgr_bed_move against RK4 after the time t
+	double precision, intent(in) :: wt,sv,hd,z0,t
+	character(len=*), intent(in) :: text
+	double precision :: z,zr
+	call lgr_bed_move(wt,sv,hd,z0,t,z)
+	zr = 1.d0 - rk4(wt,sv,hd,1.d0-z0,t)
+	write(6,'(2x,a,a,f12.9,a,f12.9,a,es9.2)') text,': z ',z,', RK4 ',zr	&
+     &		,', diff ',abs(z-zr)
+	if( .not. abs(z-zr) <= 1.d-7 ) nfail = nfail + 1
+	end subroutine cmove
+	subroutine cexit(wt,sv,hd,z0,bupw,text)
+	! a finite exit time to the top (bupw) or the bed: RK4 is there at
+	! that time, so is lgr_bed_move; halfway they agree
+	double precision, intent(in) :: wt,sv,hd,z0
+	logical, intent(in) :: bupw
+	character(len=*), intent(in) :: text
+	double precision :: t,z,zr,zw
+	logical :: bu
+	call lgr_bed_exit(wt,sv,hd,z0,t,bu)
+	zw = 1.d0
+	if( bupw ) zw = 0.d0
+	if( t == big .or. .not. t > 0.d0 .or. (bu .neqv. bupw) ) then
+	  write(6,'(2x,a,a,es12.4,a,l2,a,l2)') text,': texit',t,', top',bu	&
+     &		,', expected a finite time, top',bupw
+	  nfail = nfail + 1
+	  return
+	end if
+	call lgr_bed_move(wt,sv,hd,z0,t,z)
+	zr = 1.d0 - rk4(wt,sv,hd,1.d0-z0,t)
+	write(6,'(2x,a,a,f12.3,a,l2,a,f12.9,a,f12.9,a,f4.1)') text		&
+     &		,': texit',t,', top',bu,', z then ',z,', RK4 ',zr,', expected',zw
+	if( .not. abs(z-zw) <= 1.d-9 ) nfail = nfail + 1
+	if( .not. abs(zr-zw) <= 1.d-7 ) nfail = nfail + 1
+	call cmove(wt,sv,hd,z0,0.5d0*t,'  halfway')
+	end subroutine cexit
+	subroutine cnever(wt,sv,hd,z0,text)
+	! never at the top or the bed: huge; after 3600 s lgr_bed_move as RK4
+	double precision, intent(in) :: wt,sv,hd,z0
+	character(len=*), intent(in) :: text
+	double precision :: t
+	logical :: bu
+	call lgr_bed_exit(wt,sv,hd,z0,t,bu)
+	write(6,'(2x,a,a,l2)') text,': texit huge',t == big
+	if( t /= big ) nfail = nfail + 1
+	call cmove(wt,sv,hd,z0,3600.d0,'  after 3600 s')
+	end subroutine cnever
+	subroutine czero(wt,sv,hd,z0,bupw,text)
+	! on a boundary, moving out: 0, to the top (bupw) or the bed
+	double precision, intent(in) :: wt,sv,hd,z0
+	logical, intent(in) :: bupw
+	character(len=*), intent(in) :: text
+	double precision :: t
+	logical :: bu
+	call lgr_bed_exit(wt,sv,hd,z0,t,bu)
+	write(6,'(2x,a,a,es10.3,a,l2,a,l2,a)') text,': texit',t,', top',bu	&
+     &		,' (expected 0,',bupw,')'
+	if( t /= 0.d0 .or. (bu .neqv. bupw) ) nfail = nfail + 1
+	end subroutine czero
+	end program bed_test
+EOF
+    if ( cd "$W" && gfortran -fcheck=bounds -ffpe-trap=zero,invalid,overflow -o bed_test bed_test.f90 bed.f90 > bed_build.log 2>&1 ); then
+      ( cd "$W" && ./bed_test ) || fail "lgr_bed_move, lgr_bed_exit: wrong relative depth or exit time"
+    else
+      fail "the test of lgr_bed_move and lgr_bed_exit does not compile"; sed 's/^/    /' "$W/bed_build.log" | head -5
     fi
     fi
   fi
