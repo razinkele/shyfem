@@ -1,6 +1,6 @@
 # Design: a new vertical random walk for `ilagr = 3` (#286, #287, #283 part 1, #299)
 
-Status: DRAFT, to be checked by a builder and then approved by the owner. The gradient step's constants are the owner's decision of 2026-11-25: setting **B07**, f = 0.07 and a 0.2 s floor, with the walk-only budget **≤ 2.1x** (§2, §5.2). The measurement found no setting that met both the accuracy margin and 2x (reportMwalk2.md).
+Status: checked by a builder (its questions are settled below, each marked *my call* where it is mine); awaiting the owner's approval. The gradient step's constants are the owner's decision of 2026-11-25: setting **B07**, f = 0.07 and a 0.2 s floor, with the walk-only budget **≤ 2.1x** (§2, §5.2). The measurement found no setting that met both the accuracy margin and 2x (reportMwalk2.md).
 
 ## 1. Intent
 
@@ -31,7 +31,8 @@ The owner's decision is to fix all four in **one change**, so that `ilagr = 3` r
 - the horizontal walk;
 - `ilagr` 1 and 2;
 - `ilagr = 3` under MPI, which still stops with a message;
-- restarts (#303, #304).
+- restarts (#303, #304);
+- sediment deposition under `ilagr = 3`. `lgr_sediment` deposits a particle only when it sits at exactly z = 1 in the bottom layer after the step. With K > 0, today's walk almost never leaves a particle there (M299: no output particle at exactly z = 1), and the reflecting walk never will. The change must not make it worse for still water: with K = 0, a settling particle must still reach z = 1 (§5.3, §6 test 6). *(My call: this stays outside the four issues; it is recorded here and will be filed as a separate issue.)*
 
 **Anti-goals.** The change fails, even if it works, if:
 - the walk's own cost (walk-only) is more than **2.1x** today's walk on either reference case, timed on the production code. The owner said "up to 2x slower is fine" and confirmed that this means the walk's own cost, not the whole run. On 2026-11-25 they accepted up to about 2.1x, because the chosen setting measured 2.06–2.08x on the prototype. The reference cases are the `check_lgr_fixes.sh ilagr3` reproducer and the particle-heavy GOTM case without advection (39,960 particles). The ratio depends on the case: on the #299 forced case it is about 1.5x, and on the parabolic test profile 2.2–3.1x (computed, not timed);
@@ -95,7 +96,7 @@ The prototype is `lgr_diff_vert_last` on `investigate/lgr-vdiff-cap`. It recompu
 dtvd(ie) = min(T, d_curv, max(g_floor, d_grad)), where:
 - **d_curv** = max(2 s, 1/(100·max|K″|)). This is today's rule (#257) with today's 2 s floor, unchanged. A lower curvature floor (0.5 s, setting A2) changed nothing measurable.
 - **d_grad** = f·min over layers of K_min,l/K′_l². The condition keeps the drift K′·dt small against the scale K/K′ over which K changes. Visser (1997) states only the curvature condition, so the code comment must not attribute this one to him. It is applied per layer, including in one-layer columns. A layer with K′ = 0 adds no limit, so at constant K the walk takes the model step.
-- **f = 0.07 and g_floor = 0.2 s** (setting B07, the owner's choice; see "The constants" below).
+- **f = 0.07 and g_floor = 0.2 s** (setting B07, the owner's choice; see "The constants" below). Both are named constants in the code, not STR parameters, since approach B (a parameter) was declined.
 - A layer of zero thickness keeps today's rule: the smallest step (2 s).
 
 **At constant K** every candidate setting gives a particle file byte-identical to plain N2 and makes exactly 1 call per step (still water, K = 1e-2, default levels).
@@ -115,11 +116,20 @@ dtvd(ie) = min(T, d_curv, max(g_floor, d_grad)), where:
 - **Owner's decision (2026-11-25): B07**, with the walk-only budget raised to about 2.1x if production timing is still over 2x. The walk's own cost is the measure, not the whole run. If production timing exceeds 2.1x on either reference case, the builder stops and reports instead of retuning f or the floor. *(My call.)*
 
 ### 5.3 The bed velocity (#299, `lagrange_vertical.f90`)
-In the **bottom layer only**, a particle's vertical velocity is linear in z:
+In the **bottom layer only**, and only in columns with more than one layer (as measured), the flow's vertical velocity is linear in z:
 - from the element-mean interface velocity at the layer's top;
 - to 0 at the bed.
 
-It is integrated exactly over the particle's time in the layer, with `hd` recomputed. This is M299's variant 1, which took the bottom 5 % from 0.46 to 0.89 (K ≈ 0) and from 0.49 to 0.89 (GOTM).
+One-layer columns keep today's velocity.
+
+**The particle's settling velocity is not tapered:** w = w_top·(1 − z) − sv.
+- The bed condition belongs to the water, and settling is the particle's motion relative to the water.
+- The measured prototype tapered the whole velocity, (w_top − sv)·(1 − z). That makes a settling particle approach the bed exponentially and never reach z = 1, so it could never deposit.
+- In every measured case sv = 0, where the two forms are identical, so the measurements stand.
+
+*(My call.)*
+
+It is integrated exactly over the particle's time in the layer, with `hd` recomputed. With sv ≠ 0 the motion still has a closed form. With w > 0 upward and z = 0 at the layer top, (1 − z) − sv/w_top grows or decays by the factor exp(w_top·t/hd), and 1 − z changes linearly at −sv/hd when w_top = 0. The builder derives the time to reach the layer top or the bed. This is M299's variant 1, which took the bottom 5 % from 0.46 to 0.89 (K ≈ 0) and from 0.49 to 0.89 (GOTM).
 
 **With the new walk** (B07, the #299 closed forced case, seeds 1 and 2; reportMwalk2.md §D):
 
@@ -146,10 +156,11 @@ Each test must be shown **RED on main** (for the reason the issue gives) and **G
    - `LGR_TEST_NOADV`: particles are not advected.
    - Required: linear and parabolic each below 31 on their fixed seeds. They are RED on main (3198 and 148).
    - **GOTM without advection** is reported and only gated at 31. It is not a RED-on-main test, because today's walk already passes there (17.6 and 20.8). *(My call: it guards against regression; it does not prove the fix.)*
-3. **Thin layers (#287):** still water, constant K (`iturb = 0`, `diftur`, kept since #248), uniform 0.5 m levels. K_eff/K from the hourly displacement variance far from the surface and bed must be within **0.1** of 1. The new walk measured 1.00 ± 0.003 (K = 1e-3) and 1.02 ± 0.02 (K = 1e-2) on one seed; main gives 0.14–0.36. At constant K every candidate setting is byte-identical to plain N2, so this test does not depend on the open constants. *(My call: 0.1 is 5x the larger measured ± and far from main.)*
+3. **Thin layers (#287):** still water, constant K (`iturb = 0`, `diftur`, kept since #248), uniform 0.5 m levels. K_eff/K from the hourly displacement variance far from the surface and bed must be within **0.1** of 1. The new walk measured 1.00 ± 0.003 (K = 1e-3) and 1.02 ± 0.02 (K = 1e-2) on one seed; main gives 0.14–0.36. At constant K every candidate setting is byte-identical to plain N2, so this test does not depend on the constants. *(My call: 0.1 is 5x the larger measured ± and far from main.)*
 4. **#299 bottom:** the closed forced case (`mm_hyd_41`, both boundaries `ibtyp = 0`, GOTM, 39,960 particles, one day). The bottom 5 % at 24 h must be ≥ **0.80**. The new walk with the bed fix gave 0.88 and 0.89 on 2 seeds; main gives 0.49. *(My call.)*
 5. **#283 part 1:** part 1 of the prototype `check_setup_order.sh` (203fc8dc): the first particle step sees the closure's K.
-6. **Updated:** `check_lgr_fixes.sh ilagr3`. The calls per step and the cap lines change: there are no stops, so the cap is never reached and the two-zero-time-calls rule cannot fire. The run must still end, write the lines once, and hold valid particles.
+6. **Settling to the bed:** still water, K = 0, more than one layer, particles with a non-zero settling velocity. Every particle must reach z = 1 in the bottom layer within the time the settling speed implies, and stay there. This test guards the untapered sv of §5.3. With `ised` set, the particles must also deposit. *(My call: this is the one place where the bed fix could break sediment runs.)*
+7. **Updated:** `check_lgr_fixes.sh ilagr3`. The calls per step and the cap lines change: there are no stops, so the cap is never reached and the two-zero-time-calls rule cannot fire. The run must still end, write the lines once, and hold valid particles.
 
 **Results that change** (the CHANGELOG line carries a results-change clause): every `ilagr = 3` run. Nothing else may change:
 - `ilagr` 1 and 2;
@@ -163,7 +174,7 @@ Show this with both binaries and `cmp`.
 **Cost**, reported in the PR:
 - calls per step and user CPU on the two reference cases (§2), against main, whole run and walk-only;
 - sequential runs, median of 3, at low load;
-- the walk-only ratio must be ≤ 2.1x on both reference cases (§2).
+- the walk-only ratio must be ≤ 2.1x on both reference cases (§2). The verdict uses the median of the 3 runs. The timing scatter (per-run 2.00–2.12 for B07 on the prototype) is the reason the owner set 2.1x rather than 2x.
 
 The measurement's method is kept in reportMwalk2.md §E: walk-only = (user − fixed part) / (S − fixed part), where the fixed part is the same run at constant K.
 
@@ -171,7 +182,8 @@ The measurement's method is kept in reportMwalk2.md §E: walk-only = (user − f
 - With the new walk, the top of the column holds slightly more particles than uniform on the GOTM case without advection: top 5 % at 1.03–1.06 (top 15 % 1.01–1.05) in every N2 setting.
 - Today's walk shows none there (top 15 % 0.98).
 - χ² still passes, and the mechanism is not known.
-- The PR reports the top 5 % on that case. The excess must not grow beyond 1.06.
+- The PR reports the top 5 % on that case, for 3 seeds. B07 measured 1.034–1.052.
+- It is not a test in the repo. If any seed exceeds 1.06, the builder stops and reports to the owner, as for cost.
 
 *(My call: record and bound it, and do not hold the change for it.)*
 
