@@ -1,0 +1,221 @@
+diff --git a/src/shyfem/lagrange_data.f90 b/src/shyfem/lagrange_data.f90
+index 01e721f5..9fe3f937 100644
+--- a/src/shyfem/lagrange_data.f90
++++ b/src/shyfem/lagrange_data.f90
+@@ -198,6 +198,19 @@
+ 	integer, save :: lgr_dbg_kprof = 0	  !LGR_DBG_KPROF: 1 linear,
+ 						  !2 parabolic K over depth
+ 	integer(kind=8), save :: lgr_dbg_nflip = 0 !KFIX: velocity reversed
++	!DEBUG mwalk (throwaway, never committed): step criteria with a
++	!gradient term, bit flags of LGR_DBG_DTCRIT: 1 K'**2 dt <= facv K,
++	!2 sqrt(2 K dt) <= facs h, 4 |K'| dt <= facd h; LGR_DBG_DTMIN floor
++	integer, save :: lgr_dbg_dtcrit = 0
++	real, save :: lgr_dbg_facv = 0.1, lgr_dbg_facs = 0.5
++	real, save :: lgr_dbg_facd = 0.1, lgr_dbg_dtmin = 2.0
++	!DEBUG mwalk2 (throwaway, never committed): LGR_DBG_DTMIN is the
++	!floor of the curvature step only, LGR_DBG_DTMING the floor of the
++	!gradient step (< 0: unset, the gradient step takes LGR_DBG_DTMIN);
++	!SHYFEM_D299_WLIN=1: variant 1 of #299 in track_xi (w linear in z
++	!in the bottom layer, 0 at the bed)
++	real, save :: lgr_dbg_dtming = -1.
++	integer, save :: lgr_dbg_d299 = 0
+ 	!diffusivity wde the walk reads (lag_vdiff_ele), interfaces 0..lmax
+ 	!of the elements with lmax >= 2: index 1 first step, 2 later steps
+ 	real, save :: lgr_dbg_kmin(2) = huge(1.), lgr_dbg_kmax(2) = 0.
+diff --git a/src/shyfem/lagrange_dif.f90 b/src/shyfem/lagrange_dif.f90
+index 224487d3..49ad9a7a 100644
+--- a/src/shyfem/lagrange_dif.f90
++++ b/src/shyfem/lagrange_dif.f90
+@@ -643,11 +643,16 @@
+ 	logical			:: bzero	!a layer of zero thickness
+ 	real			:: dtd		!random walk time step
+         integer 		:: lmax 	!maximum layers in element
+-	real, parameter 	:: dtmin = 2.0	!minimum time step
++	real		 	:: dtmin	!minimum time step (DEBUG mwalk)
++	real			:: dtg		!DEBUG mwalk: gradient criteria
++	real			:: dtming	!DEBUG mwalk2: gradient floor
+ 	real, parameter 	:: difmol = 1.0e-06
+ 
+ 	call get_timestep(time)
+ 	if( .not. lgr_dbg_init ) call lgr_dbg_read_env	!DEBUG #261
++	dtmin = lgr_dbg_dtmin		!DEBUG mwalk: 2 s unless set
++	dtming = dtmin			!DEBUG mwalk2: DTMIN unless set
++	if( lgr_dbg_dtming >= 0. ) dtming = lgr_dbg_dtming
+ 
+         do ie = 1,nel
+ 
+@@ -727,6 +732,11 @@
+               dtd = max(dtmin, dtd)
+ 	    end if
+ 	  end if
++	  if( lgr_dbg_dtcrit > 0 ) then		!DEBUG mwalk: also lmax = 1
++	    dtg = time
++	    call lgr_dbg_dtgrad(lmax,hl,wde(0:lmax,ie),dtg)
++	    if( dtg < dtd ) dtd = min(dtd,max(dtming,dtg))	!DEBUG mwalk2
++	  end if
+ 	  dtvd(ie) = dtd
+ 	  ii = min(ceiling(time/min(dtd,time)),lgr_dbg_nh)	!DEBUG #261
+ 	  if( ie == nel ) lgr_dbg_k1done = .true.		!DEBUG #261
+@@ -792,6 +802,55 @@
+ 
+ 	end subroutine lgr_vdiff_curvature
+ 
++!******************************************************************
++
++	subroutine lgr_dbg_dtgrad(lmax,hl,wd,dtd)
++
++! DEBUG mwalk (throwaway, never committed): random walk step criteria with
++! a gradient term, per layer l of the column (K' = (K(l)-K(l-1))/hl(l)):
++!   bit 1: dt <= facv * Kmin / K'**2  (Visser: drift K' dt small against
++!          the scale K/K' of K)
++!   bit 2: dt <= (facs * hl)**2 / (2 Kmax)  (sqrt(2 K dt) <= facs * hl)
++!   bit 4: dt <= facd * hl / |K'|  (drift K' dt <= facd * hl)
++! dtd is lowered to the smallest of the selected criteria
++
++	use mod_lagrange
++
++	implicit none
++
++	integer, intent(in)	:: lmax
++	real, intent(in)	:: hl(lmax)
++	real, intent(in)	:: wd(0:lmax)
++	real, intent(inout)	:: dtd
++
++	integer :: l
++	double precision :: dk,kmin,kmax,dtl
++
++	do l = 1,lmax
++	  if( hl(l) <= 0. ) cycle
++	  dk = (dble(wd(l))-dble(wd(l-1)))/hl(l)
++	  kmin = max(1.d-6,dble(min(wd(l-1),wd(l))))
++	  kmax = max(1.d-6,dble(max(wd(l-1),wd(l))))
++	  if( iand(lgr_dbg_dtcrit,1) /= 0 ) then
++	    if( dk /= 0.d0 ) then
++	      dtl = lgr_dbg_facv*kmin/(dk*dk)
++	      if( dtl < dtd ) dtd = real(dtl)
++	    end if
++	  end if
++	  if( iand(lgr_dbg_dtcrit,2) /= 0 ) then
++	    dtl = (lgr_dbg_facs*hl(l))**2/(2.d0*kmax)
++	    if( dtl < dtd ) dtd = real(dtl)
++	  end if
++	  if( iand(lgr_dbg_dtcrit,4) /= 0 ) then
++	    if( dk /= 0.d0 ) then
++	      dtl = lgr_dbg_facd*hl(l)/abs(dk)
++	      if( dtl < dtd ) dtd = real(dtl)
++	    end if
++	  end if
++	end do
++
++	end subroutine lgr_dbg_dtgrad
++
+ !******************************************************************
+ ! Horizontal diffusion of body id
+ 
+@@ -1205,6 +1264,27 @@
+ 	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_kprof
+ 	call get_environment_variable('LGR_DBG_DTMAX',sval,status=ist)
+ 	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_dtmax
++	call get_environment_variable('LGR_DBG_DTCRIT',sval,status=ist)
++	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_dtcrit
++	call get_environment_variable('LGR_DBG_FACV',sval,status=ist)
++	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_facv
++	call get_environment_variable('LGR_DBG_FACS',sval,status=ist)
++	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_facs
++	call get_environment_variable('LGR_DBG_FACD',sval,status=ist)
++	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_facd
++	call get_environment_variable('LGR_DBG_DTMIN',sval,status=ist)
++	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_dtmin
++	call get_environment_variable('LGR_DBG_DTMING',sval,status=ist)	!mwalk2
++	if( ist == 0 ) read(sval,*,iostat=ios) lgr_dbg_dtming
++	call get_environment_variable('SHYFEM_D299_WLIN',sval,status=ist) !mwalk2
++	if( ist == 0 ) then
++	  if( trim(sval) == '1' ) lgr_dbg_d299 = 1
++	end if
++	write(6,'(a,i0,4(1x,g0.6))') ' lgr_dbg mwalk dtcrit facv facs facd dtmin '	&
++     &		,lgr_dbg_dtcrit,lgr_dbg_facv,lgr_dbg_facs,lgr_dbg_facd	&
++     &		,lgr_dbg_dtmin
++	write(6,'(a,g0.6,a,i0)') ' lgr_dbg mwalk2 dtming ',lgr_dbg_dtming	&
++     &		,' d299 ',lgr_dbg_d299
+ 	write(6,*) 'lgr_dbg dtmax ',lgr_dbg_dtmax
+ 	write(6,*) 'lgr_dbg kprof ',lgr_dbg_kprof
+ 	write(6,*) 'lgr_dbg kfix tfix nostop mode ',lgr_dbg_kfix,lgr_dbg_tfix	&
+diff --git a/src/shyfem/lagrange_vertical.f90 b/src/shyfem/lagrange_vertical.f90
+index bb478a31..20cdb283 100644
+--- a/src/shyfem/lagrange_vertical.f90
++++ b/src/shyfem/lagrange_vertical.f90
+@@ -297,6 +297,8 @@
+ ! the particle has (all defined); the run stops after the loop
+ 
+ 	use mod_lagrange
++	use mod_hydro_vel, only : wlov, wlnv	!DEBUG mwalk2: variant 1 #299
++	use basin, only : nen3v			!DEBUG mwalk2: variant 1 #299
+ 
+ 	implicit none
+ 
+@@ -321,6 +323,9 @@
+ 	double precision dz,hd
+ 	double precision xis(3)
+ 	double precision xie(3)
++	logical blin			!DEBUG mwalk2: variant 1 #299
++	integer k
++	double precision wtop,wdum
+ 
+ 	logical track_xi_on_material_boundary
+ 	logical lgr_internal_failed
+@@ -366,6 +371,25 @@
+ 	  z  = 0.d0
+ 	end if
+ 
++	!DEBUG mwalk2 (throwaway, never committed): variant 1 of #299
++	!(SHYFEM_D299_WLIN=1): in the bottom layer w is linear in z, from the
++	!element-mean interface w at its top to 0 at the bed, integrated
++	!exactly, hd of the layer recomputed
++	blin = .false.
++	wtop = 0.d0
++	if( lgr_dbg_d299 == 1 .and. lb == lmax .and. lmax > 1 ) then
++	  if( .not. ( blgrsurf .or. blgr2d ) ) then
++	    call track_xi_get_vertical(id,iel,lb,lmax,hd,wdum)	!hd of lb
++	    do ii=1,3
++	      k = nen3v(ii,iel)
++	      wtop = wtop + 0.5d0*(wlov(lmax-1,k)+wlnv(lmax-1,k))
++	    end do
++	    wtop = wtop/3.d0 - sv
++	    w = wtop*(1.d0-z)
++	    blin = .true.
++	  end if
++	end if
++
+ 	!-----------------------------------------------
+ 	! gets flux and vel information for element and layer
+ 	!-----------------------------------------------
+@@ -422,7 +446,12 @@
+ 
+ 	tv = 2.*time
+ 
+-	if( w /= 0. ) then
++	if( blin ) then			!DEBUG mwalk2: variant 1 #299
++	  dv = 0.
++	  if( wtop > 0.d0 .and. z < 1.d0 ) then
++	    tv = hd*log(1.d0/(1.d0-z))/wtop	!time to reach the top
++	  end if
++	else if( w /= 0. ) then
+ 	  if( w > 0. ) then
+ 	    dv = hd*z
+ 	    tv = dv / w
+@@ -536,8 +565,13 @@
+ 	if( tv == 0. ) then		!body not moving
+ 	  !
+ 	else if( tv > t ) then		!body remains in layer
+-	  dz = w*t/hd
+-	  z = z - dz
++	  if( blin ) then		!DEBUG mwalk2: variant 1 #299
++	    z = 1.d0 - (1.d0-z)*exp(wtop*t/hd)
++	    z = max(z,0.d0)
++	  else
++	    dz = w*t/hd
++	    z = z - dz
++	  end if
+ 	else
+ 	  if( w > 0. ) then
+ 	    if( lb > 1 ) then

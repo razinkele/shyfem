@@ -1,0 +1,368 @@
+diff --git a/src/shyfem/lagrange_data.f90 b/src/shyfem/lagrange_data.f90
+index 194a9aae..e29bd257 100644
+--- a/src/shyfem/lagrange_data.f90
++++ b/src/shyfem/lagrange_data.f90
+@@ -245,6 +245,15 @@
+         real, save, allocatable :: wde(:,:)	!vertical diffusivity on elems
+         real, save, allocatable :: dtvd(:)	!vertical random walk time step
+ 
++	!throwaway diagnostic #299 (never committed): d299_w(1:4,ie) time
++	!integrals of the bottom layer's layer-mean w, |w|, its top
++	!interface w, |w|; d299_n(1:2,ie) calls of track_xi on the bed with
++	!w < 0 (held) and w > 0 (lifted); d299_mode 1 (SHYFEM_D299_WLIN=1)
++	!makes w linear in z in the bottom layer, 0 at the bed
++        double precision, save, allocatable :: d299_w(:,:)
++        integer, save, allocatable :: d299_n(:,:)
++        integer, save :: d299_mode = 0
++
+ 	!---------------------------------------------
+ 	! backtracking
+ 	!---------------------------------------------
+diff --git a/src/shyfem/lagrange_flux.f90 b/src/shyfem/lagrange_flux.f90
+index 7ded004d..8f2169a9 100644
+--- a/src/shyfem/lagrange_flux.f90
++++ b/src/shyfem/lagrange_flux.f90
+@@ -469,3 +469,96 @@
+ 
+ !**********************************************************************
+ 
++
++!******************************************************************
++
++	subroutine lgr_dbg299(mode)
++
++! throwaway diagnostic #299 (never committed). mode 0: once, before the
++! first particle step, allocates the arrays and reads SHYFEM_D299_WLIN
++! (1: the variant of track_xi, d299_mode 1); mode 1: after each particle
++! step, adds the bottom layer's layer-mean w (as track_xi_get_vertical
++! gives it), |w|, the element-mean interface w at its top and |w| times
++! the time step, and every full hour writes them with the held/lifted
++! counters of track_xi to d299.txt (main thread, serial runs only)
++
++	use mod_lagrange
++	use mod_hydro_vel, only : wlov, wlnv
++	use levels, only : ilhv
++	use basin, only : nel, nen3v
++	use mod_lagrange_mpi, only : lgr_ieltv
++
++	implicit none
++
++	integer, intent(in) :: mode
++
++	integer, save :: iu = 0
++	integer ie,ii,k,lmax,ierr
++	real dt
++	double precision dtime,wt,wbot,wb,f
++	integer nb
++	logical bwall
++	character(len=16) :: env
++
++	if( mode == 0 ) then
++	  if( allocated(d299_w) ) return
++	  allocate(d299_w(7,nel),d299_n(4,nel),stat=ierr)
++	  if( ierr /= 0 ) call shympi_abort_internal('lgr_dbg299: allocation')
++	  d299_w = 0.d0
++	  d299_n = 0
++	  env = ' '
++	  call get_environment_variable('SHYFEM_D299_WLIN',env)
++	  if( env == '1' ) d299_mode = 1
++	  if( env == '2' ) d299_mode = 2
++	  open(newunit=iu,file='d299.txt',status='replace',iostat=ierr)
++	  if( ierr /= 0 ) call shympi_abort_internal('lgr_dbg299: open')
++	  write(6,*) 'd299: throwaway diagnostic, variant mode ',d299_mode
++	  return
++	end if
++
++	call get_timestep(dt)
++	call get_act_dtime(dtime)
++	do ie=1,nel
++	  lmax = ilhv(ie)
++	  if( lmax < 2 ) cycle
++	  wt = 0.d0
++	  wbot = 0.d0
++	  do ii=1,3
++	    k = nen3v(ii,ie)
++	    wt = wt + 0.5d0*(wlov(lmax-1,k)+wlnv(lmax-1,k))
++	    wbot = wbot + 0.5d0*(wlov(lmax,k)+wlnv(lmax,k))
++	  end do
++	  wt = wt/3.d0
++	  wbot = wbot/3.d0
++	  wb = 0.5d0*(wt+wbot)
++	  d299_w(1,ie) = d299_w(1,ie) + wb*dt
++	  d299_w(2,ie) = d299_w(2,ie) + abs(wb)*dt
++	  d299_w(3,ie) = d299_w(3,ie) + wt*dt
++	  d299_w(4,ie) = d299_w(4,ie) + abs(wt)*dt
++	  ! flux3d of the bottom layer over sides whose neighbour lacks the
++	  ! layer (a wall in z): inflow, outflow; and the inflow over all
++	  ! other sides (flux3d > 0 into the element)
++	  do ii=1,3
++	    nb = lgr_ieltv(ii,ie)
++	    f = flux3d(lmax,ii,ie)
++	    bwall = .false.
++	    if( nb > 0 ) bwall = ilhv(nb) < lmax
++	    if( bwall ) then
++	      d299_w(5,ie) = d299_w(5,ie) + max(f,0.d0)*dt
++	      d299_w(6,ie) = d299_w(6,ie) + max(-f,0.d0)*dt
++	    else if( nb /= 0 ) then
++	      d299_w(7,ie) = d299_w(7,ie) + max(f,0.d0)*dt
++	    end if
++	  end do
++	end do
++
++	if( mod(nint(dtime),3600) == 0 ) then
++	  write(iu,'(a,f12.1)') 'time ',dtime
++	  do ie=1,nel
++	    write(iu,'(i6,i4,7es14.6,4i10)') ie,ilhv(ie),d299_w(:,ie)	&
++     &				,d299_n(:,ie)
++	  end do
++	  flush(iu)
++	end if
++
++	end
+diff --git a/src/shyfem/lagrange_main.f90 b/src/shyfem/lagrange_main.f90
+index fe4ce11b..b82fd138 100644
+--- a/src/shyfem/lagrange_main.f90
++++ b/src/shyfem/lagrange_main.f90
+@@ -355,7 +355,9 @@
+ !---------------------------------------------------------------
+ 
+ 	lgr_step = lgr_step + 1		!set here, only read inside drogue
++	call lgr_dbg299(0)		!throwaway diagnostic #299
+  	call drogue(dtime)
++	call lgr_dbg299(1)		!throwaway diagnostic #299
+ 
+ !---------------------------------------------------------------
+ ! hand-over of the particles that reached a cut-off side of the MPI
+diff --git a/src/shyfem/lagrange_vertical.f90 b/src/shyfem/lagrange_vertical.f90
+index bb478a31..1a56ac14 100644
+--- a/src/shyfem/lagrange_vertical.f90
++++ b/src/shyfem/lagrange_vertical.f90
+@@ -297,6 +297,8 @@
+ ! the particle has (all defined); the run stops after the loop
+ 
+ 	use mod_lagrange
++	use mod_hydro_vel, only : wlov, wlnv	!throwaway variant #299
++	use basin, only : nen3v			!throwaway variant #299
+ 
+ 	implicit none
+ 
+@@ -321,6 +323,11 @@
+ 	double precision dz,hd
+ 	double precision xis(3)
+ 	double precision xie(3)
++	logical blin			!throwaway variant #299
++	integer k
++	double precision wtop,wdum
++	logical blin2			!throwaway variant #299, mode 2
++	double precision wbot,wtg,dzt,del,gfac,xa,fexp,zeta
+ 
+ 	logical track_xi_on_material_boundary
+ 	logical lgr_internal_failed
+@@ -353,6 +360,45 @@
+ 	bsurf = lb .eq. 1 .and. z .eq. 0.d0	!particle on surface
+ 	bbott = lb .eq. lmax .and. z .eq. 1.d0	!particle on bottom
+ 
++	if( allocated(d299_n) ) then		!throwaway diagnostic #299
++	  if( bbott ) then
++	    if( w < 0.d0 ) then
++!$OMP ATOMIC
++	      d299_n(1,iel) = d299_n(1,iel) + 1
++	    else if( w > 0.d0 ) then
++!$OMP ATOMIC
++	      d299_n(2,iel) = d299_n(2,iel) + 1
++	    end if
++	  end if
++	end if
++
++	!throwaway variant #299 (d299_mode 2): w linear in z in every layer
++	!between the element-mean interface velocities, 0 at the element's
++	!bed; a particle on an interface goes where the interface velocity
++	!points (hd and w of the new layer)
++	blin2 = .false.
++	wbot = 0.d0
++	if( d299_mode == 2 .and. lmax > 1 ) then
++	  if( .not. ( blgrsurf .or. blgr2d ) ) blin2 = .true.
++	end if
++
++	if( blin2 ) then
++	  call d299_wif(iel,lb,lmax,sv,wtop,wbot)
++	  if( z == 0.d0 .and. wtop > 0.d0 .and. lb > 1 ) then
++	    lb = lb - 1
++	    z = 1.d0
++	    call track_xi_get_vertical(id,iel,lb,lmax,hd,wdum)
++	    call d299_wif(iel,lb,lmax,sv,wtop,wbot)
++	  else if( z == 1.d0 .and. wbot < 0.d0 .and. lb < lmax ) then
++	    lb = lb + 1
++	    z = 0.d0
++	    call track_xi_get_vertical(id,iel,lb,lmax,hd,wdum)
++	    call d299_wif(iel,lb,lmax,sv,wtop,wbot)
++	  end if
++	  w = wtop*(1.d0-z) + wbot*z
++	  if( lb == 1 .and. z == 0.d0 .and. w > 0.d0 ) w = 0.d0
++	  if( lb == lmax .and. z == 1.d0 .and. w < 0.d0 ) w = 0.d0
++	else
+ 	if( bsurf .and. w > 0.d0 ) w = 0.d0
+ 	if( bbott .and. w < 0.d0 ) w = 0.d0
+ 	if( blgrsurf .or. blgr2d ) w = 0.d0	!advection only in surface layer
+@@ -365,6 +411,24 @@
+ 	  lb = lb + 1
+ 	  z  = 0.d0
+ 	end if
++	end if
++
++	!throwaway variant #299 (d299_mode 1): in the bottom layer w is linear
++	!in z, from the element-mean interface w at its top to 0 at the bed
++	blin = .false.
++	wtop = 0.d0
++	if( d299_mode == 1 .and. lb == lmax .and. lmax > 1 ) then
++	  if( .not. ( blgrsurf .or. blgr2d ) ) then
++	    call track_xi_get_vertical(id,iel,lb,lmax,hd,wdum)	!hd of lb
++	    do ii=1,3
++	      k = nen3v(ii,iel)
++	      wtop = wtop + 0.5d0*(wlov(lmax-1,k)+wlnv(lmax-1,k))
++	    end do
++	    wtop = wtop/3.d0 - sv
++	    w = wtop*(1.d0-z)
++	    blin = .true.
++	  end if
++	end if
+ 
+ 	!-----------------------------------------------
+ 	! gets flux and vel information for element and layer
+@@ -422,7 +486,32 @@
+ 
+ 	tv = 2.*time
+ 
+-	if( w /= 0. ) then
++	if( blin ) then			!throwaway variant #299
++	  dv = 0.
++	  if( wtop > 0.d0 .and. z < 1.d0 ) then
++	    tv = hd*log(1.d0/(1.d0-z))/wtop	!time to reach the top
++	  end if
++	else if( blin2 ) then		!throwaway variant #299, mode 2
++	  dv = 0.
++	  wtg = 0.d0
++	  dzt = 0.d0
++	  if( w > 0.d0 ) then
++	    wtg = wtop
++	    dzt = z
++	  else if( w < 0.d0 ) then
++	    wtg = wbot
++	    dzt = -(1.d0-z)
++	  end if
++	  if( wtg*w > 0.d0 ) then	!reaches the interface (no stagnation)
++	    del = (wtg-w)/w
++	    if( abs(del) < 1.d-8 ) then
++	      gfac = 1.d0
++	    else
++	      gfac = log(1.d0+del)/del
++	    end if
++	    tv = hd*dzt/w*gfac
++	  end if
++	else if( w /= 0. ) then
+ 	  if( w > 0. ) then
+ 	    dv = hd*z
+ 	    tv = dv / w
+@@ -476,6 +565,7 @@
+             call track_xi_next_element(iel,xi,id,ncross,iside)    !for particles laying on side
+ 	    call track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+ 	    if( .not. bhas ) then	!just do vert adv
++	      call d299_putback(ieorig,lb,lmax)	!throwaway diagnostic #299
+ 	      iel = ieorig
+ 	      xi = xie
+             end if
+@@ -500,6 +590,7 @@
+ 	  call track_xi_check('after advection track_xi 2',id,xi)
+ 	  call track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+ 	  if( .not. bhas ) then	!just do vert adv
++	    call d299_putback(ieorig,lb,lmax)	!throwaway diagnostic #299
+ 	    iel = ieorig
+ 	    xi = xie
+ 	    if( th == 0. ) then
+@@ -536,8 +627,23 @@
+ 	if( tv == 0. ) then		!body not moving
+ 	  !
+ 	else if( tv > t ) then		!body remains in layer
+-	  dz = w*t/hd
+-	  z = z - dz
++	  if( blin ) then		!throwaway variant #299
++	    z = 1.d0 - (1.d0-z)*exp(wtop*t/hd)
++	    z = max(z,0.d0)
++	  else if( blin2 ) then		!throwaway variant #299, mode 2
++	    xa = (wtop-wbot)*t/hd
++	    if( abs(xa) < 1.d-6 ) then
++	      fexp = 1.d0 + 0.5d0*xa
++	    else
++	      fexp = (exp(xa)-1.d0)/xa
++	    end if
++	    zeta = (1.d0-z) + w*t/hd*fexp
++	    zeta = min(max(zeta,0.d0),1.d0)
++	    z = 1.d0 - zeta
++	  else
++	    dz = w*t/hd
++	    z = z - dz
++	  end if
+ 	else
+ 	  if( w > 0. ) then
+ 	    if( lb > 1 ) then
+@@ -1300,3 +1406,60 @@
+ 
+ !************************************************************
+ 
++
++!************************************************************
++
++	subroutine d299_putback(ie,lb,lmax)
++
++! throwaway diagnostic #299 (never committed): counts a particle put
++! back into element ie at a side whose neighbour lacks its layer lb
++! (d299_n(3,ie) in the bottom layer, d299_n(4,ie) above it)
++
++	use mod_lagrange
++
++	implicit none
++
++	integer, intent(in) :: ie,lb,lmax
++
++	if( .not. allocated(d299_n) ) return
++	if( ie < 1 ) return
++	if( lb == lmax ) then
++!$OMP ATOMIC
++	  d299_n(3,ie) = d299_n(3,ie) + 1
++	else
++!$OMP ATOMIC
++	  d299_n(4,ie) = d299_n(4,ie) + 1
++	end if
++
++	end
++
++!************************************************************
++
++	subroutine d299_wif(ie,lb,lmax,sv,wtop,wbot)
++
++! throwaway variant #299 (never committed): element-mean interface
++! velocities (old and new time level) at the top and bottom of layer lb,
++! 0 at the element's bed, minus the sinking velocity
++
++	use mod_hydro_vel, only : wlov, wlnv
++	use basin, only : nen3v
++
++	implicit none
++
++	integer, intent(in) :: ie,lb,lmax
++	double precision, intent(in) :: sv
++	double precision, intent(out) :: wtop,wbot
++
++	integer ii,k
++
++	wtop = 0.d0
++	wbot = 0.d0
++	do ii=1,3
++	  k = nen3v(ii,ie)
++	  wtop = wtop + 0.5d0*(wlov(lb-1,k)+wlnv(lb-1,k))
++	  if( lb < lmax ) wbot = wbot + 0.5d0*(wlov(lb,k)+wlnv(lb,k))
++	end do
++	wtop = wtop/3.d0 - sv
++	wbot = wbot/3.d0 - sv
++
++	end
