@@ -1204,13 +1204,12 @@
 	    write(6,*) 'we will do partitioning for domains: ',nparts
 	  end if
 	  call do_partition(nkn,nel,nen3v,nparts,area_node,area_elem)
-	  !check_partition works on the basin of the master (it replaces the
-	  !element areas there with those of one domain) and so leaves
-	  !area_elem different on the master than on the other processes.
-	  !the element partition of the file is therefore the one from the
-	  !partitioner, and it is written by the master alone: all processes
-	  !writing the same file at once gave a different file at every run
-	  !(#279). the file is for inspection only, nothing reads it
+	  !the element partition of the file is the one from the partitioner
+	  !(elem_part, copied before check_partition), written by the master
+	  !alone: all processes writing the same file at once gave a different
+	  !file at every run (#279). check_partition left area_elem damaged on
+	  !the master until #290; it now gives the areas back unchanged (the
+	  !test hook below checks that). the file is for inspection only
 	  allocate(elem_part(nel),stat=ierr)
 	  if( ierr /= 0 ) then
 	    call shympi_abort_internal('error stop handle_partition: allocation failed')

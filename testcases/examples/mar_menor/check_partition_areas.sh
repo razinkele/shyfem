@@ -41,10 +41,10 @@ if [ ! -f "$HERE/GRID/MM_coarse.bas" ]; then
   exit 1
 fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/partition_areas.XXXXXX")" || exit 1
-ln -s "$HERE/INPUT" "$WORK/INPUT" && ln -s "$HERE/GRID" "$WORK/GRID" || exit 1
+ln -s "$HERE/INPUT" "$WORK/INPUT" && ln -s "$HERE/GRID" "$WORK/GRID" || { rm -rf "$WORK"; exit 1; }
 sed -e "s/itend *= *'2009-01-05'/itend = '2009-01-01::00:10:00'/" "$HERE/mm_hyd_00.str" > "$WORK/t.str"
 grep -q "itend = '2009-01-01::00:10:00'" "$WORK/t.str" \
-  || { echo "PARTITION AREAS: FAIL (cannot shorten the run)"; exit 1; }
+  || { echo "PARTITION AREAS: FAIL (cannot shorten the run)"; rm -rf "$WORK"; exit 1; }
 ( cd "$WORK" && SHYFEM_PARTITION_CHECK=1 timeout 300 nice -n 10 \
     mpirun --oversubscribe -np "$NP" shyfem t.str < /dev/null > run.log 2>&1 )
 r=$?
