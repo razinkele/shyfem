@@ -87,10 +87,10 @@ f and g_floor are named parameters in the code, not STR parameters.
 1. **A column with a layer of zero thickness** (a z-level element whose bottom layer has no water: `sigma.f90` leaves the deeper layers at 0, so hle(lmax−1) = hle(lmax)). Neither the walk, its K interpolation, the step rule nor the bed velocity may divide by a zero thickness, and no particle may be placed in such a layer. Pinned by:
    - the `vdiff-dt` zero-layer case (Task 2, step 1);
    - the `walk-fold` cases, including K evaluated at d = H on layers (1, 2, 3, 0) (Task 3, step 1);
-   - the `bed-w` hd = 0 rule (Task 4, step 1).
+   - the `bed-w` hd = 0 case: both bed routines return "no motion" (Task 4, step 1).
 2. **A one-layer column** (`lmax = 1`, all of `mm_lgr_a`'s elements and the shallow Mar Menor edges). The gradient rule and the reflecting walk apply there too. The old "z = random(0, 1)" rule is gone, so a one-layer column must stay well mixed. Pinned by:
    - the `vdiff-dt` lmax = 1 case;
-   - the one-layer χ² that `const` and `gotm` print separately (Task 1, step 2). It is gated at 31 when those columns hold at least 2000 particles, otherwise reported.
+   - the one-layer χ² that `gotm` prints separately, with its particle count (Task 1, step 2). It is report-only: no measured spread exists to set a limit from.
 3. **A particle that starts exactly on the surface (z = 0, lb = 1) or exactly on the bed (z = 1, lb = lmax).** The fold must give a depth in [0, H], and the layer search must give a layer with z in [0, 1]. Pinned by `walk-fold` (Task 3, step 1).
 4. **A particle step longer than 2000 s** (a long `idt`): with the 0.2 s floor binding, it reaches the 10,000-call cap. The cap's existing counting and log line must still apply, without a write in the loop. Pinned in Task 6, step 3: a throwaway build with the cap lowered.
 5. **Settling particles at the bed** (`ised = 1`). The bed velocity must not taper the settling speed. Pinned by `check_lgr_bed.sh` part 2 (Task 4) and the `bed-w` unit cases.
@@ -139,7 +139,7 @@ f and g_floor are named parameters in the code, not STR parameters.
   - For each seed, `lgr_vprof.py` computes the unweighted χ² of all active particles at each hourly output from 12:00 to 24:00 and takes the mean.
   - Required: every seed below `CHI2MAX=31`, and 39,960 particles released and active at every output.
   - Print each seed's χ² and the top 5 % ratio `bin_ratio(s, None, 0, 1)`, as the mean over the outputs 12:00–24:00.
-  - `const` and `gotm` also print the χ² of the particles in one-layer columns, with their count (Review Focus 2).
+  - `gotm` also prints the χ² of the particles in one-layer columns, with their count (Review Focus 2). It is report-only and not gated. `const` stays as it is.
 
 - [ ] **Step 3: Write the `thin` mode.**
   - Still water as `const`, with `iturb = 0`, `diftur = 1.e-2` and uniform 0.5 m levels down to at least 74.62 m. Build the `$levels` lines as `py/mkstr.py` does with LEVELS = 0.5.
@@ -164,7 +164,7 @@ f and g_floor are named parameters in the code, not STR parameters.
   git commit -m "test(lgr): LGR_TEST_KPROF/NOADV hooks and the smooth-profile, GOTM and thin-layer modes of check_lgr_wellmixed.sh (#286 #287)"
   ```
 
-- [ ] **Step 6: Build "base".** From `/home/razinka/shyfem`, run `git worktree add --detach /home/razinka/wt-walk-base <this task's commit>`, build it, and check it with `ldd`. Put its path in the task report.
+- [ ] **Step 6: Build "base".** From `/home/razinka/shyfem`, run `git worktree add --detach /home/razinka/wt-walk-base <this task's commit>`, build it, and check it with `ldd`. Put its path in the task report. base must be Task 1's final commit: if Task 1's review adds fix commits, move base to the last of them and rebuild it.
 
 ### Task 2: The gradient step rule (`lag_vdiff_ele`)
 
@@ -207,6 +207,7 @@ f and g_floor are named parameters in the code, not STR parameters.
   - Expected: both PASS.
   - At constant K the step is still the model step: `min 300.000 mean 300.000 ... below the model step 0`.
   - The new line reports N = 0.
+  - Between this task and Task 3, the old stop-walk runs with steps down to 0.2 s. `ilagr3` and the forced modes are not expected to pass in that state; do not run them as gates here.
 
 - [ ] **Step 5: Commit**
   ```bash
@@ -294,7 +295,7 @@ f and g_floor are named parameters in the code, not STR parameters.
   - `subroutine lgr_bed_move(wt,sv,hd,z0,t,z1)`, with all arguments `double precision`: the relative depth z1 after time t in the bottom layer of thickness hd, with w(z) = wt·(1 − z) − sv (w > 0 upward, z = 0 at the layer top). Valid while the particle stays inside the layer.
   - `subroutine lgr_bed_exit(wt,sv,hd,z0,texit,bup)`, with `double precision :: wt, sv, hd, z0, texit` and `logical, intent(out) :: bup`: the time to reach the layer top (bup true) or the bed (bup false), and `huge(1.d0)` if neither is ever reached.
   - Closed form, with u = 1 − z: for wt ≠ 0, u(t) = a + (u0 − a)·exp(wt·t/hd) with a = sv/wt; for wt = 0, u(t) = u0 − sv·t/hd.
-  - Both require hd > 0 (the caller guarantees it).
+  - **hd ≤ 0 means no motion:** `lgr_bed_move` returns z1 = z0, and `lgr_bed_exit` returns texit = huge. Neither divides. `track_xi` also keeps today's path for hd = 0, so this is a second guard.
   - **Edge returns of `lgr_bed_exit`, with no log of zero or of a negative number:**
     - texit = huge when the particle never leaves: u0 = a exactly (at the equilibrium), or u0 = 0 (on the bed) with sv = 0;
     - texit = 0 when it sits on a boundary and moves out: z0 = 0 with wt − sv > 0 (bup true), or z0 = 1 with sv > 0 (bup false). The bed case stops there, as today's `bbott` rule does.
@@ -313,7 +314,8 @@ f and g_floor are named parameters in the code, not STR parameters.
   - wt = 2e-4, sv = 1e-4: equilibrium at u = 0.5. From z0 = 0.6 (u0 = 0.4 < 0.5) the particle reaches the bed; from z0 = 0.4 it reaches the top;
   - wt = −2e-4, sv = 1e-4: the bed is reached in finite time from any z0;
   - for each exit, `lgr_bed_move(..., texit, z1)` gives z1 = 0 (top) or 1 (bed) within 1e-9;
-  - the edge returns: z0 = 1 with sv = 0 and wt = 2e-4 → huge; u0 = a (wt = 2e-4, sv = 1e-4, z0 = 0.5) → huge; z0 = 1 with sv = 1e-4 → 0, bed; z0 = 0 with wt = 2e-4, sv = 1e-4 → 0, top. None of them may trap in the `-ffpe-trap` build.
+  - the edge returns: z0 = 1 with sv = 0 and wt = 2e-4 → huge; u0 = a (wt = 2e-4, sv = 1e-4, z0 = 0.5) → huge; z0 = 1 with sv = 1e-4 → 0, bed; z0 = 0 with wt = 2e-4, sv = 1e-4 → 0, top. None of them may trap in the `-ffpe-trap` build;
+  - **hd = 0** (wt = −1e-4, sv = 1e-4, z0 = 0.3, t = 3600): `lgr_bed_move` gives z1 = 0.3 exactly and `lgr_bed_exit` gives huge, with no trap.
 
 - [ ] **Step 2: Write `check_lgr_bed.sh` (FAIL on main).**
   - **Part 1, #299:** the closed forced case, seeds 1 and 2.
@@ -330,12 +332,17 @@ f and g_floor are named parameters in the code, not STR parameters.
       - hd is the bottom layer's thickness from `read_geom`, and σ = √(2·K_floor·t).
     - **The statistic:** R = Σ(depth at 05:00 − depth at release) / Σ(s·t).
     - **Required:** 0.95 ≤ R ≤ 1.05. Untapered settling gives R ≈ 1.
-    - **The script also checks that it can tell the forms apart.** It computes the tapered expectation R_tap = Σ d_b·(1 − exp(−s·t/hd)) / Σ(s·t) and asserts R_tap ≤ 0.85 before judging.
+    - **The script also checks that it can tell the forms apart.** Before judging, it asserts:
+      - at least 300 judged particles. The per-particle noise in R is about σ/(s·t) ≈ 0.2, so 300 particles give a standard error near 1.2 % against the ±5 % band. Too few fail the check, never pass it;
+      - the tapered expectation R_tap = Σ d_b·(1 − exp(−s·t/hd)) / Σ(s·t) ≤ 0.85.
+
+      It prints both.
     - It is GREEN on main and RED against the tapered form.
 - [ ] **Step 3: Show the checks failing.**
   - Run `./check_lgr_fixes.sh bed-w` (FAIL: no routines yet).
   - Run `./check_lgr_bed.sh` with main. Expected: part 1 FAILS (0.49 / 0.49); part 2 PASSES (main has no taper).
-- [ ] **Step 4: Implement the routines and the `track_xi` change.**
+- [ ] **Step 4: Implement the routines and the bed form in `track_xi`, without the layer-switch re-read yet.** Run part 1. Expected: 0.88 / 0.89 within 0.02. This is the measured form, so a miss means the port is wrong: stop and report.
+- [ ] **Step 4b: Add the layer-switch re-read** (Interfaces, last item). Run part 1 again. Record the shift from step 4 in the task report: the measurement never ran this fix. It must still give ≥ 0.80.
 - [ ] **Step 5: Show part 2 is RED against the tapered form.**
   - In your build, temporarily taper sv as the prototype did: (wt − sv)·(1 − z).
   - Run part 2: it must FAIL with R near R_tap. Paste that output.
@@ -343,7 +350,7 @@ f and g_floor are named parameters in the code, not STR parameters.
 
 - [ ] **Step 6: Run the checks again.**
   - Commands: `./check_lgr_fixes.sh bed-w`, `./check_lgr_bed.sh`, `./check_lgr_wellmixed.sh const` and `./check_lgr_fixes.sh ilagr3`.
-  - Expected: all PASS. Part 1 is near the measured 0.88 / 0.89; it may differ slightly, because the measurement did not have the layer-switch fix.
+  - Expected: all PASS, with part 1 as in step 4b.
 
 - [ ] **Step 7: Commit**
   ```bash

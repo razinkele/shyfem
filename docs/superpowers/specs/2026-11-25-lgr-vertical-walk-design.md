@@ -103,7 +103,7 @@ dtvd(ie) = min(T, d_curv, max(g_floor, d_grad)), where:
 - **d_curv** = max(2 s, 1/(100·max|K″|)). This is today's rule (#257) with today's 2 s floor, unchanged. A lower curvature floor (0.5 s, setting A2) changed nothing measurable.
 - **d_grad** = f·min over layers of K_min,l/K′_l². The condition keeps the drift K′·dt small against the scale K/K′ over which K changes. Visser (1997) states only the curvature condition, so the code comment must not attribute this one to him. It is applied per layer, including in one-layer columns. A layer with K′ = 0 adds no limit, so at constant K the walk takes the model step.
 - **f = 0.07 and g_floor = 0.2 s** (setting B07, the owner's choice; see "The constants" below). Both are named constants in the code, not STR parameters, since approach B (a parameter) was declined.
-- A layer of zero thickness keeps today's rule: the smallest step (2 s).
+- A layer of zero thickness keeps today's rule for d_curv: the smallest step (2 s). The gradient term still applies on top, skipping the zero layer, as measured, so such an element can go below 2 s down to g_floor.
 
 **At constant K** every candidate setting gives a particle file byte-identical to plain N2 and makes exactly 1 call per step (still water, K = 1e-2, default levels).
 
