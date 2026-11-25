@@ -757,6 +757,7 @@
 	double precision sv
 	double precision xi(3)
 	integer ty
+	integer ierr
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -767,7 +768,12 @@
 	do ii=1,3
 	  xi(ii) = lgr_ar(i)%actual%xi(ii)
 	end do
-	call xi2xy(abs(ie),xx,yy,xi)
+	call xi2xy_ierr(abs(ie),xx,yy,xi,ierr)
+	if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	  call lgr_event(lgr_ev_xi2xy,lgr_ar(i)%id,(/lgr_ar(i)%id,ie/),xi)
+	  call lgr_internal_error('error stop track_advect: error of xi2xy')
+	  return			!recorded in the loop: left as it is
+	end if
 	x  = xx
 	y  = yy
 	z  = lgr_ar(i)%actual%z
@@ -843,6 +849,7 @@
 	integer ty
 	real dt,ttime,tmax
 	logical bpark
+	integer ierr
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -873,7 +880,13 @@
 	! it, the same because the tracker never lowers lb below 1
 	if( lb > 0 .and. blgrxi ) then
 	  if( phase == 0 ) then
-	    call xi2xy(abs(ie),xx,yy,xi)
+	    call xi2xy_ierr(abs(ie),xx,yy,xi,ierr)
+	    if( ierr /= 0 ) then	!internal error (#294: was a stop)
+	      call lgr_event(lgr_ev_xi2xy,id,(/id,ie/),xi)
+	      call lgr_internal_error(				&
+     &		'error stop track_finish: error of xi2xy')
+	      return			!recorded in the loop: left as it is
+	    end if
 	    x  = xx
 	    y  = yy
 	  else				!resumed: the old point of the parked move
@@ -966,6 +979,7 @@
 	logical bmark
 	real torig
 	double precision xx,yy,zz
+	integer ierr
 	logical lgr_internal_failed
 	logical, parameter :: bdebug = .false.	!debug lines (#294)
 
@@ -1015,10 +1029,15 @@
 
 	lgr_ncross(i) = 100 - n		!crossings used (own slot: OMP safe)
 
-	call xi2xy(abs(iel),xx,yy,xi)
+	z = zz
+	call xi2xy_ierr(abs(iel),xx,yy,xi,ierr)
+	if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	  call lgr_event(lgr_ev_xi2xy,id,(/id,iel/),xi)
+	  call lgr_internal_error('error stop track_body_xi: error of xi2xy')
+	  return			!recorded in the loop: x, y as they were
+	end if
 	x = xx
 	y = yy
-	z = zz
 
 	if( bdebug ) then
 	  write(6,*) 'lgrggu: ',iel,lb,ttime

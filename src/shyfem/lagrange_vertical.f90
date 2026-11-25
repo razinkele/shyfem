@@ -300,10 +300,13 @@
 ! the particle has (all defined); the run stops after the loop. The
 ! values of the guards, and a negative velocity (which the computation
 ! of track_xi_get_flux never gives), go to lgr_event (#294: until then
-! they were written from inside the loop). The debug lines (bdebug) are
-! off at compile time: until #294 bdebug was true for a particle with id
-! 0, which no release gives (ids start at 1), and it was set through the
-! module variable blgrdebug, written by every thread of the loop
+! they were written from inside the loop). The errors of xit_start_end
+! and xi_dist are guards of this kind too (their _ierr forms, #294:
+! until then a write and a bare stop in the utility). The debug lines
+! (bdebug) are off at compile time: until #294 bdebug was true for a
+! particle with id 0, which no release gives (ids start at 1), and it
+! was set through the module variable blgrdebug, written by every
+! thread of the loop
 
 	use mod_lagrange
 
@@ -322,6 +325,7 @@
 	logical, parameter :: bdebug = .false.	!debug lines (#294)
 	logical bsurf,bbott,bhas
 	integer iflux,lmax,iside
+	integer ierr
 	integer ieorig,lborig
 	double precision s,alpha
 	double precision dist,dh,dv,ds
@@ -404,16 +408,32 @@
 
 	if( vel > 0. ) then
 	  if( iflux > 0 ) then		!out of flux node
-	    call xit_start_end(iflux,alpha,xi,xis,xie,s)
+	    call xit_start_end_ierr(iflux,alpha,xi,xis,xie,s,ierr)
 	  else if( iflux < 0 ) then	!into flux node
-	    call xit_start_end(-iflux,alpha,xi,xie,xis,s)
+	    call xit_start_end_ierr(-iflux,alpha,xi,xie,xis,s,ierr)
 	    s = 1.d0 - s
 	  else
 	    time = 0.
 	    return
 	    !goto 99
 	  end if
-	  call xi_dist(iel,xis,xie,dist)
+	  if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	    call lgr_event(lgr_ev_xit,id,(/id,iel,iflux,ierr/)		&
+     &			,(/alpha,xi(1),xi(2),xi(3)/))
+	    call lgr_internal_error(					&
+     &		'error stop track_xi: internal error of xit_start_end')
+	    time = 0.			!recorded in the loop
+	    return
+	  end if
+	  call xi_dist_ierr(iel,xis,xie,dist,ierr)
+	  if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	    call lgr_event(lgr_ev_xidist,id,(/id,iel,ierr/)		&
+     &			,(/xis(1),xis(2),xis(3),xie(1),xie(2),xie(3)/))
+	    call lgr_internal_error(					&
+     &		'error stop track_xi: error of xi_dist')
+	    time = 0.			!recorded in the loop
+	    return
+	  end if
 	  dh = dist*(1.d0 - s)		!distance to travel in element
 	  th = dh / vel			!time to arrive at edge of element
 	else

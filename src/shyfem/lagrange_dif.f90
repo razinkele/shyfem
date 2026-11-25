@@ -132,6 +132,7 @@
         double precision 	:: xx,yy,zz
         logical			:: bstall	!ended by two such calls in a row
         logical			:: btend	!walk ended by the test hook
+        integer			:: ierr		!error of xy2xi_ierr
 
         integer			:: ndraw	!vertical draws made (#225)
         logical			:: lgr_internal_failed
@@ -230,7 +231,12 @@
 	  end if
 	  xx = x
 	  yy = y
-	  call xy2xi(abs(iel),xx,yy,xi)
+	  call xy2xi_ierr(abs(iel),xx,yy,xi,ierr)
+	  if( ierr /= 0 ) then		!internal error (#294: was a stop)
+	    call lgr_event(lgr_ev_xy2xi,id,(/id,iel,ierr/),(/xx,yy/))
+	    call lgr_internal_error('error stop diff_body: error of xy2xi')
+	    return			!recorded in the loop: left as it is
+	  end if
 	end if
 
 !---------------------------------------------------------------

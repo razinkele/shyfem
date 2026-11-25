@@ -191,10 +191,11 @@
 	!advection, the layers, the connectivity, the element search) wrote
 	!their lines from the worker threads. lgr_event records one: it is
 	!counted (OMP atomic, lgr_ev_n) and the values of the event of its
-	!kind with the lowest key (the id of the particle, the slot for 1
-	!and 2, the element for 11), the first in the order of a serial
-	!loop, are kept in the critical section lgr_ev, entered only for an
-	!event: up to lgr_ev_ni integer values (lgr_ev_ival), lgr_ev_nd real
+	!kind with the lowest key are kept (the key is the id of the
+	!particle, so the event of the lowest id; the slot for 1, 2 and 21,
+	!so the first in the order of a serial loop; the element for 11) in
+	!the critical section lgr_ev, entered only for an event: up to
+	!lgr_ev_ni integer values (lgr_ev_ival), lgr_ev_nd real
 	!values (lgr_ev_dval) and a text (lgr_ev_text). lgr_events writes,
 	!for each kind with events, one line with the events of the pass and
 	!the values of the first, and clears them: once per pass, at its end
@@ -233,6 +234,13 @@
 	! 19   lagr_connect_count: time is nan, stops
 	! 20   lagr_connect_count: particle not coming from a source, stops
 	! 21   lgr_mpi_locate: no old element, stops
+	! 22   track_advect, track_finish, track_body_xi: the error of
+	!      xi2xy_ierr (the determinant too small), stops
+	! 23   diff_body, lag_stk_end: the error of xy2xi_ierr (element out of
+	!      range, xi that cannot be adjusted), stops
+	! 24   track_xi: the error of xit_start_end_ierr, stops
+	! 25   track_xi: the error of xi_dist_ierr, stops
+	!(22 to 25 stopped with a bare stop in the utilities until #294)
 	!For the kinds that do not stop the run the counts and the events
 	!kept are the same on any number of threads (the key orders them; the
 	!events of one particle come from one thread, in order). For those
@@ -262,7 +270,11 @@
 	integer, parameter :: lgr_ev_conn_nan = 19
 	integer, parameter :: lgr_ev_conn_source = 20
 	integer, parameter :: lgr_ev_locate = 21
-	integer, parameter :: lgr_nev = 21		!kinds
+	integer, parameter :: lgr_ev_xi2xy = 22
+	integer, parameter :: lgr_ev_xy2xi = 23
+	integer, parameter :: lgr_ev_xit = 24
+	integer, parameter :: lgr_ev_xidist = 25
+	integer, parameter :: lgr_nev = 25		!kinds
 	integer, parameter :: lgr_ev_ni = 9		!integer values of a kind
 	integer, parameter :: lgr_ev_nd = 6		!real values of a kind
         integer, save :: lgr_ev_n(lgr_nev) = 0
@@ -750,6 +762,32 @@
           ni = 3
           cname(1:3) = [character(len=20) :: 'slot','phase','element']
           ctext = 'no old element in lgr_mpi_locate'
+        case( lgr_ev_xi2xy )
+          ni = 2
+          nd = 3
+          cname(1:5) = [character(len=20) :: 'id','element','xi 1'	&
+     &			,'xi 2','xi 3']
+          ctext = 'determinant too small in xi2xy'
+        case( lgr_ev_xy2xi )
+          ni = 3
+          nd = 2
+          cname(1:5) = [character(len=20) :: 'id','element','error'	&
+     &			,'x','y']
+          ctext = 'xy2xi failed (error -1: element out of range,'	&
+     &		//' 1 or 3: xi cannot be adjusted)'
+        case( lgr_ev_xit )
+          ni = 4
+          nd = 4
+          cname(1:8) = [character(len=20) :: 'id','element','iflux'	&
+     &			,'error','alpha','xi 1','xi 2','xi 3']
+          ctext = 'internal error of xit_start_end in track_xi'
+        case( lgr_ev_xidist )
+          ni = 3
+          nd = 6
+          cname(1:9) = [character(len=20) :: 'id','element','error'	&
+     &			,'xis 1','xis 2','xis 3','xie 1','xie 2','xie 3']
+          ctext = 'error of xi_dist in track_xi (1: a point not on a'	&
+     &		//' side, 2: impossible)'
         case default
           ctext = 'unknown kind of event'
         end select

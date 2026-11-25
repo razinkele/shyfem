@@ -95,7 +95,7 @@
 	  xnew = lgr_park_xy(3,i)
 	  ynew = lgr_park_xy(4,i)
 	  ienew = lgr_park_ie(i)
-	  call lag_stk_end(ienew,iel,x,y,xnew,ynew,xi)
+	  call lag_stk_end(id,ienew,iel,x,y,xnew,ynew,xi)
 	  return
 	end if
 
@@ -152,7 +152,7 @@
 	  if( blgr_dbg ) call lgr_mpi_relocate_check(iel,xnew,ynew,ienew)
 	end if
 
-	call lag_stk_end(ienew,iel,x,y,xnew,ynew,xi)
+	call lag_stk_end(id,ienew,iel,x,y,xnew,ynew,xi)
 
 !---------------------------------------------------------------
 ! end of routine
@@ -162,17 +162,22 @@
 
 !**********************************************************************
 
-        subroutine lag_stk_end(ienew,iel,x,y,xnew,ynew,xi)
+        subroutine lag_stk_end(id,ienew,iel,x,y,xnew,ynew,xi)
 
 ! the end of the Stokes drift step after the element search of the new
 ! point (xnew,ynew): ienew is the element found, 0 if none (then the
 ! fallback particle_on_side runs on iel, the element before the step);
 ! the particle takes the new point and element (no layer test in this
 ! step) and its internal coordinates there. Called by lag_stk for a
-! particle that is not parked and for a parked one when it is resumed
+! particle that is not parked and for a parked one when it is resumed.
+! An error of xy2xi_ierr goes through lgr_internal_error, its values
+! through lgr_event (#294: until then a write and a bare stop in xy2xi)
+
+        use mod_lagrange, only : lgr_event, lgr_ev_xy2xi
 
         implicit none
 
+        integer, intent(in)     :: id           !particle id
         integer, intent(inout)  :: ienew        !element found, 0 none
         integer, intent(inout)  :: iel          !element (new on return)
         real, intent(inout)     :: x,y          !old point (new on return)
@@ -180,6 +185,7 @@
         double precision, intent(inout):: xi(3) !internal coordinates
 
         double precision        :: xx,yy
+        integer                 :: ierr         !error of xy2xi_ierr
 
         if (ienew == 0 ) then
            ienew = iel
@@ -198,7 +204,11 @@
         !-----------------------------------------------
         xx = x
         yy = y
-        call xy2xi(abs(iel),xx,yy,xi)	!particle_on_side may set iel < 0
+        call xy2xi_ierr(abs(iel),xx,yy,xi,ierr)	!particle_on_side may set iel < 0
+        if( ierr /= 0 ) then		!internal error (#294: was a stop)
+          call lgr_event(lgr_ev_xy2xi,id,(/id,iel,ierr/),(/xx,yy/))
+          call lgr_internal_error('error stop lag_stk_end: error of xy2xi')
+        end if
 
         end subroutine lag_stk_end
 
