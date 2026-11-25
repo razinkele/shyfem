@@ -517,6 +517,22 @@
 	  dv = 0.
 	end if
 
+	! a zero time to leave a layer of non-zero thickness is no vertical
+	! motion in this call, as the rule bbott gives a particle on the bed
+	! (w = 0, tv = 2*time): on the bed with sv > 0, at the top of the
+	! bottom layer with wt-sv > 0 where the switch did not fire, after a
+	! switch into a layer whose w points back. Left at 0, tv would make
+	! the material-boundary rule below give th = 0 and t = 0, and a
+	! particle on a wall side would be moved through it out of the basin
+	! (#299). Before #299 tv = 0 needed hd = 0; that path is unchanged
+	if( tv == 0.d0 ) then
+	  if( hd > 0.d0 ) then
+	    w = 0.d0
+	    bbed = .false.
+	    tv = 2.*time
+	  end if
+	end if
+
 	!-----------------------------------------------
 	! what happens first? (tt is total time available)
 	!-----------------------------------------------
@@ -759,8 +775,9 @@
 ! (a series of log(1+d)/d, d = (s1-s0)/s0, when s1 is close to s0: for
 ! wt = 0 the linear hd*du/sv). The edge returns: w0 = 0 (on the bed with
 ! sv = 0, or at the equilibrium) huge; on a boundary moving out (du = 0:
-! at the top with wt-sv > 0, on the bed with sv > 0) 0, as the rule bbott
-! of track_xi stops a particle on the bed. No log of a number <= 0, no
+! at the top with wt-sv > 0, on the bed with sv > 0) 0, which track_xi
+! takes as no vertical motion in the call, as its rule bbott stops a
+! particle on the bed. No log of a number <= 0, no
 ! division by wt or by 0. hd <= 0 (a layer of zero thickness) is no
 ! motion: huge.
 ! Self-contained (no use): check_lgr_fixes.sh bed-w cuts it out and
