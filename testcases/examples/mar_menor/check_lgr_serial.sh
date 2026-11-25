@@ -61,6 +61,9 @@ for b in GRID/MM_geo.bas GRID/MM_coarse.bas; do
     exit 1
   fi
 done
+# a GRID/MM_geo.bas that is not what today's shypre writes is replaced, with a
+# line saying so (#280); before the copies of this folder below
+"$HERE/check_geo_bas.sh" "$HERE" "$LABEL" || exit 1
 if [ "$ARG" != repro ]; then
   command -v mpirun > /dev/null 2>&1 || { echo "$LABEL FAIL: mpirun is not on PATH"; exit 1; }
   REF="$ARG"

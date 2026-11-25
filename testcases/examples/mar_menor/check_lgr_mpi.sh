@@ -271,6 +271,9 @@ for b in GRID/MM_geo.bas GRID/MM_coarse.bas; do
     exit 1
   fi
 done
+# a GRID/MM_geo.bas that is not what today's shypre writes is replaced, with a
+# line saying so (#280)
+"$HERE/check_geo_bas.sh" "$HERE" "LGR GATE" || exit 1
 [ -f "$HERE/$CASE.str" ] || { echo "LGR GATE FAIL: $CASE.str not found in $HERE"; exit 1; }
 
 TMPSTR=""

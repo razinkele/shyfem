@@ -422,6 +422,10 @@ for b in GRID/MM_geo.bas GRID/MM_coarse.bas GRID/MM_coarse_smooth.bas; do
   [ -f "$HERE/$b" ] || { echo "$MODE: FAIL ($b is missing: run 'make init' and '(cd GRID && shypre -noopti MM_geo.grd)' in $HERE)"; exit 1; }
 done
 
+# a GRID/MM_geo.bas that is not what today's shypre writes is replaced, with a
+# line saying so (#280); before the copy of this folder below
+"$HERE/check_geo_bas.sh" "$HERE" "$MODE" || exit 1
+
 SCR="$(mktemp -d "${TMPDIR:-/tmp}/lgr_fixes.XXXXXX")" || { echo "$MODE: FAIL (mktemp)"; exit 1; }
 cp -r "$HERE" "$SCR/mm" || { echo "$MODE: FAIL (cannot copy the test folder)"; exit 1; }
 W="$SCR/mm"
