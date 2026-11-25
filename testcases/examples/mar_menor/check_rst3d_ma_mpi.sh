@@ -159,11 +159,11 @@ if [ ! -s "$inf" ]; then
 else
   nn="$(grep -c '^ *n2max:' "$inf")"
   n2first="$(awk '/^ *n2max:/ { print $2; exit }' "$inf")"
-  echo "  serial read: $nn n2max lines for $NSTEP time steps; first n2max (set-up) ${n2first:-none}"
+  echo "  serial read: $nn n2max lines for $NSTEP time steps; value of the first n2max line ${n2first:-none} (the set-up evaluation only if there are $(( NSTEP + 1 )) lines)"
   [ "$nn" = $(( NSTEP + 1 )) ] \
     || fail "the info file of the serial read has $nn n2max lines, not $(( NSTEP + 1 )) ($NSTEP steps and the set-up): the closure was not evaluated at set-up"
   awk -v v="${n2first:-0}" 'BEGIN { exit !(v + 0 > 0) }' \
-    || fail "the first n2max of the serial read is ${n2first:-missing}, not > 0: the restart state is not stratified, nothing is tested"
+    || fail "the first n2max line of the serial read is ${n2first:-missing}, not > 0: no stratification at the restart, nothing is tested"
 fi
 
 for np in $NPS; do

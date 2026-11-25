@@ -3,7 +3,7 @@
 # Step 1 of a k-epsilon or Munk-Anderson run starts from the closure's
 # own vertical mixing (issue #283, part (2)).
 #
-# The closure first runs in turb_closure, after hydro and run_scalar of
+# The closure first steps in turb_closure, after hydro and run_scalar of
 # the first time step, so step 1 uses the visv/difv set at set-up by
 # handle_gotm_init (src/shyfem/turbulence.f90).  Before the fix that was
 # GOTM's initial 1e-6 for k-epsilon (iturb = 2) and Munk-Anderson
@@ -16,12 +16,23 @@
 # without its tilt lines, one step of 300 s, hydro and T/S output after
 # it):
 #   k0  iturb = 0, vistur = 1.3e-6, diftur = 1.1e-9
-#   k2  iturb = 2 with the same lines (k-epsilon does not read them)
+#   k2  iturb = 2 with vistur = 0, diftur = 0 (k-epsilon does not read
+#       them; set_eddy puts them into visv/difv, so a handle_gotm_init that
+#       kept set_eddy's values for k-epsilon would give k2 a step 1 with no
+#       turbulent mixing and fail, as it would with values other than
+#       k-epsilon's own constants)
 #   m0  iturb = 0, vistur = 1.e-2, diftur = 1.e-3
 #   m3  iturb = 3 with the same lines
 # Required: every run ends; the logs of k2 and m3 say that their closure
 # started; k2.hydro.shy, k2.ts.shy byte-identical to those of k0, and
 # m3.hydro.shy, m3.ts.shy to those of m0.  Before the fix they differ.
+#
+# Limit: at rest Munk-Anderson gives vistur/diftur (Ri = 0), the values
+# set_eddy already put in, so this check cannot tell "Munk-Anderson
+# evaluated at set-up" from "set_eddy's values kept" for iturb = 3.  The
+# only assertion in the repository that Munk-Anderson is evaluated at
+# set-up is the n2max line count of check_rst3d_ma_mpi.sh (one line more
+# than the time steps, the first on a stratified restart state).
 #
 # Not checked here: part (1) of #283, the particle step made at set-up
 # (ilagr = 3), which still sees set_eddy's diftur whatever iturb.  It is
@@ -66,7 +77,7 @@ mk() {
     && ! grep -q 'tilt' "$P/$1.str"
 }
 mk k0 0 "vistur = 1.3e-6   diftur = 1.1e-9"   || fail "cannot make k0.str"
-mk k2 2 "vistur = 1.3e-6   diftur = 1.1e-9"   || fail "cannot make k2.str"
+mk k2 2 "vistur = 0.   diftur = 0."           || fail "cannot make k2.str"
 mk m0 0 "vistur = 1.e-2   diftur = 1.e-3"     || fail "cannot make m0.str"
 mk m3 3 "vistur = 1.e-2   diftur = 1.e-3"     || fail "cannot make m3.str"
 [ $rc = 0 ] || { echo "SETUP ORDER: FAIL"; exit 1; }
