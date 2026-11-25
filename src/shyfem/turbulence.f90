@@ -724,7 +724,8 @@
 
 	subroutine handle_gotm_init
 
-! handles initialization of gotm
+! handles initialization of the turbulence closure (the GOTM arrays and
+! the visv/difv of step 1)
 !
 ! The GOTM arrays are initialized (or read from the restart file) whatever
 ! iturb is. With iturb <= 0 (no closure, as in turb_closure) visv/difv
@@ -734,7 +735,7 @@
 ! had no effect with iturb = 0.
 !
 ! With a closure (iturb > 0) visv/difv are set here to the closure's own
-! mixing. The closure first runs in turb_closure, after hydro and
+! mixing. The closure first steps in turb_closure, after hydro and
 ! run_scalar of the first time step, so step 1 uses what is set here
 ! (#283):
 !   iturb = 1 (GOTM): GOTM's arrays (its initial 1e-6, or its profile
@@ -789,9 +790,12 @@
 	! adds no closure step: keps_init sets constants, which keps_shell
 	! sets again on its first call, and munk_anderson_shell is a
 	! diagnostic of the present shear and stratification, with no state
-	! of its own to advance
+	! of its own to advance.
+	! This runs after rst_perform_restart: k-epsilon saves no state in
+	! the restart file (N25), and if restart hooks for it are ever added,
+	! keps_init here would wipe the restored tken, eps, rls, visv, difv
 	if( iturb == 2 ) then
-	  call keps_init		!k-epsilon initial state (tken, eps, visv, difv)
+	  call keps_init		!k-epsilon initial state (tken, eps, rls, visv, difv)
 	  return
 	else if( iturb == 3 ) then
 	  call munk_anderson_shell	!evaluated on the initial (or restart) state
