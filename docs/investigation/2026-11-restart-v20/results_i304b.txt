@@ -1,0 +1,606 @@
+# I304b raw results (throwaway v20 build on fd9bd17c, OpenMPI). Columns: max|d| per ivar (iv1 zeta, iv3 transports, iv11 S, iv12 T)
+===== h1: iheat=1 itdrag=0 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=3.904e-06 iv3=4.189e-05
+     7h iv1=3.904e-06  7h iv3=3.637e-05  12h iv1=3.342e-06  12h iv3=1.249e-05
+  ts: 12/12 records differ; max over run iv11=1.259e-04 iv12=3.147e-05
+     7h iv11=1.106e-04  7h iv12=2.670e-05  12h iv11=1.183e-04  12h iv12=1.907e-05
+===== h2: iheat=2 itdrag=0 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            2   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=3.282e-06 iv3=3.100e-05
+     7h iv1=3.282e-06  7h iv3=2.763e-05  12h iv1=2.872e-06  12h iv3=9.686e-06
+  ts: 12/12 records differ; max over run iv11=1.221e-04 iv12=1.526e-05
+     7h iv11=1.144e-04  7h iv12=1.526e-05  12h iv11=8.011e-05  12h iv12=1.335e-05
+===== h3: iheat=3 itdrag=0 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            3   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=3.956e-06 iv3=4.255e-05
+     7h iv1=3.956e-06  7h iv3=3.701e-05  12h iv1=3.275e-06  12h iv3=1.267e-05
+  ts: 12/12 records differ; max over run iv11=1.221e-04 iv12=2.003e-05
+     7h iv11=1.144e-04  7h iv12=1.526e-05  12h iv11=1.106e-04  12h iv12=1.431e-05
+===== h4: iheat=4 itdrag=0 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            4   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=7.562e-06 iv3=8.141e-05
+     7h iv1=7.562e-06  7h iv3=7.124e-05  12h iv1=6.426e-06  12h iv3=2.426e-05
+  ts: 12/12 records differ; max over run iv11=1.793e-04 iv12=4.673e-05
+     7h iv11=1.640e-04  7h iv12=3.624e-05  12h iv11=1.602e-04  12h iv12=1.621e-05
+===== h5: iheat=5 itdrag=0 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            5   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=3.152e-06 iv3=3.340e-05
+     7h iv1=3.152e-06  7h iv3=2.921e-05  12h iv1=2.660e-06  12h iv3=9.775e-06
+  ts: 12/12 records differ; max over run iv11=9.918e-05 iv12=1.335e-05
+     7h iv11=8.392e-05  7h iv12=1.144e-05  12h iv11=8.011e-05  12h iv12=1.335e-05
+===== h6: iheat=6 itdrag=0 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            6   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 24/24 records differ; max over run iv1=7.041e-07 iv3=2.149e-06
+     7h iv1=3.055e-07  7h iv3=2.131e-06  12h iv1=6.743e-07  12h iv3=1.473e-06
+  ts: 12/12 records differ; max over run iv11=8.774e-05 iv12=1.783e-04
+     7h iv11=6.104e-05  7h iv12=1.783e-04  12h iv11=8.774e-05  12h iv12=1.316e-04
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=3.085e-06 iv3=2.974e-05
+     7h iv1=2.988e-06  7h iv3=2.557e-05  12h iv1=2.567e-06  12h iv3=8.613e-06
+  ts: 12/12 records differ; max over run iv11=1.068e-04 iv12=1.822e-04
+     7h iv11=1.068e-04  7h iv12=1.822e-04  12h iv11=1.068e-04  12h iv12=1.326e-04
+-- rnotws (I304_SKIP=tws): exit 0, simulation end 1, I304: v20 restored, skipped: [tws]; I304: setweg clock reset to    21600.000000000000     
+  hydro: 24/24 records differ; max over run iv1=7.041e-07 iv3=2.149e-06
+     7h iv1=3.055e-07  7h iv3=2.131e-06  12h iv1=6.743e-07  12h iv3=1.473e-06
+  ts: 12/12 records differ; max over run iv11=8.774e-05 iv12=1.783e-04
+     7h iv11=6.104e-05  7h iv12=1.783e-04  12h iv11=8.774e-05  12h iv12=1.316e-04
+===== h7: iheat=7 itdrag=0 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            7   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=1.966e-05 iv3=2.129e-04
+     7h iv1=1.966e-05  7h iv3=1.873e-04  12h iv1=1.632e-05  12h iv3=6.321e-05
+  ts: 12/12 records differ; max over run iv11=2.728e-03 iv12=3.166e-04
+     7h iv11=2.728e-03  7h iv12=3.166e-04  12h iv11=2.434e-03  12h iv12=2.613e-04
+===== h8: iheat=8 itdrag=0 iturb=0 np=1  (DID NOT RUN: STOP wb2rh pressure at the first heat step, exit status 0; the 0/0 lines below are NOT a pass)
+c exit 0 w exit 0 r exit 0 
+c.log:0 w.log:0 r.log:0 
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            8   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/0 records differ; max over run 
+     
+  ts: 0/0 records differ; max over run 
+     
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/0 records differ; max over run 
+     
+  ts: 0/0 records differ; max over run 
+     
+-- r3 (setweg clock NOT reset)
+  hydro: 0/0 records differ; max over run 
+     
+  ts: 0/0 records differ; max over run 
+     
+===== h6d4: iheat=6 itdrag=4 iturb=0 np=1
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    21600.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            6   0.00000000       0.00000000    
+ itdrag =            4
+ iheat =            6
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 24/24 records differ; max over run iv1=2.327e-03 iv3=1.027e-02
+     7h iv1=2.054e-03  7h iv3=1.027e-02  12h iv1=1.953e-03  12h iv3=6.554e-03
+  ts: 12/12 records differ; max over run iv11=4.768e+00 iv12=5.906e-01
+     7h iv11=4.768e+00  7h iv12=5.906e-01  12h iv11=4.484e-01  12h iv12=1.849e-02
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=2.327e-03 iv3=1.024e-02
+     7h iv1=2.054e-03  7h iv3=1.024e-02  12h iv1=1.954e-03  12h iv3=6.553e-03
+  ts: 12/12 records differ; max over run iv11=4.768e+00 iv12=5.906e-01
+     7h iv11=4.768e+00  7h iv12=5.906e-01  12h iv11=4.484e-01  12h iv12=1.849e-02
+-- rnotws (I304_SKIP=tws): exit 0, simulation end 1, I304: v20 restored, skipped: [tws]; I304: setweg clock reset to    21600.000000000000     
+  hydro: 24/24 records differ; max over run iv1=7.594e-05 iv3=2.743e-04
+     7h iv1=7.594e-05  7h iv3=2.000e-04  12h iv1=3.904e-05  12h iv3=1.785e-04
+  ts: 12/12 records differ; max over run iv11=4.580e+00 iv12=5.118e-01
+     7h iv11=4.580e+00  7h iv12=5.118e-01  12h iv11=9.226e-03  12h iv12=1.280e-03
+-- rnowcd (I304_SKIP=windcd): exit 0, simulation end 1, I304: v20 restored, skipped: [windcd]; I304: setweg clock reset to    21600.000000000000     
+  hydro: 24/24 records differ; max over run iv1=2.342e-03 iv3=1.007e-02
+     7h iv1=2.010e-03  7h iv3=1.007e-02  12h iv1=1.928e-03  12h iv3=6.400e-03
+  ts: 12/12 records differ; max over run iv11=4.768e+00 iv12=5.906e-01
+     7h iv11=4.768e+00  7h iv12=5.906e-01  12h iv11=4.376e-01  12h iv12=1.814e-02
+===== h8d4: iheat=8 itdrag=4 iturb=0 np=1  (DID NOT RUN: same STOP; 0/0 is NOT a pass)
+c exit 0 w exit 0 r exit 0 
+c.log:0 w.log:0 r.log:0 
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            8   0.00000000       0.00000000    
+ itdrag =            4
+ iheat =            8
+-- r (all carried)
+  hydro: 0/0 records differ; max over run 
+     
+  ts: 0/0 records differ; max over run 
+     
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/0 records differ; max over run 
+     
+  ts: 0/0 records differ; max over run 
+     
+-- r3 (setweg clock NOT reset)
+  hydro: 0/0 records differ; max over run 
+     
+  ts: 0/0 records differ; max over run 
+     
+===== m2t0: iheat=1 itdrag=0 iturb=0 np=2
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      2  I304: setweg clock reset to    21600.000000000000     
+      2  I304: v20 restored, skipped: []
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=3.904e-06 iv3=4.189e-05
+     7h iv1=3.904e-06  7h iv3=3.637e-05  12h iv1=3.342e-06  12h iv3=1.249e-05
+  ts: 12/12 records differ; max over run iv11=1.259e-04 iv12=3.147e-05
+     7h iv11=1.106e-04  7h iv12=2.670e-05  12h iv11=1.183e-04  12h iv12=1.907e-05
+===== m2t1: iheat=1 itdrag=0 iturb=1 np=2
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      2  I304: setweg clock reset to    21600.000000000000     
+      2  I304: v20 restored, skipped: []
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+===== m4t0: iheat=1 itdrag=0 iturb=0 np=4
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      4  I304: setweg clock reset to    21600.000000000000     
+      4  I304: v20 restored, skipped: []
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+===== m4t1: iheat=1 itdrag=0 iturb=1 np=4
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      4  I304: setweg clock reset to    21600.000000000000     
+      4  I304: v20 restored, skipped: []
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+ qflux3d: iheat,hdecay,botabs:            1   0.00000000       0.00000000    
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=4.154e-06 iv3=9.047e-02
+     7h iv1=4.154e-06  7h iv3=6.776e-04  12h iv1=3.438e-06  12h iv3=8.553e-02
+  ts: 12/12 records differ; max over run iv11=4.912e+00 iv12=8.519e-01
+     7h iv11=4.620e-03  7h iv12=6.771e-04  12h iv11=4.912e+00  12h iv12=8.519e-01
+===== m4h6d4: iheat=6 itdrag=4 iturb=1 np=4
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      4  I304: setweg clock reset to    21600.000000000000     
+      4  I304: v20 restored, skipped: []
+r2 exit 0
+r3 exit 0
+ qflux3d: iheat,hdecay,botabs:            6   0.00000000       0.00000000    
+ itdrag =            4
+ iheat =            6
+-- r (all carried)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+-- r2 (extras windcd/tws/dtw NOT restored)
+  hydro: 24/24 records differ; max over run iv1=2.361e-03 iv3=6.471e-02
+     7h iv1=2.035e-03  7h iv3=2.114e-02  12h iv1=2.116e-03  12h iv3=5.398e-02
+  ts: 12/12 records differ; max over run iv11=6.461e+00 iv12=8.158e-01
+     7h iv11=4.737e+00  7h iv12=5.527e-01  12h iv11=5.736e+00  12h iv12=8.158e-01
+-- r3 (setweg clock NOT reset)
+  hydro: 0/24 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     7h iv1=0.000e+00  7h iv3=0.000e+00  12h iv1=0.000e+00  12h iv3=0.000e+00
+  ts: 0/12 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     7h iv11=0.000e+00  7h iv12=0.000e+00  12h iv11=0.000e+00  12h iv12=0.000e+00
+===== h6noon (restart 12h, end 18h)
+-- rnodtw (I304_SKIP=dtw): exit 0, simulation end 1, I304: v20 restored, skipped: [dtw]; I304: setweg clock reset to    43200.000000000000     
+  hydro: 24/24 records differ; max over run iv1=5.737e-07 iv3=1.302e-06
+     13h iv1=1.304e-07  13h iv3=9.835e-07  18h iv1=3.707e-07  18h iv3=1.285e-06
+  ts: 12/12 records differ; max over run iv11=5.319e+00 iv12=4.705e-01
+     13h iv11=7.248e-05  13h iv12=2.003e-05  18h iv11=5.319e+00  18h iv12=4.705e-01
+-- rnotws (I304_SKIP=tws): exit 0, simulation end 1, I304: v20 restored, skipped: [tws]; I304: setweg clock reset to    43200.000000000000     
+  hydro: 24/24 records differ; max over run iv1=5.141e-07 iv3=2.824e-06
+     13h iv1=2.682e-07  13h iv3=2.742e-06  18h iv1=2.999e-07  18h iv3=2.772e-06
+  ts: 12/12 records differ; max over run iv11=5.319e+00 iv12=4.705e-01
+     13h iv11=2.518e-04  13h iv12=3.719e-05  18h iv11=5.319e+00  18h iv12=4.705e-01
+-- rnowcd (I304_SKIP=windcd): exit 0, simulation end 1, I304: v20 restored, skipped: [windcd]; I304: setweg clock reset to    43200.000000000000     
+  hydro: 24/24 records differ; max over run iv1=4.378e-03 iv3=2.581e-02
+     13h iv1=4.345e-03  13h iv3=2.130e-02  18h iv1=3.044e-03  18h iv3=1.147e-02
+  ts: 12/12 records differ; max over run iv11=5.423e+00 iv12=8.758e-01
+     13h iv11=4.755e+00  13h iv12=8.577e-01  18h iv11=5.360e+00  18h iv12=4.767e-01
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=4.378e-03 iv3=2.581e-02
+     13h iv1=4.344e-03  13h iv3=2.129e-02  18h iv1=3.045e-03  18h iv3=1.147e-02
+  ts: 12/12 records differ; max over run iv11=5.423e+00 iv12=8.758e-01
+     13h iv11=4.755e+00  13h iv12=8.577e-01  18h iv11=5.360e+00  18h iv12=4.767e-01
+===== venlag serial (restart 03:00)
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    10800.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+-- rall (): exit 0, simulation end 1, I304: v20 restored, skipped: []; I304: setweg clock reset to    10800.000000000000     
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 12/16 records differ; max over run iv1=4.172e-03 iv3=3.906e-03
+     4h iv1=4.172e-03  4h iv3=3.906e-03  6h iv1=5.335e-05  6h iv3=3.152e-04
+  ts: 6/8 records differ; max over run iv11=4.484e-03 iv12=6.995e-02
+     4h iv11=1.749e-03  4h iv12=6.995e-02  6h iv11=4.484e-03  6h iv12=5.962e-03
+-- rnoevap (I304_SKIP=evapv): exit 0, simulation end 1, I304: v20 restored, skipped: [evapv]; I304: setweg clock reset to    10800.000000000000     
+  hydro: 12/16 records differ; max over run iv1=1.139e-04 iv3=2.687e-04
+     4h iv1=1.139e-04  4h iv3=1.145e-04  6h iv1=6.914e-06  6h iv3=2.687e-04
+  ts: 6/8 records differ; max over run iv11=4.826e-04 iv12=1.488e-03
+     4h iv11=3.910e-04  4h iv12=1.488e-03  6h iv11=4.826e-04  6h iv12=1.526e-04
+-- rnoiwetv (I304_SKIP=iwetv): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv]; I304: setweg clock reset to    10800.000000000000     
+  hydro: 12/16 records differ; max over run iv1=4.177e-03 iv3=5.512e-03
+     4h iv1=4.177e-03  4h iv3=5.512e-03  6h iv1=5.271e-05  6h iv3=5.760e-04
+  ts: 6/8 records differ; max over run iv11=4.417e-03 iv12=6.998e-02
+     4h iv11=1.703e-03  4h iv12=6.998e-02  6h iv11=4.417e-03  6h iv12=1.125e-02
+-- rnoreset (I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: []
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+-- rnotws (I304_SKIP=tws): exit 0, simulation end 1, I304: v20 restored, skipped: [tws]; I304: setweg clock reset to    10800.000000000000     
+  hydro: 12/16 records differ; max over run iv1=2.985e-05 iv3=1.238e-04
+     4h iv1=5.960e-07  4h iv3=3.812e-05  6h iv1=4.232e-06  6h iv3=9.027e-05
+  ts: 6/8 records differ; max over run iv11=1.957e-03 iv12=4.660e-03
+     4h iv11=1.144e-04  4h iv12=4.025e-04  6h iv11=2.537e-04  6h iv12=4.444e-04
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      1  I304: setweg clock reset to    10800.000000000000     
+      1  I304: v20 extras (windcd,tws,dtw) restored
+===== venlag np=2
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      2  I304: setweg clock reset to    10800.000000000000     
+      2  I304: v20 restored, skipped: []
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+-- rnoreset (I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: []
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 12/16 records differ; max over run iv1=4.172e-03 iv3=3.906e-03
+     4h iv1=4.172e-03  4h iv3=3.906e-03  6h iv1=5.335e-05  6h iv3=3.152e-04
+  ts: 6/8 records differ; max over run iv11=4.484e-03 iv12=6.995e-02
+     4h iv11=1.749e-03  4h iv12=6.995e-02  6h iv11=4.484e-03  6h iv12=5.962e-03
+-- rnoiwetv (I304_SKIP=iwetv): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv]; I304: setweg clock reset to    10800.000000000000     
+  hydro: 12/16 records differ; max over run iv1=4.177e-03 iv3=5.512e-03
+     4h iv1=4.177e-03  4h iv3=5.512e-03  6h iv1=5.271e-05  6h iv3=5.760e-04
+  ts: 6/8 records differ; max over run iv11=4.417e-03 iv12=6.998e-02
+     4h iv11=1.703e-03  4h iv12=6.998e-02  6h iv11=4.417e-03  6h iv12=1.125e-02
+===== venlag np=4
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      4  I304: setweg clock reset to    10800.000000000000     
+      4  I304: v20 restored, skipped: []
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+-- rnoreset (I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: []
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 12/16 records differ; max over run iv1=4.172e-03 iv3=3.906e-03
+     4h iv1=4.172e-03  4h iv3=3.906e-03  6h iv1=5.335e-05  6h iv3=3.152e-04
+  ts: 6/8 records differ; max over run iv11=4.484e-03 iv12=6.995e-02
+     4h iv11=1.749e-03  4h iv12=6.995e-02  6h iv11=4.484e-03  6h iv12=5.962e-03
+-- rnoiwetv (I304_SKIP=iwetv): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv]; I304: setweg clock reset to    10800.000000000000     
+  hydro: 12/16 records differ; max over run iv1=4.177e-03 iv3=5.512e-03
+     4h iv1=4.177e-03  4h iv3=5.512e-03  6h iv1=5.271e-05  6h iv3=5.760e-04
+  ts: 6/8 records differ; max over run iv11=4.417e-03 iv12=6.998e-02
+     4h iv11=1.703e-03  4h iv12=6.998e-02  6h iv11=4.417e-03  6h iv12=1.125e-02
+===== venlag k-eps serial: rk3 = carry (final build), rk3n = carry skipped; "venk2 r" in the ext list below is from an intermediate build whose keps_init still wiped the restored state (= no carry)
+-- rk3 (): exit 0, simulation end 1, I304: v20 restored, skipped: []; I304: setweg clock reset to    10800.000000000000     
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+-- rk3n (I304_SKIP=keps): exit 0, simulation end 1, I304: v20 restored, skipped: [keps]; I304: setweg clock reset to    10800.000000000000     
+  hydro: 12/16 records differ; max over run iv1=5.486e-01 iv3=5.072e+00
+     4h iv1=4.062e-01  4h iv3=2.195e-01  6h iv1=2.559e-01  6h iv3=1.064e-01
+  ts: 6/8 records differ; max over run iv11=5.999e-01 iv12=1.430e+00
+     4h iv11=3.115e-01  4h iv12=1.430e+00  6h iv11=5.999e-01  6h iv12=1.360e+00
+===== venlag k-eps np=4
+c exit 0 w exit 0 r exit 0 
+c.log:1 w.log:1 r.log:1 
+      4  I304: k-eps state restored
+      4  I304: k-eps visv/difv re-applied after init_others
+      4  I304: setweg clock reset to    10800.000000000000     
+      4  I304: v20 restored, skipped: []
+  hydro: 0/16 records differ; max over run iv1=0.000e+00 iv3=0.000e+00
+     4h iv1=0.000e+00  4h iv3=0.000e+00  6h iv1=0.000e+00  6h iv3=0.000e+00
+  ts: 0/8 records differ; max over run iv11=0.000e+00 iv12=0.000e+00
+     4h iv11=0.000e+00  4h iv12=0.000e+00  6h iv11=0.000e+00  6h iv12=0.000e+00
+  ext: 0/144 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+4
+===== m2t0/m4t1 main emulation
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=3.904e-06 iv3=4.189e-05
+     7h iv1=3.904e-06  7h iv3=3.637e-05  12h iv1=3.342e-06  12h iv3=1.249e-05
+  ts: 12/12 records differ; max over run iv11=1.259e-04 iv12=3.147e-05
+     7h iv11=1.106e-04  7h iv12=2.670e-05  12h iv11=1.183e-04  12h iv12=1.907e-05
+-- rmain (I304_SKIP=iwetv,evapv,windcd,tws,dtw I304_NORESET=1): exit 0, simulation end 1, I304: v20 restored, skipped: [iwetv,evapv,windcd,tws,dtw]
+  hydro: 24/24 records differ; max over run iv1=4.154e-06 iv3=9.047e-02
+     7h iv1=4.154e-06  7h iv3=6.776e-04  12h iv1=3.438e-06  12h iv3=8.553e-02
+  ts: 12/12 records differ; max over run iv11=4.912e+00 iv12=8.519e-01
+     7h iv11=4.620e-03  7h iv12=6.771e-04  12h iv11=4.912e+00  12h iv12=8.519e-01
+===== .ext comparisons (c vs read run; records after the read run's first time)
+h1 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h1 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=3.283e-05 iv2=3.668e-05 iv11=8.392e-05 iv12=2.289e-05
+h2 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h2 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=2.374e-05 iv2=2.670e-05 iv11=6.866e-05 iv12=1.240e-05
+h3 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h3 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=3.329e-05 iv2=3.724e-05 iv11=8.392e-05 iv12=1.621e-05
+h4 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h4 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=6.419e-05 iv2=7.173e-05 iv11=1.297e-04 iv12=3.719e-05
+h5 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h5 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=2.635e-05 iv2=2.941e-05 iv11=6.485e-05 iv12=1.049e-05
+h6 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h6 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=2.326e-05 iv2=2.602e-05 iv11=6.104e-05 iv12=1.469e-04
+h7 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h7 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=1.682e-04 iv2=1.879e-04 iv11=3.433e-04 iv12=1.335e-04
+h6d4 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h6d4 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=8.113e-03 iv2=1.135e-02 iv11=4.249e+00 iv12=4.500e-01
+h6noon r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+h6noon rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=1.138e-02 iv2=1.791e-02 iv11=4.349e+00 iv12=8.589e-01
+m2t0 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+m2t0 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=3.283e-05 iv2=3.668e-05 iv11=8.392e-05 iv12=2.289e-05
+m2t1 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+m4t0 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+m4t1 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+m4t1 rmain:   ext: 288/288 records differ (after B's first time); max per ivar iv1=2.658e-05 iv2=6.733e-02 iv11=4.619e+00 iv12=8.157e-01
+m4h6d4 r:   ext: 0/288 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+ven1 r:   ext: 0/144 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+ven1 rmain:   ext: 144/144 records differ (after B's first time); max per ivar iv1=1.306e-03 iv2=1.661e-03 iv11=1.507e-04 iv12=5.150e-05
+ven1 rall:   ext: 0/144 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+ven2 r:   ext: 0/144 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+ven2 rmain:   ext: 144/144 records differ (after B's first time); max per ivar iv1=1.306e-03 iv2=1.661e-03 iv11=1.507e-04 iv12=5.150e-05
+ven4 r:   ext: 0/144 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+ven4 rmain:   ext: 144/144 records differ (after B's first time); max per ivar iv1=1.306e-03 iv2=1.661e-03 iv11=1.507e-04 iv12=5.150e-05
+venk2 r:   ext: 48/48 records differ (after B's first time); max per ivar iv1=1.471e-02 iv2=3.394e-02 iv11=1.368e-02 iv12=4.025e-03
+venk2 rk3:   ext: 0/144 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+venk2 rk3n:   ext: 48/48 records differ (after B's first time); max per ivar iv1=1.471e-02 iv2=3.394e-02 iv11=1.368e-02 iv12=4.025e-03
+venk2 rnokeps:   ext: 48/48 records differ (after B's first time); max per ivar iv1=1.471e-02 iv2=3.394e-02 iv11=1.368e-02 iv12=4.025e-03
+venk4 r:   ext: 0/144 records differ (after B's first time); max per ivar iv1=0.000e+00 iv2=0.000e+00 iv11=0.000e+00 iv12=0.000e+00
+venk4 rnokeps:   ext: 48/48 records differ (after B's first time); max per ivar iv1=1.471e-02 iv2=3.394e-02 iv11=1.368e-02 iv12=4.025e-03
+===== venlag wet/dry evidence (continuous dumps, B = end of step)
+dc.B.10800 dt=10 dry=609 iwetv<0=609 min(iwetv)=-185; dc.B.10845 dry=612 rewet=1 newdry=4; dc.B.10890 dry=611 rewet=2 newdry=1; max|dtw|=0 windcd=2.5e-3 (itdrag 0)
+venlag no-reset dumps: iwetv differs by 1 at 7835/7842 elements at B.10845, up to 5 at B.10890; with reset iwetv equal; qsens/qlat/qlong differ at 5 dry nodes in both (diagnostic only)
+h6 dc.A.21600: dtw=0, tws 8.70..9.47, windcd=2.5e-3; h6d4: dtw=0, windcd 9.75e-4..1.14e-3; h6noon dc.A.43200: max|dtw|=3.27e-3, windcd 1.97e-4..2.30e-4
+h8/h8d4 (iheat 8): STOP 'error stop wb2rh: pressure' at the first heat step, exit status 0 (meteo_get_heat_extra passes ppv in Pa to rh2dp, which wants mbar)

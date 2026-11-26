@@ -1,0 +1,308 @@
+diff --git a/src/shyfem/restart.f90 b/src/shyfem/restart.f90
+index 51417fc3..8b6c6d1e 100644
+--- a/src/shyfem/restart.f90
++++ b/src/shyfem/restart.f90
+@@ -643,6 +643,7 @@
+ 	use mod_hydro_vel
+ 	use mod_hydro
+ 	use mod_restart
++	use mod_meteo, only : evapv	!I304 THROWAWAY v20
+ 	use levels, only : nlvdi,nlv,hlv,ilhv,ilhkv
+ 	use basin
+ 	use shympi
+@@ -708,6 +709,8 @@
+ 	call restart_write_value(iunit,be,3,zenv)
+ 	call restart_write_value(iunit,be,utlnv)
+ 	call restart_write_value(iunit,be,vtlnv)
++	call restart_write_value(iunit,be,iwetv)	!I304 THROWAWAY v20
++	call restart_write_value(iunit,bn,evapv)	!I304 THROWAWAY v20
+ 
+ 	call restart_write_value(iunit,be,3,hm3v)
+ 
+@@ -765,6 +768,7 @@
+ 
+ 	if( bmaster ) flush(iunit)
+ 	call shympi_barrier
++	call i304_evap_side(1)		!I304 THROWAWAY
+ 
+         end
+ 
+@@ -1073,6 +1077,7 @@
+ 	use levels, only : nlvdi,nlv,ilhv,ilhkv
+ 	use basin
+ 	use mod_restart
++	use mod_meteo, only : evapv	!I304 THROWAWAY v20
+ 	use shympi
+ 
+         implicit none
+@@ -1218,6 +1223,18 @@
+ 	    end if
+ 	  end if
+ 
++	  if( nvers .ge. 20 ) then	!I304 THROWAWAY v20: iwetv, evapv
++	    if( rst_want_restart(id) ) then
++	      call restart_read_value(iunit,be,iwetv)
++	      call restart_read_value(iunit,bn,evapv)
++	    else
++	      read(iunit,iostat=ios)
++	      call rst_check_read(ios,'iwetv (skip)')
++	      read(iunit,iostat=ios)
++	      call rst_check_read(ios,'evapv (skip)')
++	    end if
++	  end if
++
+           if( nvers .ge. 4 ) then
+ 	    id = id_depth_rst
+ 	    call rst_add_flag(id,iflag)
+diff --git a/src/shyfem/shyfem_subs.f90 b/src/shyfem/shyfem_subs.f90
+index e15cba6e..00d30de5 100644
+--- a/src/shyfem/shyfem_subs.f90
++++ b/src/shyfem/shyfem_subs.f90
+@@ -564,6 +564,7 @@
+ 	double precision, intent(in) :: dtstep	!time step to run, 0: run to end
+ 
+ 	double precision dtmax		!run to this time
++	logical, save :: bfirst_i304 = .true.	!I304 THROWAWAY
+ 
+ 	dtmax = dtend			!stand-alone mode
+ 	if( dtstep > 0. ) then
+@@ -581,6 +582,9 @@
+ 
+            if(bmpi_debug) call shympi_check_all(0)	!checks arrays
+ 
++	   call i304_dump('A')		!I304 THROWAWAY
++	   if( bfirst_i304 ) call i304_evap_side(2)	!I304 THROWAWAY
++	   bfirst_i304 = .false.
+ 	   call check_crc
+ 	   call set_dry
+ 
+@@ -602,6 +606,7 @@
+ 	   call trace_point_0('before sp111')
+ 	   call sp111(2)		!boundary conditions
+ 	   call trace_point_0('after sp111')
++	   call i304_dump('C')		!I304 THROWAWAY
+            call read_wwm		!wwm wave model
+ 	   call trace_point_0('after wwm')
+ 	   
+@@ -657,6 +662,7 @@
+ 	   bfirst = .false.
+ 
+ 	   call test_zeta_write
++	   call i304_dump('B')		!I304 THROWAWAY
+ 
+ 	   icall_nuopc = 0		!the next timsteps icall_nuopc is false
+ 
+@@ -2085,3 +2091,200 @@
+ 
+ 
+ !*****************************************************************
++
++!*****************************************************************
++! I304 THROWAWAY: double-precision state dump for the restart study
++!*****************************************************************
++
++	subroutine i304_dump(tag)
++
++	use mod_hydro
++	use mod_hydro_vel
++	use mod_hydro_baro
++	use mod_hydro_print
++	use mod_layer_thickness
++	use mod_area
++	use mod_ts
++	use mod_diff_visc_fric
++	use mod_meteo
++	use mod_geom_dynamic
++	use mod_bound_dynamic
++	use mod_internal
++	use mod_depth
++	use mod_roughness
++	use mod_bnd_aux
++	use mod_gotm_aux
++	use tide
++	use femtime
++
++	implicit none
++
++	character*(*), intent(in) :: tag
++
++	character*256, save :: prefix = ' '
++	integer, save :: icall = 0
++	double precision, save :: t0 = 0., t1 = 0.
++	character*512 fname
++	double precision dtime
++	real dt
++	integer iu,ios
++
++	if( icall < 0 ) return
++	if( icall == 0 ) then
++	  call get_environment_variable('I304_DUMP',prefix)
++	  if( prefix == ' ' ) then
++	    icall = -1
++	    return
++	  end if
++	  t0 = 21600. - 600.
++	  t1 = 21600. + 3600.
++	  icall = 1
++	end if
++
++	call get_act_dtime(dtime)
++	if( dtime < t0 .or. dtime > t1 ) return
++	call get_timestep(dt)
++
++	write(fname,'(a,a,a,a,i0,a)') trim(prefix),'.',trim(tag),'.',nint(dtime),'.bin'
++	open(newunit=iu,file=fname,form='unformatted',access='stream',status='replace',iostat=ios)
++	if( ios /= 0 ) return
++
++	call ds(iu,'dt',dble(dt))
++	call d1(iu,'znv',znv); call d1(iu,'zov',zov)
++	call d2(iu,'zenv',zenv); call d2(iu,'zeov',zeov)
++	call d2(iu,'utlnv',utlnv); call d2(iu,'vtlnv',vtlnv)
++	call d2(iu,'utlov',utlov); call d2(iu,'vtlov',vtlov)
++	call d2(iu,'ulnv',ulnv); call d2(iu,'vlnv',vlnv)
++	call d2(iu,'ulov',ulov); call d2(iu,'vlov',vlov)
++	call d2(iu,'wlnv',wlnv); call d2(iu,'wlov',wlov)
++	call d1(iu,'unv',unv); call d1(iu,'vnv',vnv)
++	call d1(iu,'uov',uov); call d1(iu,'vov',vov)
++	call d2(iu,'uprv',uprv); call d2(iu,'vprv',vprv)
++	call d2(iu,'upro',upro); call d2(iu,'vpro',vpro)
++	call d2(iu,'wprv',wprv)
++	call d1(iu,'up0v',up0v); call d1(iu,'vp0v',vp0v)
++	call d2(iu,'xv',xv)
++	call d2(iu,'hdknv',hdknv); call d2(iu,'hdkov',hdkov)
++	call d2(iu,'hdenv',hdenv); call d2(iu,'hdeov',hdeov)
++	call d2(iu,'areakv',areakv)
++	call d2(iu,'saltv',saltv); call d2(iu,'tempv',tempv)
++	call d2(iu,'rhov',rhov)
++	call d1(iu,'rfricv',rfricv); call d2(iu,'ifricv',ifricv)
++	call d1(iu,'rcdv',rcdv); call d1(iu,'bnstressv',bnstressv)
++	call d1(iu,'czv',czv); call d2(iu,'difhv',difhv)
++	call d2(iu,'visv',visv); call d2(iu,'difv',difv)
++	call d1(iu,'wxv',wxv); call d1(iu,'wyv',wyv)
++	call d1(iu,'ppv',ppv)
++	call d1(iu,'tauxnv',tauxnv); call d1(iu,'tauynv',tauynv)
++	call d1(iu,'metrad',metrad); call d1(iu,'methum',methum)
++	call d1(iu,'mettair',mettair); call d1(iu,'metcc',metcc)
++	call d1(iu,'metrain',metrain); call d1(iu,'metwbt',metwbt)
++	call d1(iu,'metws',metws); call d1(iu,'windcd',windcd)
++	call d1(iu,'evapv',evapv); call d1(iu,'qsensv',qsensv)
++	call d1(iu,'qlatv',qlatv); call d1(iu,'qlongv',qlongv)
++	call d1(iu,'metice',metice)
++	call di(iu,'iwegv',iwegv); call di(iu,'iwetv',iwetv)
++	call di(iu,'inodv',inodv)
++	call d1(iu,'rzv',rzv); call d1(iu,'rqv',rqv)
++	call d1(iu,'rqpsv',rqpsv); call d1(iu,'rqdsv',rqdsv)
++	call d2(iu,'mfluxv',mfluxv)
++	call d1(iu,'rdistv',rdistv); call d1(iu,'rcomputev',rcomputev)
++	call d1(iu,'fcorv',fcorv)
++	call d2(iu,'fxv',fxv); call d2(iu,'fyv',fyv)
++	call d2(iu,'momentxv',momentxv); call d2(iu,'momentyv',momentyv)
++	call d1(iu,'iuvfix',iuvfix)
++	call dd2(iu,'ddxv',ddxv); call dd2(iu,'ddyv',ddyv)
++	call d1(iu,'hkv',hkv); call d1(iu,'hev',hev)
++	call d1(iu,'z0bk',z0bk); call d1(iu,'z0sk',z0sk)
++	call d1(iu,'rvv',rvv); call d1(iu,'ruv',ruv); call d1(iu,'crad',crad)
++	call d1(iu,'zeqv',zeqv)
++	if( allocated(numv_gotm) ) then
++	  call dd2(iu,'numv_gotm',numv_gotm); call dd2(iu,'nuhv_gotm',nuhv_gotm)
++	  call dd2(iu,'tken_gotm',tken_gotm); call dd2(iu,'eps_gotm',eps_gotm)
++	  call dd2(iu,'rls_gotm',rls_gotm)
++	end if
++	if( allocated(shearf2) ) then
++	  call d2(iu,'shearf2',shearf2); call d2(iu,'buoyf2',buoyf2)
++	end if
++
++	close(iu)
++
++	contains
++
++	subroutine hdr(iu,name,n)
++	integer, intent(in) :: iu,n
++	character*(*), intent(in) :: name
++	character*16 cname
++	cname = name
++	write(iu) cname,n
++	end subroutine
++	subroutine ds(iu,name,v)
++	integer, intent(in) :: iu
++	character*(*), intent(in) :: name
++	double precision, intent(in) :: v
++	call hdr(iu,name,1); write(iu) v
++	end subroutine
++	subroutine d1(iu,name,a)
++	integer, intent(in) :: iu
++	character*(*), intent(in) :: name
++	real, intent(in) :: a(:)
++	if( size(a) == 0 ) return
++	call hdr(iu,name,size(a)); write(iu) dble(a)
++	end subroutine
++	subroutine di(iu,name,a)
++	integer, intent(in) :: iu
++	character*(*), intent(in) :: name
++	integer, intent(in) :: a(:)
++	if( size(a) == 0 ) return
++	call hdr(iu,name,size(a)); write(iu) dble(a)
++	end subroutine
++	subroutine d2(iu,name,a)
++	integer, intent(in) :: iu
++	character*(*), intent(in) :: name
++	real, intent(in) :: a(:,:)
++	if( size(a) == 0 ) return
++	call hdr(iu,name,size(a)); write(iu) dble(reshape(a,(/size(a)/)))
++	end subroutine
++	subroutine dd2(iu,name,a)
++	integer, intent(in) :: iu
++	character*(*), intent(in) :: name
++	double precision, intent(in) :: a(:,:)
++	if( size(a) == 0 ) return
++	call hdr(iu,name,size(a)); write(iu) reshape(a,(/size(a)/))
++	end subroutine
++
++	end subroutine i304_dump
++
++!*****************************************************************
++! I304 THROWAWAY: carry evapv across the restart through a side file
++!*****************************************************************
++
++	subroutine i304_evap_side(mode)
++
++	use mod_meteo
++
++	implicit none
++
++	integer, intent(in) :: mode	!1 write, 2 read
++	character*256 fname
++	integer iu,ios
++
++	if( mode == 1 ) then
++	  call get_environment_variable('I304_EVAPW',fname)
++	  if( fname == ' ' ) return
++	  open(newunit=iu,file=fname,form='unformatted',access='stream',status='replace',iostat=ios)
++	  if( ios /= 0 ) stop 'i304: cannot write evap side file'
++	  write(iu) evapv
++	  close(iu)
++	  write(6,*) 'I304: evapv written to side file ',trim(fname)
++	else
++	  call get_environment_variable('I304_EVAPR',fname)
++	  if( fname == ' ' ) return
++	  open(newunit=iu,file=fname,form='unformatted',access='stream',status='old',iostat=ios)
++	  if( ios /= 0 ) stop 'i304: cannot read evap side file'
++	  read(iu) evapv
++	  close(iu)
++	  write(6,*) 'I304: evapv read from side file ',trim(fname)
++	end if
++
++	end subroutine i304_evap_side
+diff --git a/src/utils/shyutilmpi/mod_restart.f90 b/src/utils/shyutilmpi/mod_restart.f90
+index d318b8db..33c32191 100644
+--- a/src/utils/shyutilmpi/mod_restart.f90
++++ b/src/utils/shyutilmpi/mod_restart.f90
+@@ -85,7 +85,7 @@
+ 	! wrote 18 with the ssedi layout 2026-07-21/22 only; such files
+ 	! fail to read and must be regenerated); 19 = ssedi bed-mass block
+ 	! (this fork, what we write)
+-	integer, save :: nvmax = 19		!last version of file
++	integer, save :: nvmax = 20		!last version of file (I304 THROWAWAY v20)
+ 	integer, parameter :: nidmax = 10
+ 
+ 	integer, save :: id_hydro_rst = 1	!1		hydro
