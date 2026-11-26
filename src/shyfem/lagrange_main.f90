@@ -852,6 +852,13 @@
 !
 ! the time of the step is computed from lgr_ar(i)%actual%time, which must
 ! still hold its value from the start of the step when this is called
+!
+! after an internal-error guard of the tracker was recorded in the
+! particle loop (lgr_internal_failed, #256), here or in diff_body or
+! lag_stk (the error of xy2xi_ierr of diff_body or lag_stk_end), it
+! returns at once: the particle is not finished, nothing is stored (no
+! trial element or xi), and the run stops after the loop (#305: until
+! then the steps after diff_body and lag_stk ran and stored the state)
 
 	use mod_lagrange
 	use shympi, only : ip_int_elem
@@ -870,6 +877,7 @@
 	real dt,ttime,tmax
 	logical bpark
 	integer ierr
+	logical lgr_internal_failed
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -916,9 +924,11 @@
 	  bpark = .false.
 	  if( phase < 2 ) then
 	    call diff_body(i,id,ty,x,y,z,xi,ie,lb,ttime,phase==1,bpark)
+	    if( lgr_internal_failed() ) return	!recorded in the loop (#305)
 	  end if
 	  if( .not. bpark ) then
 	    call lag_stk(i,id,ty,x,y,xi,ie,lb,ttime,phase==2,bpark)
+	    if( lgr_internal_failed() ) return	!recorded in the loop (#305)
 	  end if
 	  if( bpark ) then		!parked: lgr_mpi_handover finishes it
 	    lgr_ar(i)%actual%ie = ie
