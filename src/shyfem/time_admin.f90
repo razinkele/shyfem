@@ -127,6 +127,7 @@
 ! 02.04.2023    ggu     only master writes to iuinfo
 ! 12.12.2023    ggu     introduced dtmax (maximum time to run to)
 ! 26.11.2026    arb     errors stop every process (exit 33, #333)
+! 26.11.2026    arb     setup_date checks month and day before dtsini (#333)
 !
 ! notes :
 !
@@ -418,6 +419,20 @@
 	date = nint(dgetpar('date'))
 	time = nint(dgetpar('time'))
 
+	!dtsini would stop in date2j (dts.f90) with a bare stop on a date
+	!with an impossible month or day, numeric or from a string (#333)
+	call check_date_ymd(date,ierr)
+	if( ierr /= 0 ) then
+	  if( ierr == 1 ) then
+	    write(6,*) '*** error in date: impossible month'
+	  else
+	    write(6,*) '*** error in date: impossible day'
+	  end if
+	  write(6,*) 'date: ',date
+	  write(6,*) 'The format for the date parameter is YYYY[MMDD].'
+	  call shympi_abort_internal('error stop setup_date: impossible date')
+	end if
+
 	call dtsini(date,time)
 
 	if( date >= 0 ) return
@@ -438,6 +453,40 @@
 	write(6,*) '   date = 0                    # no date feature'
 
 	call shympi_abort_internal('error stop ckdate: date')
+	end
+
+!********************************************************************
+
+	subroutine check_date_ymd(date,ierr)
+
+! checks the month and the day of the date parameter as dtsini (dts.f90)
+! does, but returns the error instead of stopping (#333): dtsini makes a
+! date YYYY (0 < date < 10000) into YYYY0101 and leaves a date <= 0
+! alone (0: no date; negative: the ckdate error of setup_date), and
+! date2j stops on a month not in 1..12 or a day not in the month. It
+! must accept exactly the dates date2j accepts.
+!
+! ierr: 0 no error, 1 impossible month, 2 impossible day
+
+	implicit none
+
+	integer, intent(in) :: date
+	integer, intent(out) :: ierr
+
+	integer year,month,day
+	integer idmon
+
+	ierr = 0
+	if( date < 10000 ) return	!no date, negative, or YYYY
+
+	call unpackdate(date,year,month,day)
+
+	if( month < 1 .or. month > 12 ) then
+	  ierr = 1
+	else if( day < 1 .or. day > idmon(year,month) ) then	!month valid
+	  ierr = 2
+	end if
+
 	end
 
 !********************************************************************
