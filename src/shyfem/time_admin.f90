@@ -126,6 +126,20 @@
 ! 28.03.2022	ggu	bug fix: ddtmin was not saved
 ! 02.04.2023    ggu     only master writes to iuinfo
 ! 12.12.2023    ggu     introduced dtmax (maximum time to run to)
+! 26.11.2026    arb     errors stop every process (exit 33, #333)
+!
+! notes :
+!
+! every error ends through shympi_abort_internal (exit 33, the message
+! "error stop ROUTINE: TEXT" on stdout; MPI_ABORT on several processes,
+! a plain exit before MPI is initialized), not a bare stop (exit 0, and
+! on several processes no abort, #333). Only shyfem links this file with
+! a path to these errors (rstinf and rst2shy link it, unused). The set-up
+! (setup_date, setup_time) and the time step (set_timestep, split_equal,
+! print_time) decide on values that are the same on every process (the
+! STR parameters, and the stability index, which set_timestep makes
+! global with shympi_max before it uses it), outside any OpenMP region,
+! so every process stops the same way
 !
 !**********************************************************************
 !**********************************************************************
@@ -205,7 +219,7 @@
 	    write(6,*) '******************************************'
 	    write(6,*) '******************************************'
 	    write(6,*) '******************************************'
-	    stop 'error stop print_time: internal error'
+	    call shympi_abort_internal('error stop print_time: internal error')
 	  else
             nit1 = niter + nint((dtend-dtime)/ddt)
 	    idtfrac = nint(1./ddt)
@@ -213,7 +227,7 @@
 	else
 	  write(6,*) 'idt,dt_act: ',idt,ddt
 	  write(6,*) 'warning: time step was 0'
-	  stop 'error stop print_time: 0 time step'
+	  call shympi_abort_internal('error stop print_time: 0 time step')
 	end if
 
 	nit2 = nit1
@@ -329,7 +343,7 @@
 	  write(6,*) 'Error in compulsory time parameters'
 	  write(6,*) 'Time step is not positive'
 	  write(6,*) 'idt :',didt
-	  stop 'error stop setup_time: idt'
+	  call shympi_abort_internal('error stop setup_time: idt')
 	else if( dtanf+didt .gt. dtend ) then
 	  write(6,*) 'Error in compulsory time parameters'
 	  write(6,*) 'itend too small, no time step will be performed'
@@ -340,7 +354,7 @@
 	  atime = atime0 + dtend
 	  call dts_format_abs_time(atime,dline)
 	  write(6,*) 'final time:   ',dline
-	  stop 'error stop setup_time: dtend'
+	  call shympi_abort_internal('error stop setup_time: dtend')
 	end if
 
 	niter = 0
@@ -363,7 +377,7 @@
 	if( itunit /= 1. ) then
 	  write(6,*) 'itunit = ',itunit
 	  write(6,*) 'this parameter is not supported anymore'
-	  stop 'error stop setup_time: itunit'
+	  call shympi_abort_internal('error stop setup_time: itunit')
 	end if
 
 	end
@@ -388,7 +402,7 @@
 	  call dtsunform(year,month,day,hour,min,sec,text,ierr)
 	  if( ierr .ne. 0 ) then
 	    write(6,*) 'date: ',text
-	    stop 'error stop setup_date: cannot parse date'
+	    call shympi_abort_internal('error stop setup_date: cannot parse date')
 	  end if
 	  date = 10000*year + 100*month + day
 	  time = 10000*hour + 100*min + sec
@@ -423,7 +437,7 @@
 	write(6,*) '   date = ''2012-01-01''         # same as above'
 	write(6,*) '   date = 0                    # no date feature'
 
-	stop 'error stop ckdate: date'
+	call shympi_abort_internal('error stop ckdate: date')
 	end
 
 !********************************************************************
@@ -572,7 +586,8 @@
 	  dt = dt_act
         else if( isplit .eq. 1 ) then
 	  if( idtorig <= 0 ) then
-	    stop 'error stop set_timestep: idtorig==0 and isplit==1'
+	    call shympi_abort_internal('error stop set_timestep:' &
+     &			//' idtorig==0 and isplit==1')
 	  end if
           idts = idtorig
 	  dt = dt_act
@@ -592,7 +607,8 @@
 	  end if
         else
           write(6,*) 'isplit = ',isplit
-          stop 'error stop set_timestep: value for isplit not allowed'
+          call shympi_abort_internal('error stop set_timestep:' &
+     &			//' value for isplit not allowed')
         end if
 
         dtaux = 0.
@@ -607,7 +623,8 @@
 	  write(6,*) 'dt is negative after setting'
 	  write(6,*) dtr,isplit,idts,idtfrac,dt_orig
 	  write(6,*) dt,cmax,rindex,cmax/rindex
-	  stop 'error stop set_timestep: negative time step'
+	  call shympi_abort_internal('error stop set_timestep:' &
+     &			//' negative time step')
 	end if
 
 	call check_time('in set_timestep 1')
@@ -640,7 +657,9 @@
 	dtsync = idts
         call sync_step(dtanf,dtsync,dtime,dt,bsync)
 
-	if( dt <= 0 ) stop 'error stop set_timestep: dt<=0'
+	if( dt <= 0 ) then
+	  call shympi_abort_internal('error stop set_timestep: dt<=0')
+	end if
 
 	if( dtime .gt. dtmax ) then	!sync with end of sim
 	  dt = dtmax - t_act
@@ -658,7 +677,8 @@
 	  write(6,*) dtr,isplit,idtfrac,dt_orig
 	  write(6,*) dt,cmax,rindex,cmax/rindex
 	  write(6,*) dtnext,bsync
-	  stop 'error stop set_timestep: negative time step'
+	  call shympi_abort_internal('error stop set_timestep:' &
+     &			//' negative time step')
 	end if
 
 	call check_time('in set_timestep 2')
@@ -688,7 +708,8 @@
 	  write(6,*) 'possible computed time step:  dt = ',dt
 	  write(6,*) 'minimum time step allowed: ddtmin = ',ddtmin
 	  write(6,*) 'please lower dtmin in parameter input file'
-          stop 'error stop set_timestep: time step too small'
+          call shympi_abort_internal('error stop set_timestep:' &
+     &			//' time step too small')
         end if
 
 !----------------------------------------------------------------------
@@ -803,7 +824,8 @@
 
 	if( idtnew == 0 ) then
 	  write(6,*) rindex,cmax,istot,idtnew
-	  stop 'error stop split_equal: cannot find new time step'
+	  call shympi_abort_internal('error stop split_equal:' &
+     &			//' cannot find new time step')
 	end if
 
 	dt = idtnew
@@ -835,7 +857,9 @@
 
 	if( nbcheck == 0 ) then
 	  nbcheck=ifemop('.check.txt','form','new')
-	  if( nbcheck == 0 ) stop 'error stop check_time'
+	  if( nbcheck == 0 ) then
+	    call shympi_abort_internal('error stop check_time')
+	  end if
 	end if
 
 	if( t_act < -1372895700.0000 ) then
@@ -891,13 +915,14 @@
             if( dtime /= dtnext ) then
               write(6,*) '**** ',dtnext,dtime
               ierr = ierr + 1
-              stop 'error stop: syncronize time wrong'
+              call shympi_abort_internal('error stop:' &
+     &			//' syncronize time wrong')
             end if
             dtnext = dtnext + dtsync
           else
             if( dtime > dtnext ) then
               write(6,*) dtime,dtnext
-              stop 'error stop: no syncronization'
+              call shympi_abort_internal('error stop: no syncronization')
             end if
           end if
           if( dtmax > dtanf .and. dtime > dtmax ) exit

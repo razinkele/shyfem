@@ -88,6 +88,19 @@
 ! 17.09.2024	lrp&ggu	call sleep(1) after writing basin
 ! 16.11.2024	ggu	in handle_grid_read() use ibasin to decide what to do
 ! 03.12.2024    lrp     ww3 restored
+! 26.11.2026    arb     cstfile and handle_basin_read errors stop every
+!			process (exit 33, #333)
+!
+! notes :
+!
+! the errors of cstfile (no STR file) and handle_basin_read (no basin
+! file) end through shympi_abort_internal (exit 33, the message "error
+! stop ROUTINE: TEXT" on stdout), not a bare stop (exit 0, #333). They
+! run on every process before MPI is initialized (shyfem_initialize
+! calls cstfile before shympi_init), where shympi_abort_internal exits
+! without MPI_ABORT; every process reads the same files, so every
+! process stops the same way. Only shyfem reaches them (rstinf and
+! rst2shy link this file, unused)
 !
 !************************************************************************
 
@@ -247,12 +260,12 @@
 
 	if( strfile == ' ' ) then
 	  write(6,*) 'Usage: shyfem str-file'
-	  stop 'error stop cstfile: internal error (1)'
+	  call shympi_abort_internal('error stop cstfile: internal error (1)')
 	else
 	  nstr = ifileo(0,strfile,'form','old')
 	  if( nstr <= 0 ) then
 	    write(6,*) 'error opening STR file: ',trim(strfile)
-	    stop 'error stop cstfile: no such STR file'
+	    call shympi_abort_internal('error stop cstfile: no such STR file')
 	  end if
 	end if
 
@@ -312,24 +325,28 @@
 	  else
 	    write(6,*) '*** no basin or grid file found for: ',trim(basnam)
 	    write(6,*) 'need either .bas or .grd file'
-	    stop 'error stop handle_basin_read: no bas or grd file'
+	    call shympi_abort_internal('error stop handle_basin_read:' &
+     &			//' no bas or grd file')
 	  end if
 	else if( ext == 'bas' ) then
 	  if( .not. filex(basnam) ) then
 	    write(6,*) '*** no such file: ',trim(basnam)
-	    stop 'error stop handle_basin_read: no bas file'
+	    call shympi_abort_internal('error stop handle_basin_read:' &
+     &			//' no bas file')
 	  end if
 	  breadgrd = .false.
 	else if( ext == 'grd' ) then
 	  if( .not. filex(basnam) ) then
 	    write(6,*) '*** no such file: ',trim(basnam)
-	    stop 'error stop handle_basin_read: no grd file'
+	    call shympi_abort_internal('error stop handle_basin_read:' &
+     &			//' no grd file')
 	  end if
 	  breadgrd = .true.
 	else
 	  write(6,*) '*** unknown extension in basin file found: ',trim(ext)
 	  write(6,*) 'extension must be .grd, .bas, or no extension'
-	  stop 'error stop handle_basin_read: unknown extension'
+	  call shympi_abort_internal('error stop handle_basin_read:' &
+     &			//' unknown extension')
 	end if
 	
 	if( breadgrd ) then		!read grd and produce bas file
