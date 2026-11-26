@@ -850,10 +850,12 @@
 ! distance from the nearest vertex in internal coordinates, the sum of
 ! the two smallest of the three, it is a sink if at the end (xie, after
 ! the crossings) d < 1e-3 and d is no larger than at the start of the
-! step (xis: lgr_ar%actual%xi, which the step does not write; on the
-! process that continues a particle handed over on several processes,
-! its arrival point), or d < 1e-15 (the floating-point floor, where the
-! spiral stops shrinking). A particle that circles a node outward (a
+! step (xis: lgr_ar%actual%xi, which track_advect replaces only after
+! track_body_xi returns; on the process that continues a particle handed
+! over on several processes, its arrival point on the side), or d <
+! 1e-15 (the floating-point floor, where the spiral stops shrinking).
+! The two d need not be to the same vertex (the start and the end lie in
+! different elements). A particle that circles a node outward (a
 ! source, or one held at a node by the single-precision position kept
 ! between steps, #315) or that is far from a vertex is not one: its step
 ! keeps the kind "element crossings used up" (lgr_ev_adv_cross).
