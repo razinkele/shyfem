@@ -80,7 +80,9 @@
 ! forces it), is an event of lgr_event (lgr_ev_vd_lost, lgr_ev_vd_unknown:
 ! counted, the first kept) and written at the end of the pass by
 ! lgr_events; until #288 each such particle step wrote a line from
-! inside the loop
+! inside the loop. The test hook LGR_TEST_EVENT=23 (#305) forces the
+! error of xy2xi_ierr of the horizontal step for the particle in slot 1
+! in the first pass, so that its internal error runs
 !
 ! the vertical walk (#286, #287) takes the layers of the particle's
 ! element once per step, before its loop (lagr_layer_thickness: the
@@ -114,7 +116,7 @@
 ! not diffused on average)
 
         use mod_lagrange
-        use mod_lagrange_mpi, only : lgr_test_vdiff_end
+        use mod_lagrange_mpi, only : lgr_test_vdiff_end, lgr_test_event
         use basin
         use levels, only : nlv
 
@@ -255,6 +257,11 @@
 	  xx = x
 	  yy = y
 	  call xy2xi_ierr(abs(iel),xx,yy,xi,ierr)
+	  ! test hook LGR_TEST_EVENT=23 (#305): the error 1 for the particle
+	  ! in slot 1 in the first pass
+	  if( lgr_test_event == lgr_ev_xy2xi ) then
+	    if( i == 1 .and. lgr_step == 1 ) ierr = 1
+	  end if
 	  if( ierr /= 0 ) then		!internal error (#294: was a stop)
 	    call lgr_event(lgr_ev_xy2xi,id,(/id,iel,ierr/),(/xx,yy/))
 	    call lgr_internal_error('error stop diff_body: error of xy2xi')

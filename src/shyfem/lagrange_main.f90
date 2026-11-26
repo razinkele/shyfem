@@ -654,10 +654,18 @@
 ! test hook LGR_TEST_NOADV=1 (lgr_test_noadv, read once by lgr_mpi_init;
 ! check_lgr_wellmixed.sh, #286, #287): the advection (horizontal and
 ! vertical) is skipped and the steps after it run as before
+!
+! test hook LGR_TEST_EVENT=K (lgr_test_event, read once by lgr_mpi_init;
+! check_lgr_fixes.sh events, #305): lgr_mpi_test_event records an event
+! of kind K for the particle in slot 1 in the first pass, before the
+! early returns below (and before the hook LGR_TEST_INTERNAL_FAIL, so
+! that on one thread the two give an event and an internal error in the
+! same pass); after a kind that stops the run the particle is left
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_test_internal, lgr_mpi_test_internal
 	use mod_lagrange_mpi, only : lgr_test_noadv
+	use mod_lagrange_mpi, only : lgr_test_event, lgr_mpi_test_event
         use mod_geom_dynamic, only : iwegv
         use levels, only : nlv
 
@@ -681,6 +689,11 @@
 	lgr_marked(i) = 0		!not handed over unless the tracker marks it
 
 	if( lgr_internal_failed() ) return	!the run stops after the loop
+
+	if( lgr_test_event > 0 ) then		!test hook (#305)
+	  call lgr_mpi_test_event(i)
+	  if( lgr_internal_failed() ) return	!the run stops after the loop
+	end if
 
 !---------------------------------------------------------------
 ! Get particle properties

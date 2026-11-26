@@ -431,6 +431,60 @@
 #             check line.  The 1-thread run must stop in the guard itself,
 #             as before #256 (no check line: a loop on one thread runs on
 #             the main thread).
+#   events    (#305) every kind of event of the tracker (lgr_event, the 25
+#             kinds of lgr_event_desc) and the three ways the run stops
+#             after an internal error, which no normal run reaches, with
+#             the test hook LGR_TEST_EVENT=K (read once at start-up,
+#             lgr_mpi_init: the particle in slot 1 records an event of kind
+#             K with fixed values in the first pass, the integer values 1,
+#             2, ..., the real values 0.5, 1.5, ..., for kind 18 the text
+#             LGR_TEST_EVENT, and for a kind that stops the run calls
+#             lgr_internal_error, "error stop lgr_mpi_test_event: kind K";
+#             for kind 23 the error 1 of xy2xi_ierr in diff_body is forced
+#             instead, "error stop diff_body: error of xy2xi").  Case
+#             mm_lgr_a for 30 minutes, for each K = 1 ... 25 with nomp = 1
+#             and nomp = 4 serially and with nomp = 1 on 4 MPI processes
+#             (timeout 120 s each).  Each run must acknowledge the hook and
+#             write the line of kind K as lgr_event_desc documents it (the
+#             expected head, text, names, the values with three decimals or
+#             in full precision, written out in this script, not taken from
+#             the code): for the kinds that do not stop the run (1, 2, 5 to
+#             10) "1 in the step to T, 1 in the run (P % of the I
+#             particles released)" for 1 and 2 (the lines of #288) and "(P
+#             events per 100 of the I particles released)" for the others
+#             (an event count, which can pass 100 per 100 particles; #305),
+#             with T the time of the release, I the particles released and
+#             P = 100/I; such a run must end, the line of 4 threads must be
+#             the line of 1 thread, and on 4 processes every process with
+#             particles writes it once, with its rank.  For the kinds that
+#             stop the run (3, 4, 11 to 25) each run must stop with exit
+#             code 33 and the message, with no "simulation end": on 1 thread
+#             at once, with the line written before the message and no line
+#             "lgr_mpi_list_check:"; on 4 threads through the check of the
+#             main thread after the particle loop ("lgr_mpi_list_check: ...
+#             an internal error found in the particle loop by OpenMP thread
+#             N"); on 4 processes with the line naming the rank, and the
+#             rank of Open MPI's "MPI_ABORT was invoked on rank R" among the
+#             ranks of the lines.  No run may write a SIGSEGV, SIGFPE or
+#             "Fortran runtime" line or an event line of another kind.
+#             Then, on 1 thread, LGR_TEST_EVENT=8 with LGR_TEST_INTERNAL_FAIL
+#             =1 (a non-stop event and, in the same pass, the guard "error
+#             stop drogue: internal error", which has no event kind): the
+#             line of kind 8 must be written before the stop (until #305
+#             the abort at once of lgr_internal_error dropped the events of
+#             the pass, written only for a kind that stops the run).  And
+#             the source: no call of the routines of the old name xi2xy,
+#             xy2xi, xi_dist, xit_start_end (a bare stop, exit code 0, on
+#             an error) in src/shyfem and src/utils (until #305 the release,
+#             the particle output, the larvae, the debug dump and the TVD
+#             set-up called them on several processes; they now call the
+#             _ierr form and stop through shympi_abort_internal, exit code
+#             33; no run reaches these errors), except inside the OpenMP
+#             tasks of conz3d_omp (the upwind value of TVD,
+#             tvd_get_upwind_c: femintp_xi, and a debug line under bdebug =
+#             .false.), where an abort through MPI_ABORT may not come from
+#             a worker either; those are listed.  The code before #305 does
+#             not know the hook.
 #   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
 #             (its list of parked particles grows) on 4 MPI processes with
 #             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
@@ -563,7 +617,8 @@
 # and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here;
 # modes vdiff-dt, walk-fold and bed-w also gfortran on PATH and the source
 # tree three levels up (../../../src/shyfem/lagrange_dif.f90, for bed-w
-# lagrange_vertical.f90, as in a checkout).
+# lagrange_vertical.f90, as in a checkout); mode events that source tree
+# too (../../../src/shyfem and ../../../src/utils).
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
@@ -573,11 +628,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | bed-w | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | bed-w | grow-fail | int-fail | events | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|bed-w|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|bed-w|grow-fail|int-fail|events|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
 
@@ -2064,6 +2119,303 @@ if [ "$MODE" = int-fail ]; then
     fi
     grep -q "simulation end" "$log" && fail "$n thread(s): the run ended instead of stopping"
   done
+  finish
+fi
+
+#=============================== events (#305) =============================
+if [ "$MODE" = events ]; then
+  SRC="$HERE/../../../src"
+  [ -d "$SRC/shyfem" ] && [ -d "$SRC/utils" ] || { echo "$MODE: FAIL (no source tree at $SRC)"; exit 1; }
+  # mm_lgr_a for 30 minutes (the hook fires in the first pass), 1 and 4
+  # OpenMP threads
+  sed -e "s/itend = '[^']*'/itend = '2009-01-01::00:30:00'/" "$W/mm_lgr_a.str" > "$W/ev0.str"
+  with_para ev0 ev_t1 "nomp = 1"
+  with_para ev0 ev_t4 "nomp = 4"
+  for f in ev_t1 ev_t4; do
+    grep -q "itend = '2009-01-01::00:30:00'" "$W/$f.str" || fail "$f.str: no itend = '2009-01-01::00:30:00'"
+    grep -q "^[[:space:]]*$f[[:space:]]*\$" "$W/$f.str" || fail "$f.str: run name not set"
+  done
+  grep -q "nomp = 1" "$W/ev_t1.str" || fail "ev_t1.str: no 'nomp = 1'"
+  grep -q "nomp = 4" "$W/ev_t4.str" || fail "ev_t4.str: no 'nomp = 4'"
+  [ "$rc" = 0 ] || finish
+  # evrun TAG STR LAUNCHER...: STR.str in the scratch folder with a timeout
+  # of 120 s, log TAG.log, exit code in TAG.rc
+  evrun() {
+    local tag="$1" str="$2"; shift 2
+    ( cd "$W" && timeout 120 nice -n 10 "$@" "$str.str" > "$tag.log" 2>&1 )
+    echo $? > "$W/$tag.rc"
+  }
+  t0=$(date +%s)
+  echo "=== mm_lgr_a, 30 minutes, LGR_TEST_EVENT=K for K = 1 ... 25: 1 and 4 threads serially, 1 thread on $NP processes"
+  for k in $(seq 1 25); do
+    evrun ev_k${k}_t1 ev_t1 env LGR_TEST_EVENT=$k shyfem
+    evrun ev_k${k}_t4 ev_t4 env LGR_TEST_EVENT=$k shyfem
+    evrun ev_k${k}_np ev_t1 env LGR_TEST_EVENT=$k mpirun --oversubscribe -np $NP -x LGR_TEST_EVENT shyfem
+  done
+  echo "=== the same, 1 thread, LGR_TEST_EVENT=8 and LGR_TEST_INTERNAL_FAIL=1 (an event and a guard with no kind in the same pass)"
+  evrun ev_if ev_t1 env LGR_TEST_EVENT=8 LGR_TEST_INTERNAL_FAIL=1 shyfem
+  echo "  76 runs in $(( $(date +%s) - t0 )) s"
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$NP" <<'EOF' || fail "see above"
+import os, re, sys
+
+w, np_ = sys.argv[1], int(sys.argv[2])
+ok = True
+def bad(msg):
+    global ok
+    print("  FAIL: " + msg)
+    ok = False
+
+# the line of each kind as lgr_event_desc documents it (written out here,
+# not taken from the code): head, text, the part "in the run" (None: the
+# kind stops the run; "%": the lines of #288; "per100": an event count),
+# the names of the values, how many are integers, reals with 3 decimals
+CVD, CADV = "lgr vertical diffusion", "lgr advection"
+TL = ["id", "element", "calls left", "time left [s]"]
+TA = ["id", "element", "crossings left", "time left [s]"]
+LAY = ["id", "element", "layer", "of"]
+DEP = LAY + ["tv", "t", "dz", "w", "hd", "z"]
+NXT = ["id", "element", "in", "it", "ia1", "ieb", "ieltv 1", "ieltv 2", "ieltv 3"]
+XI = ["xi 1", "xi 2", "xi 3"]
+KIND = {
+    1: (CVD, "lost with time left", "%", TL, 3, True),
+    2: (CVD, "walk ended with time left, cause unknown", "%", TL, 3, True),
+    3: (CVD, "depth outside 0..1 after a call of lgr_diff_vert", None, DEP, 4, False),
+    4: (CVD, "no such layer in lgr_diff_vert", None, LAY, 4, False),
+    5: (CADV, "element crossings used up with time left", "per100", TA, 3, True),
+    6: (CADV, "lost with time left", "per100", TA, 3, True),
+    7: (CADV, "advection ended with time left, cause unknown", "per100", TA, 3, True),
+    8: (CADV, "flux over a wall side set to 0", "per100", ["id", "element", "layer", "side", "flux"], 4, False),
+    9: (CADV, "negative velocity in track_xi", "per100", LAY + ["vel", "flux 1", "flux 2", "flux 3"], 4, False),
+    10: (CADV, "layer below the bottom of the element entered, put in its bottom layer", "per100", LAY, 4, False),
+    11: ("lgr layers", "incompatible layers in lagr_layer_thickness", None, ["element", "nlev", "lmax", "lmax_act"], 4, False),
+    12: (CADV, "internal error (3) of track_xi", None, ["id", "element", "s", "t", "th", "ds", "sorig"], 2, False),
+    13: (CADV, "depth outside 0..1 in track_xi", None, DEP, 4, False),
+    14: (CADV, "erroneous xi in track_xi_next_element", None, NXT[:4] + XI, 4, False),
+    15: (CADV, "erroneous xi sanity in track_xi_next_element", None, NXT[:5] + XI, 5, False),
+    16: (CADV, "erroneous ieltv in track_xi_next_element", None, NXT + XI, 9, False),
+    17: (CADV, "no such layer in track_xi_get_vertical", None, LAY, 4, False),
+    18: (CADV, "wrong xi in track_xi_check", None, ["id"] + XI, 1, False),
+    19: ("lgr connectivity", "time is nan in lagr_connect_count", None, ["id", "slot", "element", "time"], 3, False),
+    20: ("lgr connectivity", "particle not coming from a source in lagr_connect_count", None,
+         ["id", "slot", "element of origin", "external element", "station"], 5, False),
+    21: ("lgr element search", "no old element in lgr_mpi_locate", None, ["slot", "phase", "element"], 3, False),
+    22: (CADV, "determinant too small in xi2xy", None, ["id", "element"] + XI, 2, False),
+    23: (CADV, "xy2xi failed (error -1: element out of range, 1 or 3: xi cannot be adjusted)", None,
+         ["id", "element", "error", "x", "y"], 3, False),
+    24: (CADV, "internal error of xit_start_end in track_xi", None, ["id", "element", "iflux", "error", "alpha"] + XI, 4, False),
+    25: (CADV, "error of xi_dist in track_xi (1: a point not on a side, 2: impossible)", None,
+         ["id", "element", "error", "xis 1", "xis 2", "xis 3", "xie 1", "xie 2", "xie 3"], 3, False),
+}
+SITE = {18: "LGR_TEST_EVENT"}
+ANYEV = re.compile(r"^ lgr (vertical diffusion|advection|layers|connectivity|element search):")
+CRASH = ("SIGSEGV", "SIGFPE", "Fortran runtime")
+CHECK = "lgr_mpi_list_check:"
+INLOOP = re.compile(r"lgr_mpi_list_check: rank \d+ \(drogue, after the particle loop\): an internal error"
+                    r" found in the particle loop by OpenMP thread (\d+)")
+
+def line_re(k):
+    head, text, lab, names, _, _ = KIND[k]
+    r = "^ " + re.escape(head) + r":(?: rank (?P<rank>\d+):)? " + re.escape(text)
+    if k in SITE:
+        r += re.escape(" (%s)" % SITE[k])
+    r += r": (?P<n>\d+) in the step to (?P<t>\S+?)"
+    if lab is not None:
+        what = "%" if lab == "%" else "events per 100"
+        r += r", (?P<ntot>\d+) in the run \((?P<p>[\d.]+) " + re.escape(what) \
+             + r" of the (?P<nrel>\d+) particles released\)"
+    r += "; first:"
+    for j, nm in enumerate(names):
+        r += ("" if j == 0 or nm == "of" else ",") + " " + re.escape(nm) + r" (?P<v%d>[^,\s]+)" % j
+    return re.compile(r + "$")
+
+def message(k):
+    return "error stop diff_body: error of xy2xi" if k == 23 else "error stop lgr_mpi_test_event: kind %d" % k
+
+def values_ok(k, m, tag):
+    _, _, _, names, ni, bfix = KIND[k]
+    vals = [m.group("v%d" % j) for j in range(len(names))]
+    if k == 23:		# the values of diff_body's own site, the error forced to 1
+        try:
+            good = int(vals[0]) >= 1 and int(vals[1]) >= 1 and vals[2] == "1"
+            float(vals[3]), float(vals[4])
+        except ValueError:
+            good = False
+        if not good:
+            bad("%s: values %r, expected id and element >= 1, error 1, x and y" % (tag, vals))
+        return
+    for j, v in enumerate(vals):
+        if j < ni:
+            good = v == str(j + 1)
+        elif bfix:
+            good = v == "%.3f" % (j - ni + 0.5)
+        else:
+            try:
+                good = float(v) == j - ni + 0.5
+            except ValueError:
+                good = False
+        if not good:
+            bad("%s: value %d (%s) is %r, expected the fixed value of the hook" % (tag, j + 1, names[j], v))
+
+def read(tag):
+    with open(os.path.join(w, tag + ".log"), errors="replace") as fh:
+        log = fh.read().split("\n")
+    with open(os.path.join(w, tag + ".rc")) as fh:
+        rc = int(fh.read().strip() or "-1")
+    return log, rc
+
+# the release of the serial run: time and particles (the first pass)
+log, _ = read("ev_k8_t1")
+rel = [re.search(r"new particles released: *(\d+) at time: (\S+)", l) for l in log]
+rel = [m for m in rel if m]
+if not rel:
+    print("  FAIL: no release line in ev_k8_t1.log")
+    sys.exit(1)
+NREL, TREL = int(rel[0].group(1)), rel[0].group(2)
+print("  serial release: %d particles at %s (the first pass)" % (NREL, TREL))
+
+def common(k, tag, log, rc, nthreads):
+    """checks of every run; returns its matches of the line of kind k"""
+    if not any(("test hook LGR_TEST_EVENT: an event of kind %d " % k) in l for l in log):
+        bad("%s: the log does not acknowledge the test hook LGR_TEST_EVENT=%d" % (tag, k))
+    if nthreads is not None:
+        th = [re.search(r"used OMP threads: *(\d+)", l) for l in log]
+        th = [int(m.group(1)) for m in th if m]
+        if th[:1] != [nthreads]:
+            bad("%s: used OMP threads %r, expected %d" % (tag, th[:1], nthreads))
+    for s in CRASH:
+        if any(s in l for l in log):
+            bad("%s: a '%s' line" % (tag, s))
+    rx = line_re(k)
+    hits = []
+    for i, l in enumerate(log):
+        if not ANYEV.match(l):
+            continue
+        m = rx.match(l)
+        if not m:
+            bad("%s: an event line not of kind %d as documented: %r" % (tag, k, l))
+            continue
+        hits.append((i, m))
+        if m.group("n") != "1" or m.group("t") != TREL:
+            bad("%s: %s in the step to %s, expected 1 in the step to %s" % (tag, m.group("n"), m.group("t"), TREL))
+        if KIND[k][2] is not None:
+            p = "%.2f" % (100.0 / NREL)
+            if m.group("ntot") != "1" or m.group("nrel") != str(NREL) or m.group("p") != p:
+                bad("%s: in the run %s (%s of %s), expected 1 (%s of %d)"
+                    % (tag, m.group("ntot"), m.group("p"), m.group("nrel"), p, NREL))
+        values_ok(k, m, tag)
+    return hits
+
+for k in range(1, 26):
+    brun = KIND[k][2] is not None
+    res = {}
+    for flow, nth in (("t1", 1), ("t4", 4), ("np", None)):
+        tag = "ev_k%d_%s" % (k, flow)
+        log, rc = read(tag)
+        hits = common(k, tag, log, rc, nth)
+        ranks = [m.group("rank") for _, m in hits]
+        res[flow] = (log, rc, hits, ranks)
+        end = any("simulation end" in l for l in log)
+        msg = [i for i, l in enumerate(log) if message(k) in l]
+        if brun:
+            if rc != 0 or not end:
+                bad("%s: exit code %d, 'simulation end' %s; expected the run to end" % (tag, rc, end))
+            if msg:
+                bad("%s: the message '%s' in a run that goes on" % (tag, message(k)))
+        else:
+            if rc != 33 or end:
+                bad("%s: exit code %d, 'simulation end' %s; expected exit code 33 and no end" % (tag, rc, end))
+            if not msg:
+                bad("%s: no message '%s'" % (tag, message(k)))
+        if flow != "np":
+            if len(hits) != 1 or ranks != [None]:
+                bad("%s: %d lines of kind %d (ranks %r), expected one without a rank" % (tag, len(hits), k, ranks))
+        else:
+            rk = [int(r) for r in ranks if r is not None]
+            if not hits or len(rk) != len(hits) or len(set(rk)) != len(rk) or not all(0 <= r < np_ for r in rk):
+                bad("%s: lines of kind %d with the ranks %r, expected one or more, each with a distinct rank"
+                    " in 0..%d" % (tag, k, ranks, np_ - 1))
+            if brun:		# every process with particles writes its line
+                nwith = sum(1 for l in log if re.search(r"new particles released: *[1-9]\d* at time: " + re.escape(TREL), l))
+                if len(hits) != nwith:
+                    bad("%s: %d lines of kind %d, expected one per process with particles (%d)" % (tag, len(hits), k, nwith))
+            else:
+                ab = [re.search(r"MPI_ABORT was invoked on rank (\d+)", l) for l in log]
+                ab = [int(m.group(1)) for m in ab if m]
+                if ab and ab[0] not in rk:
+                    bad("%s: MPI_ABORT on rank %d, not one of the ranks of the lines %r" % (tag, ab[0], rk))
+        if not brun and flow == "t1":
+            if hits and msg and hits[0][0] > msg[0]:
+                bad("%s: the line of kind %d after the message" % (tag, k))
+            if any(CHECK in l for l in log):
+                bad("%s: a line '%s', expected the abort at once on one thread" % (tag, CHECK))
+        if not brun and flow == "t4":
+            if not any(INLOOP.search(l) for l in log):
+                bad("%s: no line of the check after the particle loop (%s ... OpenMP thread N)" % (tag, CHECK))
+    l1 = [res["t1"][0][i] for i, _ in res["t1"][2]]
+    l4 = [res["t4"][0][i] for i, _ in res["t4"][2]]
+    if l1 != l4:
+        bad("kind %d: the line of 4 threads differs from that of 1 thread" % k)
+    shown = l1[0].strip() if l1 else "(no line)"
+    print("  kind %2d %s: %s; %d process(es) with a line, ranks %s"
+          % (k, "goes on" if brun else "stops  ", shown[:150] + (" ..." if len(shown) > 150 else ""),
+             len(res["np"][2]), ",".join(r or "-" for r in res["np"][3])))
+    if not brun:
+        ck = [INLOOP.search(l) for l in res["t4"][0]]
+        ck = [m.group(0) for m in ck if m]
+        print("          4 threads: %s" % (ck[0] if ck else "(no line of the check)"))
+
+# a non-stop event and a guard with no kind in the same pass, 1 thread
+log, rc = read("ev_if")
+hits = common(8, "ev_if", log, rc, 1)
+msg = [i for i, l in enumerate(log) if "error stop drogue: internal error" in l]
+fired = any("lgr_mpi_test_internal: travel time set negative by OpenMP thread 0" in l for l in log)
+print("  LGR_TEST_EVENT=8 + LGR_TEST_INTERNAL_FAIL=1, 1 thread: exit code %d, the hook of the guard %s,"
+      " lines of kind 8: %d, message: %s" % (rc, "fired" if fired else "did not fire", len(hits),
+      log[msg[0]].strip() if msg else "none"))
+if rc != 33 or not msg or not fired or any("simulation end" in l for l in log):
+    bad("ev_if: expected exit code 33 with 'error stop drogue: internal error' after the hook of the guard fired")
+if len(hits) != 1:
+    bad("ev_if: %d lines of kind 8, expected the event of the pass written before the stop" % len(hits))
+elif msg and hits[0][0] > msg[0]:
+    bad("ev_if: the line of kind 8 after the message")
+if any(CHECK in l for l in log):
+    bad("ev_if: a line '%s', expected the abort at once on one thread" % CHECK)
+sys.exit(0 if ok else 1)
+EOF
+  # the routines of the old name stop with a bare stop (exit code 0): none
+  # may be called in the model, where they run on several processes; kept
+  # only inside the OpenMP tasks of conz3d_omp (the upwind value of TVD,
+  # tvd_get_upwind_c: femintp_xi and a debug line under bdebug = .false.),
+  # where an abort through MPI_ABORT may not come from a worker either
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$SRC" <<'EOF' || fail "calls of xi2xy, xy2xi, xi_dist or xit_start_end (bare stop) in the model, see above"
+import glob, os, re, sys
+src = sys.argv[1]
+KEEP = {("evgeom.f90", "femintp_xi"), ("tvd_admin.f90", "tvd_get_upwind_c")}
+unit = re.compile(r"^\s*(?:[a-z ()*0-9,=]*\s)?(?:subroutine|function)\s+(\w+)", re.I)
+call = re.compile(r"^[^!]*\bcall\s+(xi2xy|xy2xi|xi_dist|xit_start_end)\s*\(", re.I)
+bad, kept = [], []
+files = sorted(glob.glob(os.path.join(src, "shyfem", "*.f90")) + glob.glob(os.path.join(src, "utils", "*", "*.f90")))
+for path in files:
+    name = None
+    with open(path, errors="replace") as fh:
+        for n, line in enumerate(fh, 1):
+            m = unit.match(line)
+            if m and not line.lstrip().lower().startswith("end"):
+                name = m.group(1).lower()
+            if call.match(line):
+                rel = os.path.relpath(path, src)
+                what = "    src/%s:%d (%s): %s" % (rel, n, name, line.strip())
+                (kept if (os.path.basename(path), name) in KEEP else bad).append(what)
+print("  files scanned: %d; calls kept inside the OpenMP tasks of conz3d_omp: %d" % (len(files), len(kept)))
+for l in kept:
+    print(l)
+if bad:
+    print("  FAIL: calls of the old name (bare stop) on the paths of the model:")
+    for l in bad:
+        print(l)
+    sys.exit(1)
+print("  no other call of xi2xy, xy2xi, xi_dist or xit_start_end (bare stop) in src/shyfem and src/utils")
+EOF
   finish
 fi
 
