@@ -110,11 +110,16 @@
 ! shympi_abort_internal (exit 33): shyproj links evgeom.o without the
 ! shympi library (its link line lists libshympi.a before libshyutil.a
 ! once, so the reference would not resolve). The model calls set_ev
-! after MPI is initialized, on every process for its own elements; an
-! exit 7 of one process or of all ends the job through mpirun with exit
-! 7 (no MPI_Finalize). The per-element routines (xy2xi, xi2xy, xi_dist,
-! adjust_bc, area_elem, aomega_elem) keep their bare stops: they can run
-! inside OpenMP workers, where nothing may write or stop
+! before MPI is initialized when its basin is a .grd file (shypre_sub),
+! and after, on every process for its own elements; an exit 7 of one
+! process or of all ends the job through mpirun with exit 7 (no
+! MPI_Finalize). The other routines keep their bare stops for now
+! (follow-up of #333): xy2xi can run inside the OpenMP tasks of
+! conz3d_omp (femintp_xi, itvd = 2, #317), where nothing may write or
+! stop; adjust_bc runs only in set_ev (set-up, outside OpenMP); xi2xy
+! and xi_dist are called only by a test tool (the model calls their
+! _ierr variants, which never stop); area_elem, aomega_elem and
+! area_node stop only if ev is not set up
 !
 !***********************************************************
 
