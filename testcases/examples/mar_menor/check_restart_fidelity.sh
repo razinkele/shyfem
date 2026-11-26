@@ -43,17 +43,22 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and twelve cases of another kind, each with its own write runs (serial):
+# and fourteen cases of another kind, each with its own write runs
+# (serial):
 #   old_v19       (a merge-time check, needs REF_BIN_DIR, see below) a
 #                 version 19 file (venlag_smoke, as ven_s), written by the
 #                 reference binary REF_BIN_DIR/shyfem (a build of the last
 #                 main commit before version 20) and read by this binary
 #                 (r) and by the reference binary (m): r must read it as
 #                 main did, so r's .hydro.shy, .ts.shy and .ext must be the
-#                 same bytes as m's (cmp); r's log must show "nvers = 19"
-#                 and "setweg clock not reset" (only a version 20 record
-#                 restores iwetv, so only then is setweg's clock reset);
-#                 without REF_BIN_DIR the case is skipped
+#                 same bytes as m's (cmp) and equal from the first record r
+#                 must write (the comparator exits 0, #330: cmp alone would
+#                 pass two files that both lack it; a canary drops it from
+#                 copies of both, which must be rejected); r's log must
+#                 show "nvers = 19" and "setweg clock not reset" (only a
+#                 version 20 record restores iwetv, so only then is
+#                 setweg's clock reset); without REF_BIN_DIR the case is
+#                 skipped
 #   drag0_reads_cd4  the version 20 file of mm_h6d4's write run (windcd
 #                 set by COARE, itdrag = 4) read with itdrag = 0, as written
 #                 (r) and with its windcd record set to the STR's dragco
@@ -84,7 +89,10 @@
 #                 (itdrag = 4, file heat flag not set)" and r must equal p;
 #                 the patch's line must show heat flag 0 and itdrag 4 (the
 #                 two drag cases above check theirs: heat flag 1, their
-#                 writer's itdrag)
+#                 writer's itdrag); and a third read (n) of the same file
+#                 without heat flux (ibarcl = 0, itdrag = 4 kept) must log
+#                 "windcd not applied (itdrag = 4, no heat flux, file heat
+#                 flag not set)" (#330)
 #   flgrst_no_hydro  mm_h6d4's write run read with flgrst = 110 (depth and
 #                 T/S, no hydro): the read must end, its log must show id 1
 #                 not wanted and ids 2 and 3 wanted, the seven version 20
@@ -92,7 +100,20 @@
 #                 reset" with the cold start's clock (not the restart
 #                 time); and T and S in its .ext at the restart time must
 #                 equal the write run's, so the records after the skipped
-#                 ones were read right
+#                 ones were read right: the comparator on the T and S
+#                 records of both .ext files, to the restart time, must
+#                 exit 0 with an S and a T record compared at that time
+#                 (#330; not on the whole files: the read run's records
+#                 after the restart time have none in the write run's, and
+#                 zeta differs, hydro is not read); the write run's T at
+#                 the restart time must differ from its first T (else
+#                 equal T and S would show nothing); and two canaries must
+#                 be rejected: the read run's .ext without its records at
+#                 the restart time (the comparator exits 2), and with the
+#                 write run's records at its last output time before the
+#                 restart time added (exit 1, "before the first record B
+#                 must have", which the old check, from the comparator's
+#                 lines at the restart time, passed)
 #   evap_reads_noheat  the version 20 file of mm_h6d4's write run (evapv of
 #                 the heat flux, windcd set by COARE) read with ibarcl = 0,
 #                 so that qflux3d does not run (ievap = 1, iheat = 6,
@@ -102,7 +123,7 @@
 #                 file's evapv and windcd, so r must equal p (max|d| = 0;
 #                 compared even if a log line is missing) and both logs must
 #                 say "evapv not applied" and "windcd not applied (itdrag =
-#                 4, no heat flux)"
+#                 4, no heat flux)" (that text: an i0 format, #330)
 #   keps_to_gotm  the version 20 file of ven_keps_s's write run (k-epsilon,
 #                 iturb = 2: its turbulence block, id 8, holds tken, eps,
 #                 visv and difv, and no GOTM arrays) read with GOTM (iturb =
@@ -171,13 +192,46 @@
 #                 against the record's time, not the reset line itself:
 #                 with an explicit itrst the cold start's clock is already
 #                 the STR's itanf (setup_time runs before setweg(0)), which
-#                 equals dtanf, so the case passes also without the reset;
-#                 the reset matters with itrst = -1, where the start moves
-#                 to the record's time after setweg(0) while the cold clock
-#                 stays at the STR's itanf (when that differs), and only
-#                 an element that re-wets in the read window would show
-#                 it in a result
-#   tools        rstinf and rst2shy (this build's, on PATH) on version 20
+#                 equals dtanf, so the case passes also without the reset
+#                 (measured).  The reset matters with itrst = -1, where the
+#                 start moves to the record's time after setweg(0) while
+#                 the cold clock stays at the STR's itanf (when that
+#                 differs): clock_itrst_last pins it.  The log must also
+#                 say "windcd not applied (itdrag = 0 here and in the
+#                 file; windcd is restored only with itdrag = 3 or 4)"
+#                 once, and not the old "(file itdrag = 0, run itdrag =
+#                 0)", which read like a mismatch (#330)
+#   clock_itrst_last  (#330, the setweg clock reset itself) mm_i0's write
+#                 run (record at 06:00) read with mm_i0's read STR, itrst
+#                 = -1 and itanf = 00:00, to 07:00, writing its last record
+#                 (idtrst = -1, at 07:00): setweg(0) sets the clock to the
+#                 STR's itanf, 00:00, at the set-up, and the restart then
+#                 moves the start to the record's time, 06:00 (dtanf); the
+#                 reset (dtime_setweg_old = dtanf) sets the clock to 06:00,
+#                 so the first set_dry, at 06:00, counts no new step.
+#                 Without it set_dry counts one at 06:00 and the step
+#                 another at 06:05: iwetv in the read run's record at 07:00
+#                 minus iwetv in the file read must be at most 12, the
+#                 steps from 06:00 to 07:00, and 12 for some element
+#                 (measured with the reset line taken out: 13, and the
+#                 clock 0); the log must say "setweg clock reset to the
+#                 start of the run" with 21600 s and the record's time,
+#                 21600 s; and the windcd line of clock_itrst_after_start.
+#                 As there, no result file shows it (only an element that
+#                 re-wets in the read window would), the restart record
+#                 written by the read run does
+#   idtoff_unparsed  (#330) mm_h6d4's write run read with idtoff = 'xyz',
+#                 a string convert_time_d cannot parse (the restart reader
+#                 decodes idtoff with it, offline_reads_ts, as hydro is
+#                 wanted and the heat flux runs, before handle_offline
+#                 does), serially (r) and on 2 processes (p): each must
+#                 stop with exit code 33 (shympi_abort_internal; before, a
+#                 bare stop ended each process with exit 0, and mpirun
+#                 exited 1), print "error stop convert_time_d: cannot parse
+#                 idtoff" (once serially, at least once on 2 processes, as
+#                 MPI_ABORT may stop the other process before it prints)
+#                 and not end the simulation; p's log must show both ranks
+#   tools         rstinf and rst2shy (this build's, on PATH) on version 20
 #                 files; three write runs of this binary, serial, with a
 #                 record every 3 h (m20: mm_h6d4's write run, 03:00 and
 #                 06:00) or every hour (k20: ven_keps_s's, with k-epsilon;
@@ -233,7 +287,14 @@
 # runs (the cases of another kind) uses the same first records.  A canary
 # of each case of the first list drops the first expected record of each
 # file from a copy of the read run's file, which the comparator must
-# reject.
+# reject.  With it, a self-check of the comparator's two guards of --first
+# (#330), on inputs made from each file of the case: the read run's file
+# with the continuous run's records at its last output time before the
+# first expected record added, which the comparator must reject with exit
+# 1 ("before the first record B must have"), and the continuous run's
+# file without its records at the first expected record, which it must
+# reject with exit 2 ("has no record at"); so that a guard taken out of
+# shy_maxdiff.py fails here.
 #
 # Prints one line per case,
 #   case NAME: max|d| zeta X@T, transport X@T, S X@T, T X@T, ext X -> PASS|FAIL
@@ -266,14 +327,14 @@
 # other cases need this build alone.
 # Needs shyfem, shypre and python3 with numpy on PATH, rstinf and rst2shy
 # for the cases tools and tools_v19, and mpirun (an OpenMPI build) for the
-# cases on several processes.  Works in a folder
+# cases on several processes (*_np*, idtoff_unparsed).  Works in a folder
 # made with mktemp -d under ${TMPDIR:-/tmp}: the basins are built there
 # with shypre from GRID/MM_coarse_smooth.grd and ../venice_lagoon/GRID/
 # venlag62.grd, INPUT is linked and the STR files are made there with sed
 # from mm_hyd_41.str and venlag_smoke.str, so nothing in the source
 # folders changes (python3 -B: the import of shy_maxdiff writes no
-# __pycache__ next to it, #323).  The cases run at the same time (50
-# processes at the start with REF_BIN_DIR, 46 without); every mpirun has
+# __pycache__ next to it, #323).  The cases run at the same time (52
+# processes at the start with REF_BIN_DIR, 48 without); every mpirun has
 # --bind-to none, so that the runs do not share the two cores Open MPI
 # binds a 2-process run to.  Takes about 2 minutes on the development
 # machine (the serial venlag cases are the longest).
@@ -284,18 +345,19 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
 ALL="$ALL old_v19 drag0_reads_cd4 drag4_reads_cd0 drag4_noheat_reads_cd4 flgrst_no_hydro evap_reads_noheat"
-ALL="$ALL keps_to_gotm offline_ts_noheat offline_ts_noheat_str clock_itrst_after_start tools tools_v19"
+ALL="$ALL keps_to_gotm offline_ts_noheat offline_ts_noheat_str clock_itrst_after_start clock_itrst_last"
+ALL="$ALL idtoff_unparsed tools tools_v19"
 OPT="mm_e0"     # cases kept out of the default list
 CASES="${*:-$ALL}"
 needmm=no; needven=no; needmpi=no; needtools=no
 for c in $CASES; do
   case " $ALL $OPT " in *" $c "*) ;; *) echo "usage: [REF_BIN_DIR=DIR] $0 [case ...], cases: $ALL (and $OPT)"; exit 2 ;; esac
   case "$c" in
-    mm_*|drag*_reads_*|flgrst_no_hydro|evap_reads_noheat|offline_ts_noheat*|clock_itrst_after_start) needmm=yes ;;
+    mm_*|drag*_reads_*|flgrst_no_hydro|evap_reads_noheat|offline_ts_noheat*|clock_itrst_*|idtoff_unparsed) needmm=yes ;;
     ven_*|old_v19|keps_to_gotm) needven=yes ;;
     tools|tools_v19) needmm=yes; needven=yes; needtools=yes ;;
   esac
-  case "$c" in *_np*) needmpi=yes ;; esac
+  case "$c" in *_np*|idtoff_unparsed) needmpi=yes ;; esac
 done
 tools="shyfem shypre python3"
 [ "$needmpi" = yes ] && tools="$tools mpirun"
@@ -470,9 +532,9 @@ ranks_ok() {
   awk -v np="$2" '/shympi initialized:/ { n++; if ($4 == np && $3 >= 0 && $3 < np) seen[$3]++ }
     END { ok = (n == np); for (i = 0; i < np; i++) if (seen[i] != 1) ok = 0; exit !ok }' "$1"
 }
-# run DIR NAME NP [BIN]: runs DIR/NAME.str with BIN (default: shyfem on
-# PATH); prints why it failed, if it did
-run() {
+# runx DIR NAME NP [BIN]: runs DIR/NAME.str with BIN (default: shyfem on
+# PATH) on NP processes, its output in DIR/NAME.log; returns its exit code
+runx() {
   local d="$1" n="$2" np="$3" bin="${4:-shyfem}" r
   if [ "$np" = 1 ]; then
     ( cd "$d" && OMP_NUM_THREADS=1 exec timeout 1200 nice -n 10 "$bin" "$n.str" < /dev/null > "$n.log" 2>&1 ) &
@@ -484,6 +546,14 @@ run() {
   wait "$!"
   r=$?
   rm -f "$d/run.pid"
+  return "$r"
+}
+# run DIR NAME NP [BIN]: runx, which must end the run (exit code 0,
+# "simulation end", and NP processes); prints why it failed, if it did
+run() {
+  local d="$1" n="$2" np="$3" r
+  runx "$@"
+  r=$?
   if [ "$r" != 0 ] || ! grep -q "simulation end" "$d/$n.log"; then
     echo "$n: exit code $r, $(grep -c 'simulation end' "$d/$n.log") 'simulation end' in $d/$n.log"; return 1
   fi
@@ -495,7 +565,7 @@ run() {
 # onecase NAME: runs the case, writes NAME.line (the case line) and
 # NAME.detail (the summary lines)
 onecase() {
-  local cs="$1" d="$P/$1" np=1 s t0 why rc pc pw f k line="" ext="" un=0 nr fh can=""
+  local cs="$1" d="$P/$1" np=1 s t0 why rc pc pw f k line="" ext="" un=0 nr fh can="" grd=""
   t0=$(date +%s)
   case "$cs" in *_np*) np="${cs##*_np}" ;; esac
   mkdir "$d" || return 1
@@ -551,8 +621,11 @@ onecase() {
       why="$why$f: $(grep -v '^ \|^SUMMARY' "$d/cmp.$f.txt" | head -1); "
       continue
     fi
-    # the canary: r's file without its first expected record must fail
+    # the canary: r's file without its first expected record must fail;
+    # and the comparator's two guards of --first, on inputs made from c's
+    # and r's files
     can="$can$(canary "$d/c/c.$f" "$d/r/r.$f" "$d/drop.$f" "$fh")"
+    grd="$grd$(guards "$d/c/c.$f" "$d/r/r.$f" "$d" "$f" "$fh")"
     s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
     nr="$(echo "$s" | sed -n 's/.*unmatched \([0-9]*\) .*/\1/p')"
     un=$(( un + ${nr:-0} ))
@@ -574,43 +647,80 @@ onecase() {
   line="case $cs: max|d| ${line}ext $ext"
   [ "$un" = 0 ] || line="$line, $un unmatched records"
   if [ -n "$can" ]; then line="$line; canary: ${can%; }"; rc=1; fi
+  if [ -n "$grd" ]; then line="$line; guards of --first: ${grd%; }"; rc=1; fi
   echo "    first records required: hydro.shy ${FHYD}h, ts.shy ${FTS}h, ext ${FEXT}h; canary (each without it):" \
-       "$(if [ -z "$can" ]; then echo rejected; else echo FAILED; fi)" >> "$d.detail"
+       "$(if [ -z "$can" ]; then echo rejected; else echo FAILED; fi); guards of --first (a record of r before it," \
+       "c without it): $(if [ -z "$grd" ]; then echo rejected; else echo FAILED; fi)" >> "$d.detail"
   if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
   return "$rc"
 }
-# shydrop SRC DST H: DST is the .shy or .ext file SRC without its data
-# records at H hours from the file's start date (the hours of
-# shy_maxdiff.py), or at its last time if H is "last"; prints how many it
-# dropped, fails if none
-shydrop() {
+# shyfix MODE SRC DST H [ARG ...]: DST is the .shy or .ext file SRC with
+# other data records, H in hours from the file's start date (the hours of
+# shy_maxdiff.py); prints what it did:
+#   drop   SRC without its records at H, or at its last time if H is
+#          "last"; fails if there is none
+#   keep   only SRC's records at H or before whose variable (ivar) is one
+#          of ARG...; none kept is no error (the comparator rejects a file
+#          without data records)
+#   graft  SRC with the records of the file ARG (of the same kind, A of a
+#          comparison) at ARG's last time before H added before its own;
+#          fails if ARG has none
+shyfix() {
   python3 -B - "$HERE" "$@" << 'EOF'
 import struct, sys
 sys.path.insert(0, sys.argv[1])
 import shy_maxdiff
-src, dst, h = sys.argv[2], sys.argv[3], sys.argv[4]
-recs = shy_maxdiff.records(src)
-if shy_maxdiff.kind_of(recs, src) == 'shy':
-    i0 = [k for k, r in enumerate(recs) if len(r) == 0][1] + 1   # header: to its second empty record
-    t0, step = 0., 2                                               # data: (time, ivar, n, m, lmax), values
-else:
-    i0 = 7                                                          # header: 7 records, atime0 the third
-    t0, step = struct.unpack('<d', recs[2])[0], 1                  # data: (atime, ivar, ...) values
-ts = [struct.unpack_from('<d', recs[i])[0] for i in range(i0, len(recs), step)]
-t = max(ts) if h == 'last' and ts else t0 + 3600. * float(h if h != 'last' else 0)
-keep, n = recs[:i0], 0
-for i, ti in zip(range(i0, len(recs), step), ts):
-    if abs(ti - t) < 0.5:
-        n += 1
+mode, src, dst, h, args = sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6:]
+def parts(path):    # kind, header records, t0, data records (each a list of its records)
+    recs = shy_maxdiff.records(path)
+    kind = shy_maxdiff.kind_of(recs, path)
+    if kind == 'shy':
+        i0 = [k for k, r in enumerate(recs) if len(r) == 0][1] + 1   # header: to its second empty record
+        t0, step = 0., 2                                               # data: (time, ivar, n, m, lmax), values
     else:
-        keep += recs[i:i + step]
-if n == 0:
-    sys.exit(f"no data record at {h}h in {src}")
+        i0 = 7                                                          # header: 7 records, atime0 the third
+        t0, step = struct.unpack('<d', recs[2])[0], 1                  # data: (atime, ivar, ...) values
+    return kind, recs[:i0], t0, [recs[i:i + step] for i in range(i0, len(recs), step)]
+def tim(d):         # the time of a data record (the first 8 bytes)
+    return struct.unpack_from('<d', d[0])[0]
+def ivar(d):        # its variable (the integer after the time)
+    return struct.unpack_from('<i', d[0], 8)[0]
+kind, head, t0, data = parts(src)
+ts = [tim(d) for d in data]
+t = max(ts) if h == 'last' and ts else t0 + 3600. * float(h if h != 'last' else 0)
+if mode == 'drop':
+    keep = [d for d in data if abs(tim(d) - t) >= 0.5]
+    n = len(data) - len(keep)
+    if n == 0:
+        sys.exit(f"no data record at {h}h in {src}")
+    msg = f"{n} records at {(t - t0) / 3600.:g}h dropped"
+elif mode == 'keep' and h != 'last' and args:
+    iv = {int(a) for a in args}
+    keep = [d for d in data if tim(d) < t + 0.5 and ivar(d) in iv]
+    msg = f"{len(keep)} records of variables {' '.join(args)} at {h}h or before kept"
+elif mode == 'graft' and h != 'last' and len(args) == 1:
+    ko, _, _, other = parts(args[0])
+    if ko != kind:
+        sys.exit(f"{args[0]} is a .{ko} file, {src} a .{kind} file")
+    before = [tim(d) for d in other if tim(d) < t - 0.5]
+    if not before:
+        sys.exit(f"{args[0]} has no data record before {h}h")
+    tg = max(before)
+    add = [d for d in other if abs(tim(d) - tg) < 0.5]
+    keep = add + data
+    msg = f"{len(add)} records of {args[0]} at {(tg - t0) / 3600.:g}h added"
+else:
+    sys.exit(f"shyfix: bad arguments {' '.join(sys.argv[2:])}")
 with open(dst, 'wb') as fp:
-    for r in keep:
+    for r in head + [r for d in keep for r in d]:
         fp.write(struct.pack('<i', len(r)) + r + struct.pack('<i', len(r)))
-print(f"{n} records at {(t - t0) / 3600.:g}h dropped")
+print(msg)
 EOF
+}
+# shydrop SRC DST H: shyfix drop (SRC without its records at H, or at its
+# last time if H is "last")
+shydrop() {
+  shyfix drop "$@"
 }
 # canary A B DROP H: B (a read run's file, which passed against A) without
 # its records at H, the first record it must have, is DROP; the comparator
@@ -625,6 +735,34 @@ canary() {
     echo -n "${2##*/} without its records at ${4}h not rejected (exit $k, see $3.txt); "
   fi
 }
+# guards A B DIR F H: the two guards of the comparator's --first, on
+# inputs made from A and B (a case's files of kind F, which passed, H the
+# first record B must have): B with A's records at A's last time before H
+# added (DIR/g1.F) must be rejected with exit 1 and "of B: before the
+# first record B must have (Hh)", and A without its records at H
+# (DIR/g2.F) with exit 2 and "has no record at Hh (--first)"; prints
+# "F: reason; " for each that is not
+guards() {
+  local a="$1" b="$2" dd="$3" f="$4" h="$5" k w
+  if ! w="$(shyfix graft "$b" "$dd/g1.$f" "$h" "$a" 2>&1)"; then
+    echo -n "$f: cannot add A's records before ${h}h to B ($w); "
+  else
+    python3 -B "$HERE/shy_maxdiff.py" --first "$h" "$a" "$dd/g1.$f" > "$dd/g1.$f.txt" 2>&1
+    k=$?
+    if [ "$k" != 1 ] || ! grep -q "of B: before the first record B must have (${h}h)\$" "$dd/g1.$f.txt"; then
+      echo -n "$f: B with A's records before ${h}h not rejected (exit $k, see $dd/g1.$f.txt); "
+    fi
+  fi
+  if ! w="$(shydrop "$a" "$dd/g2.$f" "$h" 2>&1)"; then
+    echo -n "$f: cannot drop A's records at ${h}h ($w); "
+  else
+    python3 -B "$HERE/shy_maxdiff.py" --first "$h" "$dd/g2.$f" "$b" > "$dd/g2.$f.txt" 2>&1
+    k=$?
+    if [ "$k" != 2 ] || ! grep -q "has no record at ${h}h (--first)\$" "$dd/g2.$f.txt"; then
+      echo -n "$f: --first ${h}h with no record in A not rejected (exit $k, see $dd/g2.$f.txt); "
+    fi
+  fi
+}
 # athour CMPFILE H: " NAME X ..." of the lines "t= H.000h NAME max|d|=X"
 # of shy_maxdiff.py
 athour() {
@@ -634,7 +772,7 @@ athour() {
 
 #--- the cases of another kind (old_v19, drag0_reads_cd4, drag4_reads_cd0, drag4_noheat_reads_cd4,
 #    flgrst_no_hydro, evap_reads_noheat, keps_to_gotm, offline_ts_noheat, offline_ts_noheat_str,
-#    clock_itrst_after_start; tools and tools_v19 below)
+#    clock_itrst_after_start, clock_itrst_last, idtoff_unparsed; tools and tools_v19 below)
 # rundir DIR mm|ven: a run folder with its own copy of the basin and INPUT
 rundir() {
   mkdir "$1" && mkdir "$1/GRID" || return 1
@@ -661,9 +799,24 @@ donecase() {
   return 1
 }
 
+# same19 A B H OUT: the files A (m's) and B (r's) of old_v19 are the same:
+# the comparator, with B's first record H, exits 0 (its output in OUT),
+# and cmp finds the same bytes; prints "same bytes" or why not, and fails
+# unless both hold (cmp alone would pass two files that both lack their
+# first record, #330)
+same19() {
+  local k bad=""
+  python3 -B "$HERE/shy_maxdiff.py" --first "$3" "$1" "$2" > "$4" 2>&1
+  k=$?
+  [ "$k" = 0 ] || bad="comparator exit $k, "
+  cmp -s "$1" "$2" || bad="${bad}DIFFERS (cmp), "
+  if [ -n "$bad" ]; then echo -n "${bad%, }"; return 1; fi
+  echo -n "same bytes"
+}
+
 # case_old_v19: a version 19 file read as main reads it
 case_old_v19() {
-  local cs=old_v19 d="$P/old_v19" s t0 why="" f k w rc=0 ref pr pm line=""
+  local cs=old_v19 d="$P/old_v19" s t0 why="" f k w rc=0 ref pr pm line="" fh can=""
   t0=$(date +%s)
   ref="${REF_BIN_DIR:-}/shyfem"
   if [ -z "${REF_BIN_DIR:-}" ]; then
@@ -709,17 +862,31 @@ case_old_v19() {
   donecase "$cs" "$t0" "$why" || return 1
   : > "$d.detail"
   for f in hydro.shy ts.shy ext; do
-    python3 -B "$HERE/shy_maxdiff.py" --first "$(firstof "$f")" "$d/m/r.$f" "$d/r/r.$f" > "$d/cmp.$f.txt" 2>&1
+    fh="$(firstof "$f")"
+    w="$(same19 "$d/m/r.$f" "$d/r/r.$f" "$fh" "$d/cmp.$f.txt")" || rc=1
+    line="${line}$f $w, "
     s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
     [ -n "$s" ] || s="$(head -1 "$d/cmp.$f.txt")"
     echo "    $f (m against r): ${s#SUMMARY *: }" >> "$d.detail"
-    if cmp -s "$d/m/r.$f" "$d/r/r.$f"; then
-      line="${line}$f same bytes, "
+    # the canary: both files without their first expected record are the
+    # same bytes, so only the comparator (exit 2: A has no record at fh)
+    # can reject them
+    if ! shydrop "$d/m/r.$f" "$d/dropm.$f" "$fh" > /dev/null 2>&1 \
+       || ! shydrop "$d/r/r.$f" "$d/dropr.$f" "$fh" > /dev/null 2>&1; then
+      can="$can$f: cannot drop its records at ${fh}h; "
+    elif w="$(same19 "$d/dropm.$f" "$d/dropr.$f" "$fh" "$d/drop.$f.txt")"; then
+      can="$can$f of m and r without their records at ${fh}h passed ($w); "
     else
-      line="${line}$f DIFFERS, "; rc=1
+      case "$w" in
+        *"comparator exit 2"*) ;;
+        *) can="$can$f of m and r without their records at ${fh}h not rejected by the comparator ($w); " ;;
+      esac
     fi
   done
+  echo "    first records required: hydro.shy ${FHYD}h, ts.shy ${FTS}h, ext ${FEXT}h; canary (m and r without it):" \
+       "$(if [ -z "$can" ]; then echo rejected; else echo FAILED; fi)" >> "$d.detail"
   line="case $cs: REF_BIN_DIR's version 19 file read by this binary and by REF_BIN_DIR: ${line%, }"
+  if [ -n "$can" ]; then line="$line; canary: ${can%; }"; rc=1; fi
   if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
   return "$rc"
 }
@@ -833,17 +1000,23 @@ dlog() {
 # "windcd not applied (file itdrag = WITD, run itdrag = RITD)", or, with
 # WITD = RITD = 4, "windcd not applied (itdrag = 4, file heat flag not
 # set)"; and the patch's line shows the file's heat flag WHEAT and itdrag
-# WITD (else the case would not test what it says)
+# WITD (else the case would not test what it says).  With WITD = RITD = 4
+# a third read n of w's file without heat flux (r's STR with ibarcl = 0)
+# must log "windcd not applied (itdrag = 4, no heat flux, file heat flag
+# not set)" (#330)
 case_drag() {
-  local cs="$1" witd="$2" ritd="$3" rdc="$4" wh="$5" d="$P/$1" s t0 why="" lw="" f k rc=0 pr pp line="" cmpl="" dc="" pat
+  local cs="$1" witd="$2" ritd="$3" rdc="$4" wh="$5" d="$P/$1" s t0 why="" lw="" f k rc=0 pr pp pn line="" cmpl="" dc="" pat
+  local patn="" rs="r p"
   if [ "$witd" = "$ritd" ]; then
     pat="windcd not applied (itdrag = $ritd, file heat flag not set)"
+    patn="windcd not applied (itdrag = $ritd, no heat flux, file heat flag not set)"
+    rs="r p n"
   else
     pat="windcd not applied (file itdrag = $witd, run itdrag = $ritd)"
   fi
   t0=$(date +%s)
   mkdir "$d" || return 1
-  for s in c w r p; do rundir "$d/$s" mm || return 1; done
+  for s in c w $rs; do rundir "$d/$s" mm || return 1; done
   RTIME=""
   if mkmm "$cs" 0 06 12 "iheat = 6   itdrag = $witd" && [ -n "$RTIME" ]; then
     sed -i "s/^        iheat = 6   itdrag = $witd\$/        iheat = 6   itdrag = $ritd/" "$d/r/r.str"
@@ -858,8 +1031,15 @@ case_drag() {
      || ! cp "$d/r/r.str" "$d/p/r.str"; then
     echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
   fi
+  if [ -n "$patn" ]; then
+    sed 's/^        ibarcl = 3$/        ibarcl = 0/' "$d/r/r.str" > "$d/n/r.str"
+    if [ "$(grep -c '^        ibarcl = 0$' "$d/n/r.str")" != 1 ]; then
+      echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
+    fi
+  fi
   # w writes with itdrag = WITD; r reads w.rst, p the same file with windcd
-  # set to the reader's dragco, both with itdrag = RITD
+  # set to the reader's dragco, both with itdrag = RITD (and n reads w.rst
+  # without heat flux)
   if ! run "$d/w" w 1 > "$d/w.why"; then
     why="$(cat "$d/w.why"); "
   elif [ ! -s "$d/w/w.rst" ]; then
@@ -872,8 +1052,15 @@ case_drag() {
     ln -s ../w/w.rst "$d/r/w.rst" || return 1
     run "$d/r" r 1 > "$d/r.why" & pr=$!
     run "$d/p" r 1 > "$d/p.why" & pp=$!
+    if [ -n "$patn" ]; then
+      ln -s ../w/w.rst "$d/n/w.rst" || return 1
+      run "$d/n" r 1 > "$d/n.why" & pn=$!
+    fi
     if wait "$pr"; then lw="$lw$(dlog "$d/r/r.log" r "$pat")"; else why="${why}r: $(cat "$d/r.why"); "; fi
     if wait "$pp"; then lw="$lw$(dlog "$d/p/r.log" p "$pat")"; else why="${why}p: $(cat "$d/p.why"); "; fi
+    if [ -n "$patn" ]; then
+      if wait "$pn"; then lw="$lw$(dlog "$d/n/r.log" n "$patn")"; else why="${why}n: $(cat "$d/n.why"); "; fi
+    fi
   fi
   donecase "$cs" "$t0" "$why" || return 1
   echo "    $(head -1 "$d/patch.txt")" > "$d.detail"
@@ -889,6 +1076,7 @@ case_drag() {
   line="case $cs: itdrag = $ritd read (dragco $dc) of a file written with itdrag = $witd"
   [ "$wh" = 0 ] && line="$line without qflux3d (ibarcl = 0)"
   line="$line, against the same file with windcd = $dc: ${cmpl%, }"
+  [ -n "$patn" ] && line="$line; n, the read without heat flux (ibarcl = 0), log checked"
   if [ -n "$lw" ]; then line="$line; log: ${lw%; }"; rc=1; fi
   if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
   return "$rc"
@@ -900,7 +1088,7 @@ e0log() {
   local k
   k="$(grep -c 'evapv not applied' "$1")"
   [ "$k" = 1 ] || echo -n "$2: 'evapv not applied' $k times in $1, not 1; "
-  k="$(grep -c 'windcd not applied (itdrag = *4 *, no heat flux)' "$1")"
+  k="$(grep -c -F 'windcd not applied (itdrag = 4, no heat flux)' "$1")"
   [ "$k" = 1 ] || echo -n "$2: 'windcd not applied (itdrag = 4, no heat flux)' $k times in $1, not 1; "
 }
 # case_evap: a read whose qflux3d does not run (ibarcl = 0) keeps the
@@ -1058,10 +1246,64 @@ case_offline() {
   return "$rc"
 }
 
+# tsrst W R H PFX: the T and S records (ivar 12 and 11) of the .ext files
+# W (the write run's, to the restart time) and R (the read run's), to H
+# hours (copies PFX.w.ext and PFX.r.ext), compared from H (output in
+# PFX.txt): R must have W's T and S records at H, equal, and none before
+# (the comparator exits 0, and it compared both an S and a T record at H;
+# zeta and the velocities are not compared, as hydro is not read, nor R's
+# records after H, which W does not have); prints the comparator's exit
+# code and summary, or why it could not compare, and fails unless it
+# exits 0 with S and T compared at H
+tsrst() {
+  local k w a
+  w="$(shyfix keep "$1" "$4.w.ext" "$3" 11 12 2>&1)" || { echo -n "$w"; return 1; }
+  w="$(shyfix keep "$2" "$4.r.ext" "$3" 11 12 2>&1)" || { echo -n "$w"; return 1; }
+  python3 -B "$HERE/shy_maxdiff.py" --first "$3" "$4.w.ext" "$4.r.ext" > "$4.txt" 2>&1
+  k=$?
+  w="$(grep '^SUMMARY' "$4.txt")"
+  [ -n "$w" ] || w="$(head -1 "$4.txt")"
+  echo -n "comparator exit $k: ${w#SUMMARY *: }"
+  [ "$k" = 0 ] || return 1
+  a=" $(athour "$4.txt" "$3") "     # " S X T X " of the comparator's lines at H
+  case "$a" in *" S "*) ;; *) echo -n "; no S record compared at ${3}h"; return 1 ;; esac
+  case "$a" in *" T "*) ;; *) echo -n "; no T record compared at ${3}h"; return 1 ;; esac
+}
+# tsmoves W H: the T record (ivar 12) of the .ext file W at H hours differs
+# from W's first T record, so that T and S at H equal to W's show that they
+# were read (a read that kept the initial state would have W's first ones);
+# prints how many values of T, and of S, differ; fails if no T value does
+tsmoves() {
+  python3 -B - "$HERE" "$@" << 'EOF'
+import sys
+import numpy as np
+sys.path.insert(0, sys.argv[1])
+import shy_maxdiff
+path, h = sys.argv[2], float(sys.argv[3])
+try:
+    _, _, t0, recs = shy_maxdiff.load(path)
+except Exception as e:      # OSError, FormatError, struct.error
+    sys.exit(f"cannot read {path}: {e}")
+out, nt = [], 0
+for iv, nm in ((12, 'T'), (11, 'S')):
+    ks = sorted(k for k in recs if k[1] == iv)
+    kh = [k for k in ks if abs(k[0] - t0 - 3600. * h) < 0.5]
+    if not kh:
+        sys.exit(f"no {nm} record at {h:g}h in {path}")
+    a, b = np.frombuffer(recs[ks[0]], '<f4'), np.frombuffer(recs[kh[0]], '<f4')
+    n = int(np.count_nonzero(a != b))
+    nt = n if nm == 'T' else nt
+    out.append(f"{nm} {n} of {a.size} values")
+msg = f"from its first record ({(sorted(recs)[0][0] - t0) / 3600.:g}h) to {h:g}h differ: " + ", ".join(out)
+if nt == 0:
+    sys.exit(f"T does not change in {path}: {msg}")
+print(msg)
+EOF
+}
 # case_flgrst: a read without hydro skips the version 20 records and
 # keeps the setweg clock
 case_flgrst() {
-  local cs=flgrst_no_hydro d="$P/flgrst_no_hydro" s t0 why="" k w v ts trs
+  local cs=flgrst_no_hydro d="$P/flgrst_no_hydro" s t0 why="" k w v ts trs cn cg tm
   t0=$(date +%s)
   mkdir "$d" || return 1
   for s in c w r; do rundir "$d/$s" mm || return 1; done
@@ -1097,13 +1339,39 @@ case_flgrst() {
   elif awk -v v="$v" -v t="$trs" 'BEGIN { exit !(v + 0 == t + 0) }'; then
     why="${why}the setweg clock $v is the restart time; "
   fi
-  # T and S at the restart time: r's .ext against w's
-  python3 -B "$HERE/shy_maxdiff.py" --first "$FEXT" "$d/w/w.ext" "$d/r/r.ext" > "$d/cmp.ext.txt" 2>&1
-  ts="$(athour "$d/cmp.ext.txt" "$(( H1 - 1 ))")"
-  k="$(echo "$ts" | awk '{ for (i = 1; i < NF; i += 2) if (($i == "S" || $i == "T") && $(i + 1) + 0 == 0) n++ }
-    END { print n + 0 }')"
-  [ "$k" = 2 ] || why="${why}T and S of r.ext at the restart time are not w.ext's (max|d|:${ts:- no record}); "
-  echo "    setweg clock not reset: ${v:-none}; max|d| r.ext against w.ext at $(( H1 - 1 ))h:${ts:- no record}" > "$d.detail"
+  # T and S at the restart time (FEXT, the first record of r.ext): the
+  # comparator on the T and S records of w.ext and r.ext to that time must
+  # exit 0, with S and T compared at FEXT (tsrst); and w's T must change
+  # from its first record to FEXT, else equal T and S would show nothing
+  ts="$(tsrst "$d/w/w.ext" "$d/r/r.ext" "$FEXT" "$d/ts")" \
+    || why="${why}T and S of r.ext at the restart time are not w.ext's ($ts); "
+  tm="$(tsmoves "$d/w/w.ext" "$FEXT" 2>&1)" || why="${why}w.ext: $tm; "
+  # the canaries: r.ext without its records at FEXT (the comparator exits
+  # 2), and r.ext with w's records at w's last time before FEXT added, a
+  # record before the first r must have (exit 1, which the old check from
+  # the comparator's lines at FEXT passed); tsrst must reject both, the
+  # second as a record before the first
+  cn=FAILED
+  if ! w="$(shydrop "$d/r/r.ext" "$d/drop.ext" "$FEXT" 2>&1)"; then
+    why="${why}canary: cannot drop the records at ${FEXT}h of r.ext ($w); "
+  elif w="$(tsrst "$d/w/w.ext" "$d/drop.ext" "$FEXT" "$d/tsdrop")"; then
+    why="${why}canary: r.ext without its records at ${FEXT}h passed ($w); "
+  else
+    cn=rejected
+  fi
+  cg=FAILED
+  if ! w="$(shyfix graft "$d/r/r.ext" "$d/graft.ext" "$FEXT" "$d/w/w.ext" 2>&1)"; then
+    why="${why}canary: cannot add w.ext's records before ${FEXT}h to r.ext ($w); "
+  elif w="$(tsrst "$d/w/w.ext" "$d/graft.ext" "$FEXT" "$d/tsgraft")"; then
+    why="${why}canary: r.ext with w.ext's records before ${FEXT}h passed ($w); "
+  elif ! grep -q "before the first record B must have (${FEXT}h)\$" "$d/tsgraft.txt"; then
+    why="${why}canary: r.ext with w.ext's records before ${FEXT}h not rejected for a record before the first ($w); "
+  else
+    cg=rejected
+  fi
+  echo "    setweg clock not reset: ${v:-none}; T and S of r.ext against w.ext to ${FEXT}h: $ts;" \
+       "w.ext's T and S $tm; canaries (r.ext without its records at ${FEXT}h: $cn; with w.ext's records" \
+       "before ${FEXT}h: $cg)" > "$d.detail"
   if [ -n "$why" ]; then
     echo "case $cs: ${why%; } -> FAIL" > "$d.line"; return 1
   fi
@@ -1148,29 +1416,44 @@ print(f"iwetv grew by at most {mx} ({d.count(mx)} of {len(d)} elements) in a run
 sys.exit(0 if mx == n else 1)
 EOF
 }
-# case_clock: a read with an explicit itrst one step after its start
-# (itanf = 05:55, itrst = 06:00, idt = 300 s) counts each step once in
-# setweg's iwetv, the first too: the restart sets setweg's clock to the
-# start of the run (dtanf, R5), the time of the first set_dry, not to the
-# time of the record read (with which set_dry would count one step more)
+# case_clock CASE: setweg's clock at a restart, from mm_i0's write run
+# (record at 06:00) read to 07:00 by a run that writes its own record
+# there (idtrst = -1; idt = 300 s); the read must count each step once in
+# setweg's iwetv, so iwetv must grow by the steps of the run:
+#   clock_itrst_after_start  an explicit itrst = 06:00 one step after the
+#     start (itanf = 05:55): the restart sets the clock to the start of
+#     the run (dtanf, R5), the time of the first set_dry, not to the time
+#     of the record read (with which set_dry would count one step more)
+#   clock_itrst_last  itrst = -1 with the STR's itanf, 00:00: setweg(0)
+#     sets the clock to 00:00 at the set-up, then the restart moves the
+#     start to the record's time, 06:00 (dtanf), and must reset the clock
+#     to it (dtime_setweg_old = dtanf; without it set_dry would count one
+#     step more at 06:00), #330
+# Both logs must also show the windcd line of the same itdrag, 0, in the
+# file and the run, and not the old line that read like a mismatch (#330)
 case_clock() {
-  local cs=clock_itrst_after_start d="$P/clock_itrst_after_start" s t0 why="" w k v ns
-  ns=$(( (7 * 3600 - (5 * 3600 + 55 * 60)) / 300 ))     # the steps from 05:55 to 07:00
+  local cs="$1" d="$P/$1" s t0 why="" w k v ns ita itr clk
+  if [ "$cs" = clock_itrst_after_start ]; then
+    ita="2009-01-01::05:55:00"; itr="'2009-01-01::06:00:00'"; clk=21300     # starts at 05:55
+  else
+    ita="2009-01-01"; itr=-1; clk=21600     # starts at the record's time, 06:00
+  fi
+  ns=$(( (7 * 3600 - clk) / 300 ))     # the steps from the start of the run to 07:00
   t0=$(date +%s)
   mkdir "$d" "$d/c" || return 1
   for s in w r; do rundir "$d/$s" mm || return 1; done
   RTIME=""
   if mkmm "$cs" 0 06 12 && [ -n "$RTIME" ]; then
-    sed -i -e "s/itanf = '2009-01-01'    itend = '2009-01-01::12:00:00'/itanf = '2009-01-01::05:55:00'    itend = '2009-01-01::07:00:00'/" \
-           -e "s/^        itrst = -1     ityrst = 1\$/        itrst = '$RTIME'     ityrst = 1\n        idtrst = -1/" "$d/r/r.str"
+    sed -i -e "s/itanf = '2009-01-01'    itend = '2009-01-01::12:00:00'/itanf = '$ita'    itend = '2009-01-01::07:00:00'/" \
+           -e "s/^        itrst = -1     ityrst = 1\$/        itrst = $itr     ityrst = 1\n        idtrst = -1/" "$d/r/r.str"
   fi
-  if [ -z "$RTIME" ] || [ "$(grep -c -e "itanf = '2009-01-01::05:55:00'    itend = '2009-01-01::07:00:00'" \
-       -e "^        itrst = '$RTIME'     ityrst = 1\$" -e '^        idtrst = -1$' -e "^        idt = '300s'" \
+  if [ -z "$RTIME" ] || [ "$(grep -c -e "itanf = '$ita'    itend = '2009-01-01::07:00:00'" \
+       -e "^        itrst = $itr     ityrst = 1\$" -e '^        idtrst = -1$' -e "^        idt = '300s'" \
        "$d/r/r.str")" != 4 ]; then
     echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
   fi
-  # w writes the record at 06:00; r reads it from 05:55 and writes its own
-  # at 07:00
+  # w writes the record at 06:00; r reads it (from 05:55, or from 06:00
+  # with itrst = -1) and writes its own at 07:00
   if ! run "$d/w" w 1 > "$d/w.why"; then
     why="$(cat "$d/w.why"); "
   elif [ ! -s "$d/w/w.rst" ]; then
@@ -1185,19 +1468,89 @@ case_clock() {
   fi
   donecase "$cs" "$t0" "$why" || return 1
   w="$(readok "$d/r/r.log")" || why="$why$w; "
+  # " setweg clock reset to the start of the run: CLOCK (time of the record
+  # read: TIME )": CLOCK is field 10, TIME field 16
   v="$(awk '/setweg clock reset to the start of the run:/ { print $10 }' "$d/r/r.log")"
+  k="$(awk '/setweg clock reset to the start of the run:/ { print $16 }' "$d/r/r.log")"
   if [ "$(echo "$v" | wc -w)" != 1 ]; then
     why="${why}'setweg clock reset to the start of the run' $(echo "$v" | wc -w) times in $d/r/r.log, not 1; "
-  elif ! awk -v v="$v" 'BEGIN { exit !(v + 0 == 21300) }'; then
-    why="${why}the setweg clock is $v, not 21300 (05:55, the start of the run); "
+  elif ! awk -v v="$v" -v c="$clk" 'BEGIN { exit !(v + 0 == c + 0) }'; then
+    why="${why}the setweg clock is $v, not $clk (the start of the run); "
+  elif ! awk -v v="$k" 'BEGIN { exit !(v + 0 == 21600) }'; then
+    why="${why}the time of the record read is $k, not 21600 (06:00); "
   fi
+  w="windcd not applied (itdrag = 0 here and in the file; windcd is restored only with itdrag = 3 or 4)"
+  k="$(grep -c -F -- "$w" "$d/r/r.log")"
+  [ "$k" = 1 ] || why="${why}'$w' $k times in $d/r/r.log, not 1; "
+  w="windcd not applied (file itdrag = 0, run itdrag = 0)"
+  k="$(grep -c -F -- "$w" "$d/r/r.log")"
+  [ "$k" = 0 ] || why="${why}the old line '$w' $k times in $d/r/r.log; "
   w="$(rstiwetv "$d/w/w.rst" "$d/r/r.rst" "$ns" 2>&1)" || why="${why}r.rst against w.rst: $w; "
   echo "    setweg clock: ${v:-none}; $w" > "$d.detail"
   if [ -n "$why" ]; then
     echo "case $cs: ${why%; } -> FAIL" > "$d.line"; return 1
   fi
-  echo "case $cs: itrst = 06:00 read from 05:55 counts each step once (the setweg clock is the start" \
-       "of the run): iwetv of its record at 07:00 is the file's plus $ns steps -> PASS" > "$d.line"
+  if [ "$cs" = clock_itrst_after_start ]; then
+    echo "case $cs: itrst = 06:00 read from 05:55 counts each step once (the setweg clock is the start" \
+         "of the run): iwetv of its record at 07:00 is the file's plus $ns steps -> PASS" > "$d.line"
+  else
+    echo "case $cs: itrst = -1 read (itanf 00:00 in the STR, the run starts at the record's time, 06:00)" \
+         "counts each step once (the setweg clock is reset to 06:00): iwetv of its record at 07:00 is the" \
+         "file's plus $ns steps -> PASS" > "$d.line"
+  fi
+  return 0
+}
+
+# case_idtoff: a read with an idtoff string that convert_time_d cannot
+# parse (idtoff = 'xyz') stops every process with exit code 33 and the
+# message, serially (r) and on 2 processes (p) (#330)
+case_idtoff() {
+  local cs=idtoff_unparsed d="$P/idtoff_unparsed" s t0 why="" bad="" det="" k n np pr pp
+  local msg="error stop convert_time_d: cannot parse idtoff"
+  t0=$(date +%s)
+  mkdir "$d" "$d/c" || return 1
+  for s in w r p; do rundir "$d/$s" mm || return 1; done
+  RTIME=""
+  if mkmm "$cs" 0 06 12 "iheat = 6   itdrag = 4" && [ -n "$RTIME" ]; then
+    sed -i "s/^        itrst = -1     ityrst = 1\$/&\n        idtoff = 'xyz'/" "$d/r/r.str"
+  fi
+  if [ -z "$RTIME" ] || [ "$(grep -c "^        idtoff = 'xyz'\$" "$d/r/r.str")" != 1 ] || ! cp "$d/r/r.str" "$d/p/r.str"; then
+    echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
+  fi
+  # w writes the record (with the heat flux, so that the restart reader
+  # decodes idtoff, offline_reads_ts); r and p read it with idtoff = 'xyz'
+  if ! run "$d/w" w 1 > "$d/w.why"; then
+    why="$(cat "$d/w.why"); "
+  elif [ ! -s "$d/w/w.rst" ]; then
+    why="w: no restart file $d/w/w.rst; "
+  else
+    ln -s ../w/w.rst "$d/r/w.rst" && ln -s ../w/w.rst "$d/p/w.rst" || return 1
+    runx "$d/r" r 1 & pr=$!
+    runx "$d/p" r 2 & pp=$!
+    for s in r p; do
+      if [ "$s" = r ]; then wait "$pr"; k=$?; np=1; else wait "$pp"; k=$?; np=2; fi
+      n="$(grep -c -F -- "$msg" "$d/$s/r.log")"
+      det="$det$s ($np process(es)): exit code $k, '$msg' $n times; "
+      [ "$k" = 33 ] || bad="$bad$s: exit code $k, not 33; "
+      if [ "$np" = 1 ]; then
+        [ "$n" = 1 ] || bad="$bad$s: '$msg' $n times in $d/$s/r.log, not 1; "
+      else
+        # MPI_ABORT may stop the other process before it prints
+        [ "$n" -ge 1 ] || bad="$bad$s: '$msg' not in $d/$s/r.log; "
+        ranks_ok "$d/$s/r.log" "$np" \
+          || bad="$bad$s: not $np MPI processes, $(grep -c 'shympi initialized:' "$d/$s/r.log") 'shympi initialized:' lines; "
+      fi
+      n="$(grep -c 'simulation end' "$d/$s/r.log")"
+      [ "$n" = 0 ] || bad="$bad$s: 'simulation end' $n times in $d/$s/r.log; "
+    done
+  fi
+  donecase "$cs" "$t0" "$why" || return 1
+  echo "    ${det%; }" > "$d.detail"
+  if [ -n "$bad" ]; then
+    echo "case $cs: ${bad%; } -> FAIL" > "$d.line"; return 1
+  fi
+  echo "case $cs: idtoff = 'xyz' read stops with exit code 33 and '$msg', serially and on 2 processes -> PASS" \
+    > "$d.line"
   return 0
 }
 
@@ -1292,8 +1645,8 @@ case_keps_to_gotm() {
 
 #--- the case tools (rstinf, rst2shy)
 # tooldo DIR OUT TOOL ARG...: runs TOOL ARG... in DIR (timeout 300 s),
-# its output to DIR/OUT; the exit code is not used (rstinf and rst2shy end
-# with stop, also on an error), the output is checked
+# its output to DIR/OUT; the tools' exit status is not used here (#327
+# and #332 define it); the output is checked
 tooldo() {
   local dd="$1" out="$2"
   shift 2
@@ -1594,7 +1947,8 @@ for cs in $CASES; do
     keps_to_gotm)    case_keps_to_gotm ;;
     offline_ts_noheat) case_offline offline_ts_noheat -2 ;;
     offline_ts_noheat_str) case_offline offline_ts_noheat_str "'-2s'" ;;
-    clock_itrst_after_start) case_clock ;;
+    clock_itrst_*)   case_clock "$cs" ;;
+    idtoff_unparsed) case_idtoff ;;
     tools)           case_tools ;;
     tools_v19)       case_tools_v19 ;;
     *)               onecase "$cs" ;;
