@@ -195,7 +195,7 @@
             nv_global = nv_global + 1
           else
 	    write(6,*) nv_local,nlv_local
-            stop 'error stop get_nv_global: nv incompatible'
+            call shympi_abort_internal('get_nv_global: nv incompatible')
           end if
         end if
 
@@ -228,7 +228,7 @@
         return
    99   continue
         write(6,*) belem,nn,nel_local,nkn_local
-        stop 'error stop get_nn_global: internal error'
+        call shympi_abort_internal('get_nn_global: internal error')
 	end function
 	
 !--------------------------------
@@ -325,7 +325,7 @@
 	  nn = size(array)
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_write_value_2d_i: allocation of garray failed')
 	  call restart_gather_label(iu,label)
 	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
@@ -359,7 +359,7 @@
 	  nn = size(array)
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_write_value_2d_r: allocation of garray failed')
 	  call restart_gather_label(iu,label)
 	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
@@ -394,7 +394,7 @@
 	  nv_global = get_nv_global(size(array,1))
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_write_value_3d_r: allocation of garray failed')
 	  call restart_gather_label(iu,label)
 	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
@@ -429,7 +429,7 @@
 	  nv_global = get_nv_global(size(array,1))
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_write_value_3d_d: allocation of garray failed')
 	  call restart_gather_label(iu,label)
 	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
@@ -462,12 +462,12 @@
 
 	if( bmpi ) then
 	  if( size(array,1) /= nfix ) then
-	    stop 'error stop restart_write_value_fix: nv incompatible'
+	    call shympi_abort_internal('restart_write_value_fix: nv incompatible')
 	  end if
 	  nn = size(array,2)
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nfix,nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_write_value_fix_r: allocation of garray failed')
 	  call restart_gather_label(iu,label)
 	  call shympi_l2g_array(nfix,array,garray,label)
 	  if( bmaster ) then
@@ -500,7 +500,7 @@
 	  nn = size(array)
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_read_value_2d_i: allocation of garray failed')
 	  read(iu,iostat=ios) garray
 	  call restart_check_ios(ios,'restart_read_value_2d_i garray',.false.)
 	  call shympi_g2l_array(garray,array)
@@ -530,7 +530,7 @@
 	  nn = size(array)
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_read_value_2d_r: allocation of garray failed')
 	  read(iu,iostat=ios) garray
 	  call restart_check_ios(ios,'restart_read_value_2d_r garray',.false.)
 	  call shympi_g2l_array(garray,array)
@@ -561,7 +561,7 @@
 	  nv_global = get_nv_global(size(array,1))
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_read_value_3d_r: allocation of garray failed')
 	  read(iu,iostat=ios) garray
 	  call restart_check_ios(ios,'restart_read_value_3d_r garray',.false.)
 	  call shympi_g2l_array(garray,array)
@@ -592,7 +592,7 @@
 	  nv_global = get_nv_global(size(array,1))
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_read_value_3d_d: allocation of garray failed')
 	  read(iu,iostat=ios) garray
 	  call restart_check_ios(ios,'restart_read_value_3d_d garray',.false.)
 	  call shympi_g2l_array(garray,array)
@@ -621,12 +621,12 @@
 
 	if( bmpi ) then
 	  if( size(array,1) /= nfix ) then
-	    stop 'error stop restart_read_value_fix: nv incompatible'
+	    call shympi_abort_internal('restart_read_value_fix: nv incompatible')
 	  end if
 	  nn = size(array,2)
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nfix,nn_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal('restart_read_value_fix_r: allocation of garray failed')
 	  read(iu,iostat=ios) garray
 	  call restart_check_ios(ios,'restart_read_value_fix_r garray',.false.)
 	  call shympi_g2l_array(garray,array)
