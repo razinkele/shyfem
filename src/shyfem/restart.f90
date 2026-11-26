@@ -119,6 +119,8 @@
 ! 26.11.2026    arb     windcd with itdrag = 4 applied only if the file's
 !			heat flag is set (#323)
 ! 26.11.2026    arb     the skip line names the seven records (#323)
+! 26.11.2026    arb     windcd log lines: equal itdrag (not 3 or 4) no
+!			longer reads like a mismatch; i0 format (#330)
 !
 ! notes :
 !
@@ -1658,9 +1660,15 @@
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'windcd (skip)')
 	  if( .not. bdrag4 ) then
-	    write(6,'(a,i0,a,i0,a)') ' restart: windcd not applied' &
+	    if( itdrag == itdrag_file ) then	!the same, neither 3 nor 4
+	      write(6,'(a,i0,a)') ' restart: windcd not applied (itdrag = ' &
+     &			,itdrag,' here and in the file; windcd is restored' &
+     &			//' only with itdrag = 3 or 4)'
+	    else
+	      write(6,'(a,i0,a,i0,a)') ' restart: windcd not applied' &
      &			//' (file itdrag = ',itdrag_file &
      &			,', run itdrag = ',itdrag,')'
+	    end if
 	  end if
 	end if
 
@@ -1678,8 +1686,8 @@
 	    end if
 	  else
 	    if( iheat_rst > 0 ) then
-	      write(6,*) 'restart: windcd not applied (itdrag = ',itdrag &
-     &			,', no heat flux)'
+	      write(6,'(a,i0,a)') ' restart: windcd not applied (itdrag = ' &
+     &			,itdrag,', no heat flux)'
 	    else
 	      write(6,'(a,i0,a)') ' restart: windcd not applied (itdrag = ' &
      &			,itdrag,', no heat flux, file heat flag not set)'
