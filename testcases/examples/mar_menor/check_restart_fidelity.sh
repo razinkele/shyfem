@@ -43,8 +43,9 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and fourteen cases of another kind, each with its own write runs
-# (serial):
+# and eighteen cases of another kind, each with its own runs (its write
+# runs serial; the four set-up cases, date_unparsed to grd_clockwise,
+# have none):
 #   old_v19       (a merge-time check, needs REF_BIN_DIR, see below) a
 #                 version 19 file (venlag_smoke, as ven_s), written by the
 #                 reference binary REF_BIN_DIR/shyfem (a build of the last
@@ -231,6 +232,36 @@
 #                 idtoff" (once serially, at least once on 2 processes, as
 #                 MPI_ABORT may stop the other process before it prints)
 #                 and not end the simulation; p's log must show both ranks
+#   date_unparsed  (#333) a set-up error: mm_hyd_41.str without its tilt
+#                 lines, to 01:00, with date = 'xyz', a string setup_date
+#                 cannot parse, run serially (r) and on 2 processes (p):
+#                 each must stop with exit code 33 (shympi_abort_internal;
+#                 before, a bare stop ended each process with exit 0, and
+#                 mpirun exited 1), print "error stop setup_date: cannot
+#                 parse date" (once serially, at least once on 2 processes)
+#                 and not end the simulation; p's log must show both ranks
+#                 (shympi_init prints its line and flushes before a barrier;
+#                 the stop comes later, in cstcheck)
+#   date_impossible  (#333) the same with date = 2009130199, a day not in
+#                 the month: "error stop setup_date: impossible date", exit
+#                 code 33 (before, date2j's bare stop: exit 0, and mpirun
+#                 exited 1)
+#   basin_missing  (#333) the same with a basin that does not exist
+#                 (GRID/no_such_basin in the title): "error stop
+#                 handle_basin_read: no bas or grd file", exit code 33
+#                 (before, exit 0 also on 2 processes).  This stop comes
+#                 before MPI is initialized (cstfile), so p's log must show
+#                 no "shympi initialized:" line, and the rank check does
+#                 not apply; each process stops by itself, and mpirun may
+#                 end the other before it prints (at least once)
+#   grd_clockwise  (#333) the same with the basin given as a .grd file
+#                 with a clockwise element (GRID/cw.grd, which the case
+#                 writes), read through shypre_sub before MPI is
+#                 initialized: "error stop set_ev: internal error (3)",
+#                 exit code 7 (error_stop of mod_error_stop, as evgeom.o
+#                 is linked also by shyproj, which has no shympi library;
+#                 before, exit 0 also on 2 processes); no "shympi
+#                 initialized:" line, as basin_missing
 #   tools         rstinf and rst2shy (this build's, on PATH) on version 20
 #                 files; three write runs of this binary, serial, with a
 #                 record every 3 h (m20: mm_h6d4's write run, 03:00 and
@@ -327,14 +358,17 @@
 # other cases need this build alone.
 # Needs shyfem, shypre and python3 with numpy on PATH, rstinf and rst2shy
 # for the cases tools and tools_v19, and mpirun (an OpenMPI build) for the
-# cases on several processes (*_np*, idtoff_unparsed).  Works in a folder
-# made with mktemp -d under ${TMPDIR:-/tmp}: the basins are built there
-# with shypre from GRID/MM_coarse_smooth.grd and ../venice_lagoon/GRID/
-# venlag62.grd, INPUT is linked and the STR files are made there with sed
+# cases on several processes (*_np*, idtoff_unparsed and the set-up cases
+# date_unparsed, date_impossible, basin_missing, grd_clockwise).  Works
+# in a folder made with mktemp -d under ${TMPDIR:-/tmp}: the basins are
+# built there with shypre from GRID/MM_coarse_smooth.grd and
+# ../venice_lagoon/GRID/venlag62.grd, INPUT is linked and the STR files
+# are made there with sed
 # from mm_hyd_41.str and venlag_smoke.str, so nothing in the source
 # folders changes (python3 -B: the import of shy_maxdiff writes no
 # __pycache__ next to it, #323).  The cases run at the same time (52
-# processes at the start with REF_BIN_DIR, 48 without); every mpirun has
+# processes at the start with REF_BIN_DIR, 48 without, and the 12 of the
+# four set-up cases, which stop at once); every mpirun has
 # --bind-to none, so that the runs do not share the two cores Open MPI
 # binds a 2-process run to.  Takes about 2 minutes on the development
 # machine (the serial venlag cases are the longest).
@@ -346,8 +380,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
 ALL="$ALL old_v19 drag0_reads_cd4 drag4_reads_cd0 drag4_noheat_reads_cd4 flgrst_no_hydro evap_reads_noheat"
 ALL="$ALL keps_to_gotm offline_ts_noheat offline_ts_noheat_str clock_itrst_after_start clock_itrst_last"
-ALL="$ALL idtoff_unparsed tools tools_v19"
+ALL="$ALL idtoff_unparsed date_unparsed date_impossible basin_missing grd_clockwise tools tools_v19"
 OPT="mm_e0"     # cases kept out of the default list
+SETUP="date_unparsed date_impossible basin_missing grd_clockwise"   # the set-up cases (#333)
 CASES="${*:-$ALL}"
 needmm=no; needven=no; needmpi=no; needtools=no
 for c in $CASES; do
@@ -357,6 +392,7 @@ for c in $CASES; do
     ven_*|old_v19|keps_to_gotm) needven=yes ;;
     tools|tools_v19) needmm=yes; needven=yes; needtools=yes ;;
   esac
+  case " $SETUP " in *" $c "*) needmm=yes; needmpi=yes ;; esac
   case "$c" in *_np*|idtoff_unparsed) needmpi=yes ;; esac
 done
 tools="shyfem shypre python3"
@@ -772,7 +808,8 @@ athour() {
 
 #--- the cases of another kind (old_v19, drag0_reads_cd4, drag4_reads_cd0, drag4_noheat_reads_cd4,
 #    flgrst_no_hydro, evap_reads_noheat, keps_to_gotm, offline_ts_noheat, offline_ts_noheat_str,
-#    clock_itrst_after_start, clock_itrst_last, idtoff_unparsed; tools and tools_v19 below)
+#    clock_itrst_after_start, clock_itrst_last, idtoff_unparsed, the set-up cases; tools and tools_v19
+#    below)
 # rundir DIR mm|ven: a run folder with its own copy of the basin and INPUT
 rundir() {
   mkdir "$1" && mkdir "$1/GRID" || return 1
@@ -1554,6 +1591,74 @@ case_idtoff() {
   return 0
 }
 
+# case_setup CASE: a set-up error of the model (the set-up cases, #333)
+# stops every process with its exit code and message, serially (r) and on
+# 2 processes (p), and the simulation does not end.  The STR file is
+# mm_hyd_41.str without its tilt lines, to 01:00 (so that a run the error
+# does not stop ends at once), with the case's change; grd_clockwise also
+# writes its grid, two elements, the second clockwise
+case_setup() {
+  local cs="$1" d="$P/$1" s t0 bad="" det="" k n np pr pp ed want code msg what pre=no
+  case "$cs" in
+    date_unparsed)   ed="s/^        date = 20090101\$/        date = 'xyz'/"; want="^        date = 'xyz'\$"
+                     code=33; msg="error stop setup_date: cannot parse date"; what="date = 'xyz'" ;;
+    date_impossible) ed="s/^        date = 20090101\$/        date = 2009130199/"; want="^        date = 2009130199\$"
+                     code=33; msg="error stop setup_date: impossible date"; what="date = 2009130199" ;;
+    basin_missing)   ed="s|^        GRID/MM_coarse_smooth\$|        GRID/no_such_basin|"; want="^        GRID/no_such_basin\$"
+                     code=33; msg="error stop handle_basin_read: no bas or grd file"; what="a missing basin"; pre=yes ;;
+    grd_clockwise)   ed="s|^        GRID/MM_coarse_smooth\$|        GRID/cw.grd|"; want="^        GRID/cw.grd\$"
+                     code=7; msg="error stop set_ev: internal error (3)"; what="a .grd basin with a clockwise element"
+                     pre=yes ;;
+  esac
+  t0=$(date +%s)
+  mkdir "$d" || return 1
+  for s in r p; do rundir "$d/$s" mm || return 1; done
+  sed -e '/^[[:space:]]*ztilt[[:space:]]*=/d' -e '/^[[:space:]]*ktilt[[:space:]]*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-01::01:00:00'/" -e "$ed" "$HERE/mm_hyd_41.str" > "$d/r/r.str"
+  if [ "$(grep -c "$want\|itend = '2009-01-01::01:00:00'" "$d/r/r.str")" != 2 ] || grep -q 'ztilt\|ktilt' "$d/r/r.str" \
+     || ! cp "$d/r/r.str" "$d/p/r.str"; then
+    echo "case $cs: did not run (cannot make its STR file, see $d/r/r.str) -> FAIL" > "$d.line"; return 1
+  fi
+  if [ "$cs" = grd_clockwise ]; then
+    for s in r p; do
+      printf '%s\n' '1 1 0 0. 0. 5.' '1 2 0 100. 0. 5.' '1 3 0 100. 100. 5.' '1 4 0 0. 100. 5.' \
+        '2 1 0 3 1 2 3 5.' '2 2 0 3 1 4 3 5.' > "$d/$s/GRID/cw.grd" || return 1
+    done
+  fi
+  runx "$d/r" r 1 & pr=$!
+  runx "$d/p" r 2 & pp=$!
+  for s in r p; do
+    if [ "$s" = r ]; then wait "$pr"; k=$?; np=1; else wait "$pp"; k=$?; np=2; fi
+    n="$(grep -c -F -- "$msg" "$d/$s/r.log")"
+    det="$det$s ($np process(es)): exit code $k, '$msg' $n times; "
+    [ "$k" = "$code" ] || bad="$bad$s: exit code $k, not $code; "
+    if [ "$np" = 1 ]; then
+      [ "$n" = 1 ] || bad="$bad$s: '$msg' $n times in $d/$s/r.log, not 1; "
+    else
+      # MPI_ABORT, or mpirun before MPI is initialized, may stop the other
+      # process before it prints
+      [ "$n" -ge 1 ] || bad="$bad$s: '$msg' not in $d/$s/r.log; "
+      if [ "$pre" = yes ]; then
+        # before MPI is initialized: no rank to check
+        n="$(grep -c 'shympi initialized:' "$d/$s/r.log")"
+        [ "$n" = 0 ] || bad="$bad$s: $n 'shympi initialized:' lines in $d/$s/r.log, not 0 (a stop before MPI init); "
+      else
+        ranks_ok "$d/$s/r.log" "$np" \
+          || bad="$bad$s: not $np MPI processes, $(grep -c 'shympi initialized:' "$d/$s/r.log") 'shympi initialized:' lines; "
+      fi
+    fi
+    n="$(grep -c 'simulation end' "$d/$s/r.log")"
+    [ "$n" = 0 ] || bad="$bad$s: 'simulation end' $n times in $d/$s/r.log; "
+  done
+  donecase "$cs" "$t0" "" || return 1
+  echo "    ${det%; }" > "$d.detail"
+  if [ -n "$bad" ]; then
+    echo "case $cs: ${bad%; } -> FAIL" > "$d.line"; return 1
+  fi
+  echo "case $cs: $what stops with exit code $code and '$msg', serially and on 2 processes -> PASS" > "$d.line"
+  return 0
+}
+
 # nonfinite FILE...: the number of values that are NaN or infinite in the
 # data records of the .shy and .ext files (read as shy_maxdiff.py reads
 # them, which counts NaN in both files as equal); prints a message
@@ -1949,6 +2054,7 @@ for cs in $CASES; do
     offline_ts_noheat_str) case_offline offline_ts_noheat_str "'-2s'" ;;
     clock_itrst_*)   case_clock "$cs" ;;
     idtoff_unparsed) case_idtoff ;;
+    date_unparsed|date_impossible|basin_missing|grd_clockwise) case_setup "$cs" ;;
     tools)           case_tools ;;
     tools_v19)       case_tools_v19 ;;
     *)               onecase "$cs" ;;
