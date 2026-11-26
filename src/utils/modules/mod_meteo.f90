@@ -71,6 +71,10 @@
         real, allocatable, save :: qlatv(:)	! latent heat flux [W/m**2]
         real, allocatable, save :: qlongv(:)	! long wave heat flux [W/m**2]
 
+        real, allocatable, save :: dtw_heat(:)	! warm layer dT (qflux3d, COARE)
+        real, allocatable, save :: tws_heat(:)	! skin temperature (qflux3d, COARE)
+        logical, save :: brst_heat = .false.	! true: restart gave tws/dtw
+
         contains
 
 !************************************************************
@@ -102,6 +106,8 @@
           deallocate(qsensv)
           deallocate(qlatv)
           deallocate(qlongv)
+          deallocate(dtw_heat)
+          deallocate(tws_heat)
         end if
 
         nkn_meteo = nkn
@@ -146,6 +152,12 @@
         if( ierr /= 0 ) stop 'error stop: allocation failed'
         allocate(qlongv(nkn),stat=ierr)
         if( ierr /= 0 ) stop 'error stop: allocation failed'
+        allocate(dtw_heat(nkn),stat=ierr)
+        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        allocate(tws_heat(nkn),stat=ierr)
+        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        dtw_heat = 0.
+        tws_heat = 0.
 
         end subroutine mod_meteo_init
 

@@ -226,8 +226,8 @@
 	double precision atime
 	character*20 aline
 
-	real, save, allocatable :: dtw(:)	!Warm layer temp. diff
-	real, save, allocatable :: tws(:)	!Skin temperature (deg C)
+	! warm layer temp. diff (dtw_heat) and skin temperature (tws_heat)
+	! live in mod_meteo so that a restart can restore them
 
 	real hb			!depth of modelled T in first layer [m]
 	real usw		!surface friction velocity [m/s]
@@ -332,15 +332,13 @@
 	  write(6,*) 'qflux3d: iheat,hdecay,botabs: ',iheat,hdecay,botabs
 !$OMP END CRITICAL
 
-	  allocate(dtw(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  allocate(tws(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  dtw = 0.
-	  do k=1,nkn
-	    lmin = jlhkv(k)
-	    tws(k) = temp(lmin,k)
-	  end do
+	  if( .not. brst_heat ) then	!else restored from the restart file
+	    dtw_heat = 0.
+	    do k=1,nkn
+	      lmin = jlhkv(k)
+	      tws_heat(k) = temp(lmin,k)
+	    end do
+	  end if
 
           itdrag = nint(getpar('itdrag'))
 	  bwind = itdrag .eq. 4
@@ -426,8 +424,8 @@
 	  end if
 
 	  if (is_dry_node(k)) then	!do not compute if node is dry
-	    dtw(k)   = 0.
-	    tws(k)   = temp(lmin,k)
+	    dtw_heat(k)   = 0.
+	    tws_heat(k)   = temp(lmin,k)
 	    evapv(k) = 0.
 	    cycle
 	  end if
@@ -481,7 +479,7 @@
 	    call heatgotm (ta,p,uw,ur,cc,tm,qsens,qlat,qlong,evap)
 	  else if( iheat .eq. 6 ) then
 	    call get_pe_values(k,r,ev,eeff)
-	    call heatcoare(ta,p,uw,ur,cc,tws(k),r,qss,qsens,qlat,qlong,evap,cd)
+	    call heatcoare(ta,p,uw,ur,cc,tws_heat(k),r,qss,qsens,qlat,qlong,evap,cd)
 	    if ( bwind ) windcd(k) = cd
 	  else if( iheat .eq. 7 ) then
 	    qsens = ta
@@ -525,7 +523,7 @@
 	      write(6,*) 'qice',qsens_orig,qice
 	      write(6,*) 'fice',fice_free,fice_cover
 	      write(6,*) 'ta',ta,p,uw,ur,cc
-	      write(6,*) 'tm',tm,tws(k),r
+	      write(6,*) 'tm',tm,tws_heat(k),r
 	      flush(6)
 	      stop 'error stop qflux3d: impossible heat flux'
 	    end if
@@ -609,7 +607,7 @@
 	      write(6,*) 'qice',qsens_orig,qice
 	      write(6,*) 'fice',fice_free,fice_cover
 	      write(6,*) 'ta',ta,p,uw,ur,cc
-	      write(6,*) 'tm',tm,tws(k),r
+	      write(6,*) 'tm',tm,tws_heat(k),r
 	      flush(6)
 	      stop 'error stop qflux3d: impossible heat flux'
 	    end if
@@ -634,7 +632,7 @@
 	  tm   = temp(lmin,k)
 	  hb   = depnode(lmin,k,mode) * 0.5
           usw  = max(1.e-5, sqrt(sqrt(tauxnv(k)**2 + tauynv(k)**2)))
-	  call tw_skin(qss,qrad,tm,hb,usw,dt,dtw(k),tws(k))
+	  call tw_skin(qss,qrad,tm,hb,usw,dt,dtw_heat(k),tws_heat(k))
 
 !         ---------------------------------------------------------
 !         handle ice model
@@ -652,8 +650,8 @@
               temp(lmin,k) = tm
               saltv(lmin,k) = sm
 	      evap = 0.
-	      dtw(k) = 0.
-	      call shyice_get_tsurf(k,tws(k))
+	      dtw_heat(k) = 0.
+	      call shyice_get_tsurf(k,tws_heat(k))
 	    end if
 	  end if
 
@@ -688,7 +686,7 @@
 ! skin temperature and special output
 !---------------------------------------------------------
 
-	call handle_skin(dtime,tws)
+	call handle_skin(dtime,tws_heat)
 
 	call shyice_write_output
 
