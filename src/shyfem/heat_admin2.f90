@@ -153,7 +153,8 @@
 ! the two cannot disagree. It reads parameters only; iatm is set by the
 ! meteo forcing (sp111(1)), before the restart read and before qflux3d.
 ! Not covered: T/S read from an offline file (idtoff), where barocl
-! returns before qflux3d; the offline module is set up after the read.
+! returns before qflux3d; the offline module is set up after the read,
+! so the restart reader checks that case itself (offline_reads_ts).
 
 	use meteo_forcing_module, only : iatm
 	use para

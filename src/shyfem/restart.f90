@@ -109,6 +109,8 @@
 ! 26.11.2026    arb     version 20 and the tools: rst2shy reads the hydro
 !			records past (btool_rst); rst_skip_record exports
 !			the heat flag and iturb for rstinf (#303 #304)
+! 26.11.2026    arb     version 20: T/S from an offline file means no heat
+!			flux for the reader (offline_reads_ts, #303 #304)
 !
 ! notes :
 !
@@ -1491,10 +1493,11 @@
 ! vtlnv (#303 #304), and applies them by these rules:
 !
 !   iwetv		always
-!   evapv		only if qflux3d runs here (heat_flux_active): only
-!			qflux3d writes evapv, so else a restored value would
-!			be taken from the water column (ievap = 1) for the
-!			whole run, where a cold start keeps 0 (evap_init)
+!   evapv		only if qflux3d runs here (heat_flux_active, and T/S
+!			not from an offline file, see below): only qflux3d
+!			writes evapv, so else a restored value would be taken
+!			from the water column (ievap = 1) for the whole run,
+!			where a cold start keeps 0 (evap_init)
 !   windcd		with itdrag = 3 (the waves set it each step), and
 !			with itdrag = 4 if qflux3d runs here (COARE sets it
 !			each step); with any other itdrag, or itdrag = 4
@@ -1504,6 +1507,13 @@
 !   tws, dtw		only if the writer's heat flag is set (qflux3d ran
 !			there) and qflux3d runs here; then brst_heat tells
 !			qflux3d to keep them instead of its start-up values
+!
+! A run that reads T/S from an offline file (offline_reads_ts: idtoff =
+! -2, -3 or -4 and below) never runs qflux3d: barocl returns before it
+! at every step. heat_flux_active cannot see this (the offline module is
+! set up after the restart read), so the reader asks offline_reads_ts,
+! which decodes the STR's idtoff, and then treats the heat flux as not
+! running: evapv, windcd (itdrag = 4), tws and dtw are not applied.
 !
 ! with bwant false (flgrst without hydro) the six records are skipped
 ! and nothing is applied; so too when a tool reads the file (btool_rst:
@@ -1531,6 +1541,7 @@
 	logical, parameter :: bn = .false.
 
 	logical heat_flux_active
+	logical offline_reads_ts
 
 	bskip = .not. bwant
 	if( btool_rst ) bskip = .true.
@@ -1559,6 +1570,13 @@
 	end if
 
 	bheat = heat_flux_active()
+	if( bheat ) then
+	  if( offline_reads_ts() ) then	!barocl returns before qflux3d
+	    bheat = .false.
+	    write(6,*) 'restart: T/S from the offline file (idtoff = ' &
+     &			,nint(dgetpar('idtoff')),'): qflux3d does not run'
+	  end if
+	end if
 
 	call restart_read_value(iunit,be,iwetv)
 	bsetweg_rst = .true.

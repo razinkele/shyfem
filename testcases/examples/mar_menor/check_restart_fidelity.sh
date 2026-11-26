@@ -43,7 +43,7 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and six cases of another kind, each with its own write runs (serial):
+# and seven cases of another kind, each with its own write runs (serial):
 #   old_v19       a version 19 file (venlag_smoke, as ven_s), written by
 #                 the reference binary REF_BIN_DIR/shyfem (an origin/main
 #                 build, before version 20) and read by this binary (r)
@@ -94,6 +94,20 @@
 #                 initialised"; r's .hydro.shy, .ts.shy and .ext must hold
 #                 no NaN or infinity; and r must equal o (max|d| = 0;
 #                 compared even if a log line is missing)
+#   offline_ts_noheat  the version 20 file of mm_h6d4's write run read with
+#                 T/S from an offline file (idtoff = -2, offlin = 'f.off';
+#                 f.off written by a run f, 00:00-14:00, idtoff = 3600), so
+#                 that barocl returns before qflux3d at every step (ievap =
+#                 1, iheat = 6, itdrag = 4 kept), as written (r) and with its
+#                 evapv record set to 0 and its windcd record to dragco (p):
+#                 r must not apply the file's evapv and windcd, so r must
+#                 equal p (max|d| = 0 in .hydro.shy and .ext, and the
+#                 .ts.shy files, which hold no data record then, the same
+#                 bytes; compared even if a log line is missing); both logs
+#                 must say "T/S from the offline file",
+#                 "evapv not applied" and "windcd not applied (itdrag = 4, no
+#                 heat flux)", must show that the offline file was read, and
+#                 must not have qflux3d's start-up line (it never runs)
 #   tools         rstinf and rst2shy (this build's, on PATH) on version 20
 #                 files, and on version 19 files as main's (REF_BIN_DIR's)
 #                 rstinf and rst2shy; six write runs, serial, with a record
@@ -151,7 +165,7 @@
 # with shypre from GRID/MM_coarse_smooth.grd and ../venice_lagoon/GRID/
 # venlag62.grd, INPUT is linked and the STR files are made there with sed
 # from mm_hyd_41.str and venlag_smoke.str, so nothing in the source
-# folders changes.  The cases run at the same time (43 processes at the
+# folders changes.  The cases run at the same time (45 processes at the
 # start); every mpirun has --bind-to none, so that the runs do not share
 # the two cores Open MPI binds a 2-process run to.  Takes about 2 minutes
 # on the development machine (the serial venlag cases are the longest).
@@ -162,14 +176,14 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
 ALL="$ALL old_v19 drag0_reads_cd4 flgrst_no_hydro evap_reads_noheat keps_to_gotm"
-ALL="$ALL tools"
+ALL="$ALL offline_ts_noheat tools"
 OPT="mm_e0"     # cases kept out of the default list
 CASES="${*:-$ALL}"
 needmm=no; needven=no; needmpi=no; needtools=no
 for c in $CASES; do
   case " $ALL $OPT " in *" $c "*) ;; *) echo "usage: [REF_BIN_DIR=DIR] $0 [case ...], cases: $ALL (and $OPT)"; exit 2 ;; esac
   case "$c" in
-    mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat) needmm=yes ;;
+    mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat|offline_ts_noheat) needmm=yes ;;
     ven_*|old_v19|keps_to_gotm) needven=yes ;;
     tools) needmm=yes; needven=yes; needtools=yes ;;
   esac
@@ -718,6 +732,98 @@ case_evap() {
   return "$rc"
 }
 
+# offlog LOG NAME: the log checks of offline_ts_noheat; prints "NAME:
+# reason; " for each one that fails
+offlog() {
+  local k
+  k="$(grep -c 'T/S from the offline file' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: 'T/S from the offline file' $k times in $1, not 1; "
+  k="$(grep -c 'reading offline from file' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: 'reading offline from file' $k times in $1, not 1; "
+  k="$(grep -c 'qflux3d: iheat' "$1")"
+  [ "$k" = 0 ] || echo -n "$2: qflux3d started ('qflux3d: iheat' $k times in $1); "
+  e0log "$1" "$2"
+}
+# case_offline: a read whose T/S comes from an offline file (idtoff = -2)
+# never runs qflux3d (barocl returns before it), so it keeps the cold
+# evapv (0) and windcd (dragco), not the file's values
+case_offline() {
+  local cs=offline_ts_noheat d="$P/offline_ts_noheat" s t0 why="" lw="" w f k rc=0 pf pw pr pp line="" cmpl="" dc=""
+  t0=$(date +%s)
+  mkdir "$d" "$d/c" || return 1
+  for s in w r p f; do rundir "$d/$s" mm || return 1; done
+  RTIME=""
+  if mkmm "$cs" 0 06 12 "iheat = 6   itdrag = 4" && [ -n "$RTIME" ]; then
+    # f: c with a record of the offline file every hour, to 14:00 (the
+    # cubic interpolation of the read run needs records after 12:00)
+    sed -e "s/^        c\$/        f/" -e "s/itend = '2009-01-01::12:00:00'/itend = '2009-01-01::14:00:00'/" \
+        -e "s/^        iheat = 6   itdrag = 4\$/&\n        idtoff = 3600/" "$d/c/c.str" > "$d/f/f.str"
+    sed -i -e "s/^        itrst = -1     ityrst = 1\$/&\n        idtoff = -2/" \
+           -e "s/^\\\$name\$/\$name\\n        offlin = 'f.off'/" "$d/r/r.str"
+    dc="$(sed -n 's/.*dragco = \([^ ]*\).*/\1/p' "$d/r/r.str")"
+  fi
+  if [ -z "$RTIME" ] || [ "$(grep -c "^        f\$\|itend = '2009-01-01::14:00:00'\|^        idtoff = 3600\$" "$d/f/f.str")" != 3 ] \
+     || [ "$(grep -c "^        idtoff = -2\$\|^        offlin = 'f.off'\$" "$d/r/r.str")" != 2 ] \
+     || [ "$(echo "$dc" | wc -w)" != 1 ] || ! cp "$d/r/r.str" "$d/p/r.str"; then
+    echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
+  fi
+  # f writes f.off and w the restart file (with the heat flux: evapv,
+  # COARE's windcd); r reads w.rst, p the same file with evapv = 0 and
+  # windcd = dragco, both with T/S from f.off (ievap = 1, iheat = 6,
+  # itdrag = 4 as in w)
+  run "$d/f" f 1 > "$d/f.why" & pf=$!
+  run "$d/w" w 1 > "$d/w.why" & pw=$!
+  wait "$pf" || why="$(cat "$d/f.why"); "
+  wait "$pw" || why="$why$(cat "$d/w.why"); "
+  if [ -n "$why" ]; then
+    :
+  elif [ ! -s "$d/f/f.off" ]; then
+    why="f: no offline file $d/f/f.off; "
+  elif [ ! -s "$d/w/w.rst" ]; then
+    why="w: no restart file $d/w/w.rst; "
+  elif ! rstpatch "$d/w/w.rst" "$d/p/w.rst" evapv=0 "windcd=$dc" > "$d/patch.txt" 2>&1; then
+    why="cannot set the evapv and windcd records of $d/w/w.rst: $(tail -1 "$d/patch.txt"); "
+  else
+    ln -s ../w/w.rst "$d/r/w.rst" && ln -s ../f/f.off "$d/r/f.off" && ln -s ../f/f.off "$d/p/f.off" || return 1
+    run "$d/r" r 1 > "$d/r.why" & pr=$!
+    run "$d/p" r 1 > "$d/p.why" & pp=$!
+    for s in r p; do
+      if [ "$s" = r ]; then wait "$pr"; k=$?; else wait "$pp"; k=$?; fi
+      if [ "$k" = 0 ]; then
+        w="$(readok "$d/$s/r.log")" || why="$why$s: $w; "
+        lw="$lw$(offlog "$d/$s/r.log" "$s")"
+      else
+        why="$why$s: $(cat "$d/$s.why"); "
+      fi
+    done
+  fi
+  donecase "$cs" "$t0" "$why" || return 1
+  sed 's/^/    /' "$d/patch.txt" > "$d.detail"
+  # compared even when a log line is missing, so that a wrong apply shows
+  # as a difference; the .ts.shy files hold no data record (barocl, which
+  # writes them, returns at once when T/S comes from the offline file), so
+  # they are compared with cmp, and T and S with the .ext
+  if cmp -s "$d/p/r.ts.shy" "$d/r/r.ts.shy"; then
+    cmpl="ts.shy same bytes, "
+  else
+    cmpl="ts.shy DIFFERS, "; rc=1
+  fi
+  for f in hydro.shy ext; do
+    python3 "$HERE/shy_maxdiff.py" "$d/p/r.$f" "$d/r/r.$f" > "$d/cmp.$f.txt" 2>&1
+    k=$?
+    [ "$k" = 0 ] || rc=1
+    s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
+    [ -n "$s" ] || s="$(head -1 "$d/cmp.$f.txt")"
+    echo "    $f (p against r): ${s#SUMMARY *: }" >> "$d.detail"
+    case "$k" in 0) cmpl="${cmpl}$f equal, " ;; 1) cmpl="${cmpl}$f DIFFERS, " ;; *) cmpl="${cmpl}$f not compared, " ;; esac
+  done
+  line="case $cs: idtoff = -2 read (T/S from an offline file, no qflux3d) of a file with evapv and COARE's windcd,"
+  line="$line against the same file with evapv = 0 and windcd = dragco $dc: ${cmpl%, }"
+  if [ -n "$lw" ]; then line="$line; log: ${lw%; }"; rc=1; fi
+  if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
+  return "$rc"
+}
+
 # case_flgrst: a read without hydro skips the version 20 records and
 # keeps the setweg clock
 case_flgrst() {
@@ -1037,6 +1143,7 @@ for cs in $CASES; do
     flgrst_no_hydro) case_flgrst ;;
     evap_reads_noheat) case_evap ;;
     keps_to_gotm)    case_keps_to_gotm ;;
+    offline_ts_noheat) case_offline ;;
     tools)           case_tools ;;
     *)               onecase "$cs" ;;
   esac & PIDS="$PIDS $!"

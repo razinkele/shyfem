@@ -903,7 +903,8 @@ offline_data.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_offline.mod \
 		../../lib/mod/mod_trace_point.mod \
-		../../lib/mod/mod_ts.mod ../../lib/mod/shympi.mod 
+		../../lib/mod/mod_ts.mod ../../lib/mod/para.mod \
+		../../lib/mod/shympi.mod
 ous_admin.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_depth.mod \
 		../../lib/mod/mod_hydro.mod \
