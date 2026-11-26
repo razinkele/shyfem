@@ -99,6 +99,8 @@
 ! 13.09.2024    lrp     iatm and coupling with atmospheric model
 ! 21.09.2024    ggu     new handle_skin() for handling skin temperature output
 ! 08.02.2025    ggu     some new debug code
+! 26.11.2026    arb     brun_heat: the heat flag of the restart (#304)
+! 26.11.2026    arb     heat_flux_active(): qflux3d and the restart (#304)
 !
 ! notes :
 !
@@ -135,6 +137,49 @@
 	byes = ( file /= ' ' )
 
 	end
+
+!*****************************************************************************
+
+	function heat_flux_active()
+
+! true if qflux3d computes the heat flux in this run, and with it evapv,
+! tws, dtw and (itdrag = 4) windcd:
+!   - the T/S module runs (ibarcl > 0; else barocl never calls qflux3d)
+!   - there is a heat flux file (qflux) or the atmosphere coupling (iatm)
+!   - there are heat fluxes (iheat > 0) or the ice model (icemod > 0)
+!
+! qflux3d decides with this function, and the restart reader decides
+! with it whether the restored evapv and windcd are used (#303 #304), so
+! the two cannot disagree. It reads parameters only; iatm is set by the
+! meteo forcing (sp111(1)), before the restart read and before qflux3d.
+! Not covered: T/S read from an offline file (idtoff), where barocl
+! returns before qflux3d; the offline module is set up after the read,
+! so the restart reader checks that case itself (offline_reads_ts).
+
+	use meteo_forcing_module, only : iatm
+	use para
+
+	implicit none
+
+	logical heat_flux_active
+
+	logical bqflux		!heat flux file
+	logical batm		!ocean-atmosphere coupling
+	logical bheat		!heat flux routines
+	logical bice		!ice model (shyice_init: icemod > 0)
+
+	call qflux_compute(bqflux)
+	batm = iatm > 0
+	bheat = nint(getpar('iheat')) > 0
+	bice = nint(dgetpar('icemod')) > 0
+
+	heat_flux_active = .false.
+	if( nint(getpar('ibarcl')) <= 0 ) return
+	if( .not. bqflux .and. .not. batm ) return
+	if( .not. bheat .and. .not. bice ) return
+	heat_flux_active = .true.
+
+	end function heat_flux_active
 
 !*****************************************************************************
 
@@ -226,8 +271,8 @@
 	double precision atime
 	character*20 aline
 
-	real, save, allocatable :: dtw(:)	!Warm layer temp. diff
-	real, save, allocatable :: tws(:)	!Skin temperature (deg C)
+	! warm layer temp. diff (dtw_heat) and skin temperature (tws_heat)
+	! live in mod_meteo so that a restart can restore them
 
 	real hb			!depth of modelled T in first layer [m]
 	real usw		!surface friction velocity [m/s]
@@ -252,6 +297,7 @@
 	real depnode, areanode
 	integer ifemopa,ipext
 	logical is_dry_node
+	logical heat_flux_active
 ! save
 	integer, save :: icall = 0
 	integer, save :: n93 = 0
@@ -317,8 +363,9 @@
 	  batm = iatm > 0			!have ocean-atmosphere coupling
 	  call qflux_compute(bqflux)		!have qflux file
 
-	  if( .not. bqflux .and. .not. batm ) icall = -1
-	  if( .not. bheat .and. .not. bice ) icall = -1
+	  !no file and no coupling, or no heat flux and no ice model; the
+	  !restart reader asks the same function (#303 #304)
+	  if( .not. heat_flux_active() ) icall = -1
 
 	  !---------------------------------------------------------
 	  ! exit if no files, no atm-oce coupling, no heat fluxes, no ice model
@@ -332,15 +379,14 @@
 	  write(6,*) 'qflux3d: iheat,hdecay,botabs: ',iheat,hdecay,botabs
 !$OMP END CRITICAL
 
-	  allocate(dtw(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  allocate(tws(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  dtw = 0.
-	  do k=1,nkn
-	    lmin = jlhkv(k)
-	    tws(k) = temp(lmin,k)
-	  end do
+	  if( .not. brst_heat ) then	!else restored from the restart file
+	    dtw_heat = 0.
+	    do k=1,nkn
+	      lmin = jlhkv(k)
+	      tws_heat(k) = temp(lmin,k)
+	    end do
+	  end if
+	  brun_heat = .true.		!a restart record carries tws/dtw
 
           itdrag = nint(getpar('itdrag'))
 	  bwind = itdrag .eq. 4
@@ -426,8 +472,8 @@
 	  end if
 
 	  if (is_dry_node(k)) then	!do not compute if node is dry
-	    dtw(k)   = 0.
-	    tws(k)   = temp(lmin,k)
+	    dtw_heat(k)   = 0.
+	    tws_heat(k)   = temp(lmin,k)
 	    evapv(k) = 0.
 	    cycle
 	  end if
@@ -481,7 +527,7 @@
 	    call heatgotm (ta,p,uw,ur,cc,tm,qsens,qlat,qlong,evap)
 	  else if( iheat .eq. 6 ) then
 	    call get_pe_values(k,r,ev,eeff)
-	    call heatcoare(ta,p,uw,ur,cc,tws(k),r,qss,qsens,qlat,qlong,evap,cd)
+	    call heatcoare(ta,p,uw,ur,cc,tws_heat(k),r,qss,qsens,qlat,qlong,evap,cd)
 	    if ( bwind ) windcd(k) = cd
 	  else if( iheat .eq. 7 ) then
 	    qsens = ta
@@ -525,7 +571,7 @@
 	      write(6,*) 'qice',qsens_orig,qice
 	      write(6,*) 'fice',fice_free,fice_cover
 	      write(6,*) 'ta',ta,p,uw,ur,cc
-	      write(6,*) 'tm',tm,tws(k),r
+	      write(6,*) 'tm',tm,tws_heat(k),r
 	      flush(6)
 	      stop 'error stop qflux3d: impossible heat flux'
 	    end if
@@ -609,7 +655,7 @@
 	      write(6,*) 'qice',qsens_orig,qice
 	      write(6,*) 'fice',fice_free,fice_cover
 	      write(6,*) 'ta',ta,p,uw,ur,cc
-	      write(6,*) 'tm',tm,tws(k),r
+	      write(6,*) 'tm',tm,tws_heat(k),r
 	      flush(6)
 	      stop 'error stop qflux3d: impossible heat flux'
 	    end if
@@ -634,7 +680,7 @@
 	  tm   = temp(lmin,k)
 	  hb   = depnode(lmin,k,mode) * 0.5
           usw  = max(1.e-5, sqrt(sqrt(tauxnv(k)**2 + tauynv(k)**2)))
-	  call tw_skin(qss,qrad,tm,hb,usw,dt,dtw(k),tws(k))
+	  call tw_skin(qss,qrad,tm,hb,usw,dt,dtw_heat(k),tws_heat(k))
 
 !         ---------------------------------------------------------
 !         handle ice model
@@ -652,8 +698,8 @@
               temp(lmin,k) = tm
               saltv(lmin,k) = sm
 	      evap = 0.
-	      dtw(k) = 0.
-	      call shyice_get_tsurf(k,tws(k))
+	      dtw_heat(k) = 0.
+	      call shyice_get_tsurf(k,tws_heat(k))
 	    end if
 	  end if
 
@@ -688,7 +734,7 @@
 ! skin temperature and special output
 !---------------------------------------------------------
 
-	call handle_skin(dtime,tws)
+	call handle_skin(dtime,tws_heat)
 
 	call shyice_write_output
 

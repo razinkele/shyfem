@@ -102,6 +102,20 @@
 ! 09.03.2025    ggu     call shympi_barrier after finishing restart file
 ! 24.11.2026    arb     restart_write_start: labels of the ghost check (#268)
 ! 24.11.2026    arb     3D restart read on a process with fewer levels (#278)
+! 26.11.2026    arb     version 20: iwetv, evapv, windcd, tws, dtw; the
+!			setweg clock is reset at a restart (#303 #304)
+! 26.11.2026    arb     version 20: the k-epsilon state (tken, eps, visv,
+!			difv) in the turbulence block (#304, N25)
+! 26.11.2026    arb     version 20 and the tools: rst2shy reads the hydro
+!			records past (btool_rst); rst_skip_record exports
+!			the heat flag and iturb for rstinf (#303 #304)
+! 26.11.2026    arb     version 20: T/S from an offline file means no heat
+!			flux for the reader (offline_reads_ts, #303 #304)
+! 26.11.2026    arb     version 20: the writer's itdrag before windcd, and
+!			windcd applied only if it equals the reader's (#303
+!			#304, R4)
+! 26.11.2026    arb     the setweg clock is set to the start time of the
+!			run, not to the record's time (#303, R5)
 !
 ! notes :
 !
@@ -133,7 +147,12 @@
 ! 15	write gotm arrays
 ! 16	adapted for mpi
 ! 17	write bfm restart
-! 18	write simple-sediment bed mass (conza) (N25)
+! 18	read only: upstream shyfemcm layout (iwetv, zov, zeov after vtlnv)
+! 19	write simple-sediment bed mass (conza) (N25)
+! 20	write iwetv, evapv, the writer's itdrag, windcd, heat flag, tws,
+!	dtw after vtlnv (rst_read_hydro_v20 says which of them a read
+!	applies); with iturb = 2, write tken, eps, visv, difv after iturb
+!	(rst_read_keps says when a read applies them)
 !
 !	integer, save :: id_hydro_rst = 1	!1		hydro
 !	integer, save :: id_depth_rst = 2	!10		depth
@@ -146,12 +165,12 @@
 !	integer, save :: id_bfm_rst   = 9	!100000000	bfm
 !	integer, save :: id_ssedi_rst = 10	!1000000000	sediment bed mass
 !
-! known restart gaps (N25, not covered by any version above):
-!   - k-eps turbulence closure (iturb==2): tken/eps/rls (mod_keps) and
-!     visv/difv/z0bk have no write/read hooks (unlike iturb==1/GOTM,
-!     saved via write_restart_gotm/read_restart_gotm above). A restart
-!     with k-eps active re-develops mixing from cold-start values; see
-!     the runtime warning in rst_write_record.
+! the k-eps turbulence closure (iturb==2), a known restart gap (N25) up
+! to version 19 (its state was not written, so a restart re-developed
+! the mixing from cold-start values), is in the turbulence block from
+! version 20 on: tken, eps, visv, difv (#304). rls is not written (keps
+! never reads it), and z0bk is recomputed. A version 15-19 file written
+! with iturb==2 holds no arrays after iturb, and none is read.
 !
 !*********************************************************************
 
@@ -164,6 +183,7 @@
 ! reads and initializes values from restart
 
 	use mod_restart
+	use mod_geom_dynamic, only : dtime_setweg_old
 	use shympi
 
         use para
@@ -270,6 +290,23 @@
 	dtanf = dgetpar('itanf')
 	dtend = dgetpar('itend')
 
+	! setweg counts a new time step when the time differs from that of
+	! its last call (dtime_setweg_old, set by setweg(0) at the cold
+	! start time above). When a version 20 record with hydro restored
+	! iwetv, the clock must be the time the run starts from, as the
+	! writer's clock was the time of its record, or the first set_dry
+	! counts one step too many (#303). That is dtanf, the start time
+	! setup_time gives t_act (and setweg its dtime) after the restart, in
+	! seconds from the reference date: the record's time when the last
+	! record is read (blast, set above), the STR's itanf otherwise (not
+	! the requested or found record time, which may differ from the
+	! start). Any other record (an older version - also v18, which
+	! restores iwetv in its own branch - or hydro not wanted) keeps the
+	! cold start's clock, as before.
+	if( bsetweg_rst ) then
+	  dtime_setweg_old = dtanf
+	end if
+
         write(6,*) '---------------------------------------------'
         write(6,*) 'A restart has been performed'
 	if( blast ) then
@@ -281,6 +318,15 @@
 	call dts_format_abs_time(atime,aline)
         write(6,*) ' used restart time =      ',aline
         write(6,*) ' nvers = ',nvers_rst
+	if( bsetweg_rst ) then
+	  write(6,*) ' setweg clock reset to the start of the run: ' &
+     &			,dtime_setweg_old,' (time of the record read: ' &
+     &			,atime-atime0,')'
+	else
+	  write(6,*) ' setweg clock not reset (not a version 20 record' &
+     &			//' with hydro): ' &
+     &			,dtime_setweg_old
+	end if
 	write(6,*) '         id bwant bavail buse   description'
 	do id=1,nidmax
 	  bwant = rst_is_set(id,iflag_want_rst)
@@ -643,6 +689,7 @@
 	use mod_hydro_vel
 	use mod_hydro
 	use mod_restart
+	use mod_meteo, only : evapv,windcd,tws_heat,dtw_heat,brun_heat
 	use levels, only : nlvdi,nlv,hlv,ilhv,ilhkv
 	use basin
 	use shympi
@@ -660,6 +707,8 @@
         integer nvers
 	integer date,time
 	integer ios
+	integer iheat_rst
+	integer itdrag
 
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
@@ -709,6 +758,19 @@
 	call restart_write_value(iunit,be,utlnv)
 	call restart_write_value(iunit,be,vtlnv)
 
+	! version 20: what the next step needs besides the fields above
+	! (#303 #304); the reader decides what it applies (rst_read_hydro_v20)
+	iheat_rst = 0
+	if( brun_heat ) iheat_rst = 1	!qflux3d ran: tws/dtw hold its state
+	itdrag = nint(getpar('itdrag'))	!what set windcd (rst_read_hydro_v20)
+	call restart_write_value(iunit,be,iwetv)	!wet/dry counter
+	call restart_write_value(iunit,bn,evapv)	!evaporation
+	call restart_write_value(iunit,itdrag)		!the writer's itdrag
+	call restart_write_value(iunit,bn,windcd)	!drag coefficient
+	call restart_write_value(iunit,iheat_rst)	!heat flag
+	call restart_write_value(iunit,bn,tws_heat)	!skin temperature
+	call restart_write_value(iunit,bn,dtw_heat)	!warm layer difference
+
 	call restart_write_value(iunit,be,3,hm3v)
 
 	call restart_write_value(iunit,ibarcl)
@@ -718,19 +780,11 @@
 	  call restart_write_value(iunit,bn,rhov)
 	end if
 
-	call restart_write_value(iunit,iturb)
+	call restart_write_value(iunit,iturb)	!the writer's closure
 	if( iturb .eq. 1 ) then
 	  call write_restart_gotm(iunit)
-	else if( iturb .eq. 2 .and. bmaster ) then
-	  !N25: k-eps closure state (tken/eps/rls in mod_keps, plus
-	  !visv/difv/z0bk) has no restart hooks -- see the "known restart
-	  !gaps" note near the top of this file. Warn instead of silently
-	  !dropping it, so the user knows mixing restarts cold after this
-	  !restart file is read back in.
-	  write(6,*) '*** warning: restart does not save k-eps '// &
-     &			'turbulence state (tken,eps,rls,visv,difv,z0bk)'
-	  write(6,*) '*** turbulent mixing will restart from cold '// &
-     &			'values when this restart file is read (N25)'
+	else if( iturb .eq. 2 ) then
+	  call rst_write_keps(iunit)	!version 20: k-epsilon state (#304)
 	end if
 
 	call restart_write_value(iunit,iconz)
@@ -813,6 +867,7 @@
 	logical brewrite
 	integer iuout
 	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm,issedi
+	integer iheat_rst
 	integer idfile
 	integer date,time,it,id,ios
 	integer nmax,ialloc
@@ -840,6 +895,8 @@
         ierr = 0
 
 	nvers_rst = nvers
+	iheatflag_rst = 0	!the writer's heat flag, read from version 20
+	itdrag_rst = 0		!the writer's itdrag, read from version 20
 
 	date = 0
 	time = 0
@@ -943,6 +1000,52 @@
 	  end if
 	end if
 
+	if( nvers .ge. 20 ) then	!iwetv evapv itdrag windcd heatflag tws dtw
+	  read(iunit,iostat=ios) ival(1:nel)
+	  call rst_check_read(ios,'iwetv')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: iwetv'
+	    write(iuout,*) ival(1:nel)
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'evapv')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: evapv'
+	    write(iuout,*) rval2d(1:nkn)
+	  end if
+	  read(iunit,iostat=ios) itdrag_rst
+	  call rst_check_read(ios,'itdrag')	!exported (rstinf lists it)
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: itdrag'
+	    write(iuout,*) itdrag_rst
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'windcd')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: windcd'
+	    write(iuout,*) rval2d(1:nkn)
+	  end if
+	  read(iunit,iostat=ios) iheat_rst
+	  call rst_check_read(ios,'heat flag')
+	  iheatflag_rst = iheat_rst	!export the heat flag (rstinf lists it)
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: heat flag'
+	    write(iuout,*) iheat_rst
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'tws')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: tws'
+	    write(iuout,*) rval2d(1:nkn)
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'dtw')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: dtw'
+	    write(iuout,*) rval2d(1:nkn)
+	  end if
+	end if
+
 	if( nvers .ge. 4 ) then
 	  id = id_depth_rst
 	  call rst_add_flag(id,iflag)
@@ -981,9 +1084,38 @@
 	  id = id_gotm_rst
 	  read(iunit,iostat=ios) iturb
 	  call rst_check_read(ios,'iturb')
+	  iturb_rst = iturb	!export the writer's closure (rstinf lists it)
 	  if( iturb .eq. 1 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_gotm(iunit)
+	  else if( iturb .eq. 2 ) then
+	    if( nvers .ge. 20 ) then	!k-epsilon state (#304)
+	      call rst_add_flag(id,iflag)
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'tken')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: tken'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'eps')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: eps'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'visv')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: visv'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'difv')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: difv'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	    end if
 	  end if
 	end if
 
@@ -1073,6 +1205,7 @@
 	use levels, only : nlvdi,nlv,ilhv,ilhkv
 	use basin
 	use mod_restart
+	use mod_keps, only : brst_keps
 	use shympi
 
         implicit none
@@ -1121,6 +1254,8 @@
         ierr = 0
 
 	nvers_rst = nvers
+	bsetweg_rst = .false.	!set if this record restores iwetv (v20)
+	brst_keps = .false.	!set if this record restores k-epsilon (v20)
 
 	date = 0
 	time = 0
@@ -1218,6 +1353,12 @@
 	    end if
 	  end if
 
+	  if( nvers .ge. 20 ) then
+	    ! iwetv, evapv, itdrag, windcd, heat flag, tws, dtw (#303 #304)
+	    id = id_hydro_rst
+	    call rst_read_hydro_v20(iunit,rst_want_restart(id))
+	  end if
+
           if( nvers .ge. 4 ) then
 	    id = id_depth_rst
 	    call rst_add_flag(id,iflag)
@@ -1255,13 +1396,18 @@
 	    id = id_gotm_rst
 	    read(iunit,iostat=ios) iturb
 	    call rst_check_read(ios,'iturb')
-	    iturb_rst = iturb
+	    iturb_rst = iturb	!the writer's closure (handle_gotm_init)
 	    if( iturb .eq. 1 ) then
 	      call rst_add_flag(id,iflag)
 	      if( rst_want_restart(id) ) then
 	        call read_restart_gotm(iunit)
 	      else
 	        call skip_restart_gotm(iunit)
+	      end if
+	    else if( iturb .eq. 2 ) then
+	      if( nvers .ge. 20 ) then	!k-epsilon state (#304)
+	        call rst_add_flag(id,iflag)
+	        call rst_read_keps(iunit,rst_want_restart(id))
 	      end if
 	    end if
 	  end if
@@ -1359,6 +1505,284 @@
 
         return
         end
+
+!*******************************************************************
+
+	subroutine rst_read_hydro_v20(iunit,bwant)
+
+! reads the records that version 20 adds to the hydro block, after
+! vtlnv (#303 #304), and applies them by these rules:
+!
+!   iwetv		always
+!   evapv		only if qflux3d runs here (heat_flux_active, and T/S
+!			not from an offline file, see below): only qflux3d
+!			writes evapv, so else a restored value would be taken
+!			from the water column (ievap = 1) for the whole run,
+!			where a cold start keeps 0 (evap_init)
+!   windcd		only if the writer's itdrag (the record before
+!			windcd) and the reader's are the same and 3 (the
+!			waves set it each step) or 4 with qflux3d running
+!			here (COARE sets it each step); in every other case
+!			windcd is the reader's dragco (windcd_init) or is not
+!			used, and the file's values must not replace it: a
+!			writer with itdrag = 0 wrote its dragco, which a
+!			reader with itdrag = 4 would use at the first step
+!			(meteo_force runs before qflux3d) and on the nodes
+!			that stay dry (qflux3d skips them)
+!   tws, dtw		only if the writer's heat flag is set (qflux3d ran
+!			there) and qflux3d runs here; then brst_heat tells
+!			qflux3d to keep them instead of its start-up values
+!
+! A run that reads T/S from an offline file (offline_reads_ts: idtoff =
+! -2, -3 or -4 and below) never runs qflux3d: barocl returns before it
+! at every step. heat_flux_active cannot see this (the offline module is
+! set up after the restart read), so the reader asks offline_reads_ts,
+! which decodes the STR's idtoff, and then treats the heat flux as not
+! running: evapv, windcd (itdrag = 4), tws and dtw are not applied.
+!
+! with bwant false (flgrst without hydro) the seven records are skipped
+! and nothing is applied; so too when a tool reads the file (btool_rst:
+! rst2shy has no parameter table and no meteo arrays). bsetweg_rst =
+! .true. tells rst_perform_restart that iwetv was restored, so that it
+! resets the setweg clock.
+
+	use mod_geom_dynamic, only : iwetv
+	use mod_meteo, only : evapv,windcd,tws_heat,dtw_heat,brst_heat
+	use mod_restart
+
+	use para
+	implicit none
+
+	integer, intent(in) :: iunit	!unit of the restart file
+	logical, intent(in) :: bwant	!hydro is wanted (flgrst)
+
+	logical bheat		!qflux3d runs in this run
+	logical bskip		!read the seven records past
+	logical bwind		!apply the file's windcd
+	integer ios
+	integer itdrag		!this run's itdrag
+	integer itdrag_file	!the writer's itdrag
+	integer iheat_rst
+
+	logical, parameter :: be = .true.
+	logical, parameter :: bn = .false.
+
+	logical heat_flux_active
+	logical offline_reads_ts
+
+	bskip = .not. bwant
+	if( btool_rst ) bskip = .true.
+
+	if( bskip ) then
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'iwetv (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'evapv (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'itdrag (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'windcd (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'heat flag (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'tws (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'dtw (skip)')
+	  if( btool_rst ) then
+	    write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
+     &			//' (read by a tool)'
+	  else
+	    write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
+     &			//' (hydro not wanted)'
+	  end if
+	  return
+	end if
+
+	bheat = heat_flux_active()
+	if( bheat ) then
+	  if( offline_reads_ts() ) then	!barocl returns before qflux3d
+	    bheat = .false.
+	    write(6,*) 'restart: T/S from the offline file (idtoff = ' &
+     &			,nint(dgetpar('idtoff')),'): qflux3d does not run'
+	  end if
+	end if
+
+	call restart_read_value(iunit,be,iwetv)
+	bsetweg_rst = .true.
+
+	if( bheat ) then
+	  call restart_read_value(iunit,bn,evapv)
+	  write(6,*) 'restart: evapv applied'
+	else
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'evapv (skip)')
+	  write(6,*) 'restart: evapv not applied (no heat flux, evapv = 0)'
+	end if
+
+	read(iunit,iostat=ios) itdrag_file
+	call rst_check_read(ios,'itdrag')
+	itdrag = nint(getpar('itdrag'))
+	bwind = .false.
+	if( itdrag == itdrag_file ) then
+	  if( itdrag == 3 ) bwind = .true.
+	  if( itdrag == 4 ) bwind = bheat
+	end if
+
+	if( bwind ) then
+	  call restart_read_value(iunit,bn,windcd)
+	  write(6,*) 'restart: windcd applied (itdrag = ',itdrag,')'
+	else
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'windcd (skip)')
+	  if( itdrag == itdrag_file .and. itdrag == 4 ) then
+	    write(6,*) 'restart: windcd not applied (itdrag = ',itdrag &
+     &			,', no heat flux)'
+	  else
+	    write(6,'(a,i0,a,i0,a)') ' restart: windcd not applied' &
+     &			//' (file itdrag = ',itdrag_file &
+     &			,', run itdrag = ',itdrag,')'
+	  end if
+	end if
+
+	read(iunit,iostat=ios) iheat_rst
+	call rst_check_read(ios,'heat flag')
+	brst_heat = .false.
+	if( iheat_rst > 0 ) then
+	  if( bheat ) then
+	    call restart_read_value(iunit,bn,tws_heat)
+	    call restart_read_value(iunit,bn,dtw_heat)
+	    brst_heat = .true.
+	    write(6,*) 'restart: tws, dtw applied (heat flag set)'
+	  else
+	    write(6,*) 'restart: tws, dtw not applied (no heat flux)'
+	  end if
+	else
+	  write(6,*) 'restart: tws, dtw not applied (heat flag not set)'
+	end if
+	if( .not. brst_heat ) then
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'tws (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'dtw (skip)')
+	end if
+
+	end subroutine rst_read_hydro_v20
+
+!*******************************************************************
+
+	subroutine rst_write_keps(iunit)
+
+! writes the k-epsilon state into the turbulence block of a version 20
+! record, after the writer's iturb (2) (#304): tken, eps, visv, difv
+! (nodes x levels 0:nlv), gathered like the GOTM arrays, so it is called
+! on every process
+
+	use mod_keps, only : tken,eps
+	use mod_diff_visc_fric, only : visv,difv
+	use mod_restart, only : restart_write_value
+
+	implicit none
+
+	integer, intent(in) :: iunit	!unit of the restart file
+
+	logical, parameter :: bn = .false.
+
+	call restart_write_value(iunit,bn,tken)
+	call restart_write_value(iunit,bn,eps)
+	call restart_write_value(iunit,bn,visv)
+	call restart_write_value(iunit,bn,difv)
+
+	end subroutine rst_write_keps
+
+!*******************************************************************
+
+	subroutine rst_read_keps(iunit,bwant)
+
+! reads the k-epsilon state of the turbulence block of a version 20
+! record written with iturb = 2 (#304): tken, eps, visv, difv
+!
+! They are applied only if the turbulence block is wanted (bwant, flgrst
+! flag 8) and this run uses k-epsilon too (iturb = 2). Then keps_init
+! first gives rls its value (rls is not in the file, and keps never
+! reads it), the four arrays are read over the others, visv and difv
+! are also kept in visv_keps_rst and difv_keps_rst (set_eddy, called by
+! init_others after the restart, sets visv = vistur and difv = diftur;
+! handle_gotm_init puts them back), and brst_keps tells handle_gotm_init
+! and keps_shell not to call keps_init.
+!
+! In any other case the four records are skipped, and nothing is
+! applied: a run with another closure starts it as on a cold start (for
+! GOTM, handle_gotm_init sees from iturb_rst that the file holds no GOTM
+! arrays and calls gotm_internal_init). iturb is asked for only when the
+! block is wanted, so that a tool that does not want it (rst2shy reads
+! with flgrst 1111) and has no parameter table only skips the records.
+
+	use mod_keps, only : tken,eps,brst_keps,visv_keps_rst,difv_keps_rst
+	use mod_diff_visc_fric, only : visv,difv
+	use mod_restart, only : restart_read_value
+
+	use para
+	implicit none
+
+	integer, intent(in) :: iunit	!unit of the restart file
+	logical, intent(in) :: bwant	!turbulence block wanted (flgrst)
+
+	logical bapply		!apply the k-epsilon state
+	integer iturb		!this run's closure
+	integer i,ios,ierr
+
+	logical, parameter :: bn = .false.
+
+	iturb = 0
+	bapply = .false.
+	if( bwant ) then
+	  iturb = nint(getpar('iturb'))
+	  if( iturb == 2 ) bapply = .true.
+	end if
+
+	if( .not. bapply ) then
+	  do i=1,4
+	    read(iunit,iostat=ios)
+	    call rst_check_read(ios,'k-epsilon state (skip)')
+	  end do
+	  if( bwant ) then
+	    write(6,*) 'restart: k-epsilon state not applied (iturb = ' &
+     &			,iturb,')'
+	  else
+	    write(6,*) 'restart: k-epsilon state not applied' &
+     &			//' (turbulence not wanted)'
+	  end if
+	  return
+	end if
+
+	call keps_init		!rls, which the file does not hold
+	call restart_read_value(iunit,bn,tken)
+	call restart_read_value(iunit,bn,eps)
+	call restart_read_value(iunit,bn,visv)
+	call restart_read_value(iunit,bn,difv)
+
+	! a multi-record file is read record by record: allocated once
+	if( .not. allocated(visv_keps_rst) ) then
+	  allocate(visv_keps_rst(lbound(visv,1):ubound(visv,1) &
+     &			,lbound(visv,2):ubound(visv,2)),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('rst_read_keps: allocation failed')
+	  end if
+	end if
+	if( .not. allocated(difv_keps_rst) ) then
+	  allocate(difv_keps_rst(lbound(difv,1):ubound(difv,1) &
+     &			,lbound(difv,2):ubound(difv,2)),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('rst_read_keps: allocation failed')
+	  end if
+	end if
+	visv_keps_rst = visv
+	difv_keps_rst = difv
+	brst_keps = .true.
+
+	write(6,*) 'restart: k-epsilon state applied (tken, eps, visv, difv)'
+
+	end subroutine rst_read_keps
 
 !*******************************************************************
 

@@ -48,6 +48,9 @@
 ! 22.07.2026    arb     ported to razinkele/shyfem: version gating in
 !                       check_record (18 = upstream old-time levels,
 !                       19 = fork ssedi bed mass)
+! 26.11.2026    arb     version 20: the list shows its records, the diff
+!                       mode compares them (#303 #304)
+! 26.11.2026    arb     version 20: the writer's itdrag (#303 #304, R4)
 
 !******************************************************************
 
@@ -113,6 +116,7 @@
 
 	integer iunit,it,nvers,nrec,nknr,nelr,nlvr,iflag,ierr,ic
 	integer nread
+	integer nvers_last	!version of the last record read
 	double precision atime
 	double precision atime_anf
 	double precision atime_end
@@ -158,6 +162,7 @@
 	  call rst_skip_record(iunit,atime,nvers,nrec &
      &					,nknr,nelr,nlvr,iflag,ierr)
 	  if( ierr .ne. 0 ) exit
+	  nvers_last = nvers
 
 	  if( nread == 0 ) then
             write(6,1000) trim(title1)
@@ -194,6 +199,8 @@
 
 	call write_flags(iflag)
 
+	call rst_info_v20(nvers_last)	!nothing before version 20
+
 !-------------------------------------------------------------------
 ! end of routine
 !-------------------------------------------------------------------
@@ -204,6 +211,41 @@
  1010	format(i7,i5,5i10)
  1011	format(i7,f30.2,5x,a20)
 	end
+
+!******************************************************************
+
+	subroutine rst_info_v20(nvers)
+
+! lists the records version 20 added (#303 #304), with the heat flag and
+! the writer's iturb of the last record read (rst_skip_record exports
+! them); prints nothing for an older version
+
+	use mod_restart, only : iheatflag_rst,iturb_rst,itdrag_rst
+
+	implicit none
+
+	integer, intent(in) :: nvers	!version of the last record read
+
+	if( nvers < 20 ) return
+
+	write(6,'(a,i0,a)') ' records of version ',nvers &
+     &		,' (#303 #304), in the last record read:'
+	write(6,'(a)') '   hydro block, after vtlnv: iwetv, evapv, itdrag' &
+     &		// ', windcd, heat flag, tws, dtw'
+	write(6,'(a,i0,a)') '   itdrag of the writer: ',itdrag_rst &
+     &		,'  (the windcd record is applied only with the same itdrag)'
+	write(6,'(a,i0,a)') '   heat flag: ',iheatflag_rst &
+     &		,'  (1: qflux3d ran in the writer; tws and dtw hold its state)'
+	if( iturb_rst == 2 ) then
+	  write(6,'(a)') '   turbulence block, after iturb = 2: tken, eps' &
+     &		// ', visv, difv (k-epsilon)'
+	else
+	  write(6,'(a,i0,a)') '   turbulence block, after iturb = ' &
+     &		,iturb_rst,': no k-epsilon state'
+	end if
+	write(6,*)
+
+	end subroutine rst_info_v20
 
 !******************************************************************
 
@@ -335,8 +377,9 @@
 
 	implicit none
 
-	integer iu1,iu2,ierr
-	double precision atime
+	integer, intent(in) :: iu1,iu2		!units of the two files
+	double precision, intent(out) :: atime	!time of the record
+	integer, intent(out) :: ierr		!/= 0: no record (< 0: end)
 
 	integer nvers
 	integer nkn,nel,nlv
@@ -366,6 +409,16 @@
 	  call check_real('zeov',iu1,iu2,3,nel)
 	end if
 
+	if( nvers >= 20 ) then	!fork: what the next step needs (#303 #304)
+	  call check_integer('iwetv',iu1,iu2,1,nel)
+	  call check_real('evapv',iu1,iu2,1,nkn)
+	  call check_integer('itdrag',iu1,iu2,1,1)	!the writer's itdrag
+	  call check_real('windcd',iu1,iu2,1,nkn)
+	  call check_integer('heat flag',iu1,iu2,1,1)	!no layout change
+	  call check_real('tws',iu1,iu2,1,nkn)
+	  call check_real('dtw',iu1,iu2,1,nkn)
+	end if
+
 	call check_real('hm3v',iu1,iu2,3,nel)
 
 	call get_integer('ibarcl',iu1,iu2,ival)
@@ -376,12 +429,19 @@
 	end if
 
 	call get_integer('iturb',iu1,iu2,ival)
-	if( ival == 1 ) then	!only gotm (1) writes arrays, not k-eps (2)
+	if( ival == 1 ) then		!gotm (1) writes its arrays (double)
 	  call check_double('numv_gotm',iu1,iu2,(nlv+1),nkn)
 	  call check_double('nuhv_gotm',iu1,iu2,(nlv+1),nkn)
 	  call check_double('tken_gotm',iu1,iu2,(nlv+1),nkn)
 	  call check_double('eps_gotm',iu1,iu2,(nlv+1),nkn)
 	  call check_double('rls_gotm',iu1,iu2,(nlv+1),nkn)
+	else if( ival == 2 ) then	!k-eps (2) writes its state from v20
+	  if( nvers >= 20 ) then	!(real, levels 0:nlv; #304)
+	    call check_real('tken',iu1,iu2,(nlv+1),nkn)
+	    call check_real('eps',iu1,iu2,(nlv+1),nkn)
+	    call check_real('visv',iu1,iu2,(nlv+1),nkn)
+	    call check_real('difv',iu1,iu2,(nlv+1),nkn)
+	  end if
 	end if
 
 	call get_integer('iconz',iu1,iu2,ival)
@@ -572,10 +632,12 @@
 
 	implicit none
 
-	integer iunit,nvers,date,time,nkn,nel,nlv,ierr
+	integer, intent(in) :: iunit
+	integer, intent(out) :: nvers,date,time,nkn,nel,nlv,ierr
+	double precision, intent(out) :: atime
+
 	integer id,ignore
 	!integer, parameter :: nvmax = 18	!this is set in mod_restart
-	double precision atime
 
         read(iunit,iostat=ierr) id,nvers,ignore
 	if( ierr /= 0 ) return
@@ -585,8 +647,8 @@
 
 	if( id /= idfrst ) stop 'error stop: not a restart file'
 	if( ignore /= 1 ) stop 'error stop: ignore /= 1'
-	!accept upstream v18 through our nvmax (19); older versions are
-	!not handled by the positional reads of the diff mode
+	!accept upstream v18 through our nvmax (mod_restart, 20); older
+	!versions are not handled by the positional reads of the diff mode
 	if( nvers < 18 .or. nvers > nvmax ) then
 	  write(6,*) 'nvers,nvmax: ',nvers,nvmax
 	  stop 'error stop: unsupported nvers for diff mode'

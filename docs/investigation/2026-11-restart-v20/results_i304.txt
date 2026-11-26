@@ -1,0 +1,150 @@
+===== t0:  iturb = 0 ievap = 1 hmin = 1. aapar = 0.  tilt=1 idtcon=idtcon = '3h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=3.912e-06  nonzero=1303/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=3.654e-05  nonzero=24350/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=3.371e-06  nonzero=1305/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=1.270e-05  nonzero=24379/24436
+  hydro: 24 records compared, 24 differ
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=5.417e-04  nonzero=6561/13880
+  ts: 4 records compared, 4 differ
+===== t0n:  iturb = 0 ievap = 1 hmin = 1. aapar = 0.  tilt=0 idtcon=idtcon = '1h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=3.904e-06  nonzero=1307/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=3.637e-05  nonzero=24368/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=3.342e-06  nonzero=1305/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=1.249e-05  nonzero=24428/24436
+  hydro: 24 records compared, 24 differ
+t=  7.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=1.106e-04  nonzero=3284/13880
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=1.183e-04  nonzero=5888/13880
+  ts: 12 records compared, 12 differ
+===== t1n1:  iturb = 1 ievap = 1 hmin = 1. aapar = 0.  tilt=0 idtcon=idtcon = '1h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=4.154e-06  nonzero=1306/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=6.776e-04  nonzero=24433/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=3.438e-06  nonzero=1316/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=8.553e-02  nonzero=24430/24436
+  hydro: 24 records compared, 24 differ
+t=  7.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=4.620e-03  nonzero=7522/13880
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=4.912e+00  nonzero=10410/13880
+  ts: 12 records compared, 12 differ
+===== t0e:  iturb = 0 ievap = 0 hmin = 1. aapar = 0.  tilt=1 idtcon=idtcon = '3h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+  hydro: 24 records compared, 0 differ
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+  ts: 4 records compared, 0 differ
+===== t0f:  iturb = 0 ievap = 1 hmin = 1. aapar = 0.  tilt=1 idtcon=idtcon = '3h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+  hydro: 24 records compared, 0 differ
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+  ts: 4 records compared, 0 differ
+===== t1:  iturb = 1 ievap = 1 hmin = 1. aapar = 0.  tilt=1 idtcon=idtcon = '3h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=4.150e-06  nonzero=1312/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=1.542e-03  nonzero=24431/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=6.974e-06  nonzero=1315/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=5.675e-02  nonzero=24425/24436
+  hydro: 24 records compared, 24 differ
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=5.115e-01  nonzero=11232/13880
+  ts: 4 records compared, 4 differ
+===== t1f:  iturb = 1 ievap = 1 hmin = 1. aapar = 0.  tilt=1 idtcon=idtcon = '3h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+  hydro: 24 records compared, 0 differ
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+  ts: 4 records compared, 0 differ
+===== t1nf1:  iturb = 1 ievap = 1 hmin = 1. aapar = 0.  tilt=0 idtcon=idtcon = '1h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+  hydro: 24 records compared, 0 differ
+t=  7.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+  ts: 12 records compared, 0 differ
+===== t3:  iturb = 3 ievap = 1 hmin = 1. aapar = 0.  tilt=1 idtcon=idtcon = '3h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=3.912e-06  nonzero=1303/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=3.654e-05  nonzero=24350/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=3.371e-06  nonzero=1305/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=1.270e-05  nonzero=24379/24436
+  hydro: 24 records compared, 24 differ
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=5.417e-04  nonzero=6561/13880
+  ts: 4 records compared, 4 differ
+===== t3f:  iturb = 3 ievap = 1 hmin = 1. aapar = 0.  tilt=1 idtcon=idtcon = '3h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+  hydro: 24 records compared, 0 differ
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+  ts: 4 records compared, 0 differ
+===== t0v20:  iturb = 0 ievap = 1 hmin = 1. aapar = 0.  tilt=0 idtcon=idtcon = '1h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+  hydro: 24 records compared, 0 differ
+t=  7.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+  ts: 12 records compared, 0 differ
+===== t1v20:  iturb = 1 ievap = 1 hmin = 1. aapar = 0.  tilt=0 idtcon=idtcon = '1h'
+t=  7.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t=  7.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+t= 12.00h ivar=   1 n=1402 m=1 lmax=1 rec#0  max|d|=0.000e+00  nonzero=0/1402
+t= 12.00h ivar=   3 n=2545 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/24436
+  hydro: 24 records compared, 0 differ
+t=  7.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+t= 12.00h ivar=  11 n=1402 m=1 lmax=19 rec#0  max|d|=0.000e+00  nonzero=0/13880
+  ts: 12 records compared, 0 differ
+===== t0v20b (explicit itanf/itrst = 6h, v20)
+  hydro: 0 differ of 24
+  ts: 0 differ of 12
+===== dump t0 (no carry, tilt) C.21900 = after sp111 of first step after restart
+rfricv       max|d|=5.946e+15  nonzero=2545/2545  nonfinite-mismatch=0  max|A|=5.908e-04
+rcdv         max|d|=2.500e-03  nonzero=2545/2545  nonfinite-mismatch=0  max|A|=2.500e-03
+bnstressv    max|d|=2.057e-04  nonzero=2545/2545  nonfinite-mismatch=0  max|A|=2.057e-04
+evapv        max|d|=1.004e-08  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=1.004e-08
+qsensv       max|d|=4.354e+00  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=4.354e+00
+qlatv        max|d|=2.576e+01  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=2.576e+01
+qlongv       max|d|=4.631e+01  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=4.631e+01
+iwetv        max|d|=7.100e+01  nonzero=2545/2545  nonfinite-mismatch=0  max|A|=7.300e+01
+rqv          max|d|=4.158e-03  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=5.000e+01
+rqdsv        max|d|=4.158e-03  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=3.933e-03
+mfluxv       max|d|=4.158e-03  nonzero=1402/26638  nonfinite-mismatch=0  max|A|=3.033e+01
+ddxv         max|d|=1.245e+01  nonzero=48872/96710  nonfinite-mismatch=0  max|A|=1.245e+01
+ddyv         max|d|=1.245e+01  nonzero=48872/96710  nonfinite-mismatch=0  max|A|=1.245e+01
+===== dump t0 B.21900 = end of first step
+znv          max|d|=2.094e-06  nonzero=1400/1402  nonfinite-mismatch=0  max|A|=7.640e-02
+zenv         max|d|=2.094e-06  nonzero=7631/7635  nonfinite-mismatch=0  max|A|=7.640e-02
+utlnv        max|d|=9.388e-06  nonzero=23493/48355  nonfinite-mismatch=0  max|A|=2.329e+00
+vtlnv        max|d|=1.270e-05  nonzero=23090/48355  nonfinite-mismatch=0  max|A|=3.458e+00
+ulnv         max|d|=2.027e-06  nonzero=23701/48355  nonfinite-mismatch=0  max|A|=1.318e+00
+vlnv         max|d|=2.444e-06  nonzero=23450/48355  nonfinite-mismatch=0  max|A|=1.325e+00
+wlnv         max|d|=1.484e-08  nonzero=10954/28040  nonfinite-mismatch=0  max|A|=5.308e-03
+unv          max|d|=3.570e-05  nonzero=2366/2545  nonfinite-mismatch=0  max|A|=9.954e+00
+vnv          max|d|=3.600e-05  nonzero=2337/2545  nonfinite-mismatch=0  max|A|=1.173e+01
+uprv         max|d|=1.371e-06  nonzero=13582/26638  nonfinite-mismatch=0  max|A|=1.002e+00
+vprv         max|d|=2.161e-06  nonzero=13477/26638  nonfinite-mismatch=0  max|A|=1.090e+00
+wprv         max|d|=1.467e-08  nonzero=12180/26638  nonfinite-mismatch=0  max|A|=4.400e-03
+up0v         max|d|=1.252e-06  nonzero=1391/1402  nonfinite-mismatch=0  max|A|=6.964e-01
+vp0v         max|d|=2.027e-06  nonzero=1368/1402  nonfinite-mismatch=0  max|A|=8.454e-01
+xv           max|d|=2.094e-06  nonzero=4159/4206  nonfinite-mismatch=0  max|A|=8.454e-01
+hdknv        max|d|=2.265e-06  nonzero=1305/26638  nonfinite-mismatch=0  max|A|=1.206e+01
+hdenv        max|d|=2.146e-06  nonzero=2504/48355  nonfinite-mismatch=0  max|A|=1.250e+01
+saltv        max|d|=1.526e-04  nonzero=1807/26638  nonfinite-mismatch=0  max|A|=4.000e+01
+tempv        max|d|=5.150e-05  nonzero=1171/26638  nonfinite-mismatch=0  max|A|=9.597e+00
+rhov         max|d|=1.183e-04  nonzero=1824/26638  nonfinite-mismatch=0  max|A|=1.144e+01
+evapv        max|d|=9.330e-11  nonzero=76/1402  nonfinite-mismatch=0  max|A|=1.015e-08
+qsensv       max|d|=2.050e-04  nonzero=66/1402  nonfinite-mismatch=0  max|A|=4.780e+00
+qlatv        max|d|=2.393e-01  nonzero=76/1402  nonfinite-mismatch=0  max|A|=2.604e+01
+qlongv       max|d|=8.392e-05  nonzero=66/1402  nonfinite-mismatch=0  max|A|=4.659e+01
+iwetv        max|d|=7.100e+01  nonzero=2545/2545  nonfinite-mismatch=0  max|A|=7.400e+01
+rqv          max|d|=4.158e-03  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=5.000e+01
+rqdsv        max|d|=4.158e-03  nonzero=1402/1402  nonfinite-mismatch=0  max|A|=3.933e-03
+mfluxv       max|d|=4.158e-03  nonzero=1402/26638  nonfinite-mismatch=0  max|A|=3.033e+01
+===== dump t0v20 iwetv
+t0v20 (itrst = -1, itanf reset by the reader): iwetv equal at A.21600 (73 = 73); after the first set_dry rst - cont = +1 everywhere (C.21900 74 vs 73, B.22200 76 vs 75)
+t0v20b (itanf = itrst = 2009-01-01::06): iwetv equal at C.21900, B.22200, B.25200; all dumped arrays equal at B.22200 and B.25200

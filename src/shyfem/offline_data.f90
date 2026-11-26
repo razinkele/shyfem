@@ -57,6 +57,7 @@
 ! 20.03.2022	ggu	upgraded to suboutputd.f
 ! 15.03.2024	ggu	time to iitime; prepared for turbulence (bturb)
 ! 10.04.2024	ggu	finished offline
+! 26.11.2026	arb	offline_reads_ts() for the restart reader (#303 #304)
 !
 ! notes :
 !
@@ -286,6 +287,37 @@
 !-------------------------------------------------------------
 
 	end
+
+!****************************************************************
+
+	function offline_reads_ts()
+
+! true if the STR asks for T/S from an offline file, decoded from idtoff
+! as handle_offline and is_offline(2) decode it: idtoff < 0 reads,
+! ioffline = -idtoff, a value of 4 or more becomes ioff_max (7), and T/S
+! is the bit 2. Then barocl returns at every step before qflux3d.
+!
+! It reads only the parameter, so the restart reader can ask before
+! handle_offline sets the offline module up (#303 #304). A time span
+! given as a string (idtoff = '1h') is a write step, never a read; its
+! value stays 0 until handle_offline converts it (convert_time_d).
+
+	use mod_offline, only : ioff_max
+	use para
+
+	implicit none
+
+	logical offline_reads_ts
+
+	integer ioff
+
+	ioff = -nint(dgetpar('idtoff'))
+	if( ioff >= 4 ) ioff = ioff_max		!as handle_offline
+
+	offline_reads_ts = .false.
+	if( ioff > 0 ) offline_reads_ts = mod(ioff/2,2) /= 0
+
+	end function offline_reads_ts
 
 !****************************************************************
 !****************************************************************

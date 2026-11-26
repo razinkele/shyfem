@@ -31,6 +31,9 @@
 !
 ! 08.03.2025    ggu     extract module for restart routines
 ! 24.11.2026    arb     gathered arrays labelled for the ghost check (#268)
+! 26.11.2026    arb     version 20 (#303 #304)
+! 26.11.2026    arb     btool_rst, iheatflag_rst: the tools on version 20
+! 26.11.2026    arb     itdrag_rst: the writer's itdrag (version 20, R4)
 !
 ! notes :
 !
@@ -62,7 +65,11 @@
 ! 15	write gotm arrays
 ! 16	adapted for mpi
 ! 17	write bfm restart
-! 18	write simple-sediment bed mass (conza) (N25)
+! 18	read only: upstream shyfemcm layout (iwetv, zov, zeov after vtlnv)
+! 19	write simple-sediment bed mass (conza) (N25)
+! 20	write iwetv, evapv, the writer's itdrag, windcd, heat flag, tws,
+!	dtw after vtlnv; with iturb = 2, write tken, eps, visv, difv
+!	after iturb
 !
 !*********************************************************************
 
@@ -83,9 +90,11 @@
 	! 18 = READ-ONLY, upstream shyfemcm layout (old-time-level hydro:
 	! iwetv, zov, zeov) - never written by this fork (the fork briefly
 	! wrote 18 with the ssedi layout 2026-07-21/22 only; such files
-	! fail to read and must be regenerated); 19 = ssedi bed-mass block
-	! (this fork, what we write)
-	integer, save :: nvmax = 19		!last version of file
+	! fail to read and must be regenerated); 19 = ssedi bed-mass block;
+	! 20 = the hydro block also holds iwetv, evapv, itdrag, windcd, a heat flag
+	! and tws/dtw, and the turbulence block of a k-epsilon run (iturb =
+	! 2) tken, eps, visv and difv (this fork, what we write, #303 #304)
+	integer, save :: nvmax = 20		!last version of file
 	integer, parameter :: nidmax = 10
 
 	integer, save :: id_hydro_rst = 1	!1		hydro
@@ -104,7 +113,28 @@
 	integer, save :: iwvert_rst = 0
 	integer, save :: ieco_rst   = 0
 	integer, save :: imerc_rst  = 0
-	integer, save :: iturb_rst  = 0
+	integer, save :: iturb_rst  = 0		!the writer's iturb (v >= 15):
+						!the turbulence block holds
+						!GOTM's arrays only if 1 (#304);
+						!also set by rst_skip_record
+	integer, save :: itdrag_rst = 0		!the writer's itdrag (v20), set
+						!by rst_skip_record (rstinf),
+						!0 before version 20
+	integer, save :: iheatflag_rst = 0	!the writer's heat flag (v20:
+						!1 if qflux3d ran), set by
+						!rst_skip_record (rstinf), 0
+						!before version 20
+
+	logical, save :: bsetweg_rst = .false.	!the record read restored
+						!iwetv (v20): reset the
+						!setweg clock (#303)
+	logical, save :: btool_rst = .false.	!a tool (rst2shy) reads the
+						!file: no parameter table and
+						!no meteo arrays, so
+						!rst_read_hydro_v20 reads its
+						!records past, never applies
+						!them (rst_read_keps does so
+						!when id 8 is not wanted)
 
 	character*20, save :: descript_rst(nidmax) = (/    &
      &		 'hydrodynamics       '    &

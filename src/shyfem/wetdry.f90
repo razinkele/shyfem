@@ -186,7 +186,6 @@
 	logical bsigma
 
 	double precision dtime
-	double precision, save :: dtime_old = -1
 
 	integer, save :: icall = 0
 	real, save :: hzmin_c, hzoff_c, hzon_c, volmin_c
@@ -198,7 +197,7 @@
         bnewalg=.true.		!new algorithm to include elements
 
 	call get_act_dtime(dtime)
-	bnewtime = dtime .ne. dtime_old
+	bnewtime = dtime .ne. dtime_setweg_old
 
 	iu = 156
         iespec = -1
@@ -341,7 +340,7 @@
 	  end if
 	end do
 
-	dtime_old = dtime
+	dtime_setweg_old = dtime
         iw=iwh
 
 	if( bbdebug ) then

@@ -30,6 +30,8 @@
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 21.05.2019	ggu	changed VERS_7_5_62
 ! 01.04.2021	ggu	name changed to keps
+! 26.11.2026	arb	brst_keps, visv_keps_rst, difv_keps_rst: the k-epsilon
+!			state of a restart file (#304)
 
 !**************************************************************************
 
@@ -45,6 +47,16 @@
         real, allocatable, save :: tken(:,:)       ! turbulent kinetic energy 
         real, allocatable, save :: eps(:,:)        ! dissipation rate
         real, allocatable, save :: rls(:,:)        ! length scale
+
+        ! k-epsilon state read from a restart file (version 20, #304):
+        ! brst_keps is true when tken, eps, visv and difv were applied
+        ! (rst_read_keps); then keps_init must not overwrite them. visv
+        ! and difv are kept here because set_eddy (init_others) sets
+        ! visv = vistur and difv = diftur after the read; handle_gotm_init
+        ! puts them back.
+        logical, save :: brst_keps = .false.
+        real, allocatable, save :: visv_keps_rst(:,:)  ! visv of the file
+        real, allocatable, save :: difv_keps_rst(:,:)  ! difv of the file
 
 !==================================================================
         contains

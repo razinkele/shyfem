@@ -80,6 +80,9 @@
 ! 22.11.2026	arb	bnstress: the same (#230)
 ! 24.11.2026	arb	handle_gotm_init: visv/difv only with iturb > 0 (#248)
 ! 25.11.2026	arb	handle_gotm_init: k-eps and Munk-Anderson own state (#283)
+! 26.11.2026	arb	handle_gotm_init, keps_shell: a k-epsilon state read from
+!			the restart file is kept; GOTM starts cold unless the
+!			file holds GOTM's arrays (#304)
 !
 !**************************************************************
 
@@ -746,16 +749,31 @@
 !     initial (or restart) state; at rest it gives vistur/diftur
 ! Before #283 step 1 of k-epsilon and Munk-Anderson used GOTM's arrays
 ! too, so Munk-Anderson ignored vistur/diftur in step 1.
+!
+! A restart (#304): the turbulence block of the restart file (flag 8)
+! holds GOTM's arrays if the writer ran GOTM (iturb_rst = 1), and, from
+! version 20 on, k-epsilon's tken, eps, visv and difv if it ran
+! k-epsilon (iturb_rst = 2). So flag 8 alone does not say that GOTM's
+! arrays were read: they come from the file only if it is used and the
+! writer ran GOTM; in every other case (no restart, a k-epsilon file
+! read by a GOTM run, ...) GOTM starts from its own initial state
+! (gotm_internal_init), as on a cold start. The k-epsilon state is
+! kept (brst_keps, set by rst_read_keps only if this run also uses
+! k-epsilon): keps_init is not called, and visv/difv, which set_eddy
+! (init_others) replaced by vistur/diftur after the read, are put back.
 
 	use basin
 	use levels
 	use mod_gotm_aux
 	use mod_diff_visc_fric
+	use mod_keps, only : brst_keps,visv_keps_rst,difv_keps_rst
+	use mod_restart, only : iturb_rst
 	use para
 
 	implicit none
 
 	logical bdebug
+	logical bgotm_rst	!GOTM's arrays were read from the restart file
 	integer k,l,lmax,lmin,laux
 	integer iturb
 	integer, save :: iudbg = 0
@@ -778,9 +796,17 @@
 
 	call mod_gotm_aux_init(nkn,nlvdi)	!probably useless
 
-        if( .not. rst_use_restart(8) ) then
+	bgotm_rst = .false.
+	if( rst_use_restart(8) ) then
+	  if( iturb_rst == 1 ) bgotm_rst = .true.	!the file is GOTM's
+	end if
+	if( bgotm_rst ) then
+	  write(6,*) 'handle_gotm_init: GOTM arrays from the restart file'
+	else
 	  call gotm_internal_init
-        end if
+	  write(6,*) 'handle_gotm_init: GOTM arrays initialised' &
+     &			//' (gotm_internal_init)'
+	end if
 
 	iturb = nint(getpar('iturb'))
 	if( iturb <= 0 ) return		!no closure: keep vistur/diftur (#248)
@@ -791,11 +817,18 @@
 	! sets again on its first call, and munk_anderson_shell is a
 	! diagnostic of the present shear and stratification, with no state
 	! of its own to advance.
-	! This runs after rst_perform_restart: k-epsilon saves no state in
-	! the restart file (N25), and if restart hooks for it are ever added,
-	! keps_init here would wipe the restored tken, eps, rls, visv, difv
+	! This runs after rst_perform_restart and init_others: a k-epsilon
+	! state read from the restart file (brst_keps, #304) is kept, and
+	! its visv/difv replace set_eddy's vistur/diftur
 	if( iturb == 2 ) then
-	  call keps_init		!k-epsilon initial state (tken, eps, rls, visv, difv)
+	  if( brst_keps ) then
+	    visv = visv_keps_rst
+	    difv = difv_keps_rst
+	    write(6,*) 'handle_gotm_init: k-epsilon state from the' &
+     &			//' restart file (keps_init not called)'
+	  else
+	    call keps_init	!k-epsilon initial state (tken, eps, rls, visv, difv)
+	  end if
 	  return
 	else if( iturb == 3 ) then
 	  call munk_anderson_shell	!evaluated on the initial (or restart) state
@@ -1425,7 +1458,8 @@
 	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
-	  call keps_init
+	  !a k-epsilon state read from the restart file is kept (#304)
+	  if( .not. brst_keps ) call keps_init
 	  ireib = nint(getpar('ireib'))
 	  icall = 1
 	end if
@@ -1474,6 +1508,11 @@
         subroutine keps_init
 
 ! initializes arrays for keps routine
+!
+! on a restart whose k-epsilon state is read (#304) it is called only by
+! rst_read_keps, before the read (for rls, which the file does not hold
+! and keps does not read); handle_gotm_init and keps_shell then do not
+! call it (brst_keps)
 
 	use mod_keps
 	use mod_diff_visc_fric

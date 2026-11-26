@@ -46,6 +46,7 @@
 	integer, allocatable, save :: iwetv(:)
 	integer, allocatable, save :: inodv(:)
 	integer, allocatable, save :: inode_static(:)
+	double precision, save :: dtime_setweg_old = -1	!clock of setweg (wetdry.f90)
 
 !==================================================================
 	contains

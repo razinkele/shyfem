@@ -903,7 +903,8 @@ offline_data.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_offline.mod \
 		../../lib/mod/mod_trace_point.mod \
-		../../lib/mod/mod_ts.mod ../../lib/mod/shympi.mod 
+		../../lib/mod/mod_ts.mod ../../lib/mod/para.mod \
+		../../lib/mod/shympi.mod
 ous_admin.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_depth.mod \
 		../../lib/mod/mod_hydro.mod \
@@ -926,9 +927,12 @@ residual.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_layer_thickness.mod \
 		../../lib/mod/simul.mod 
 restart.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
+		../../lib/mod/mod_diff_visc_fric.mod \
 		../../lib/mod/mod_geom_dynamic.mod \
 		../../lib/mod/mod_hydro.mod \
 		../../lib/mod/mod_hydro_vel.mod \
+		../../lib/mod/mod_keps.mod \
+		../../lib/mod/mod_meteo.mod \
 		../../lib/mod/mod_restart.mod \
 		../../lib/mod/mod_ts.mod ../../lib/mod/shympi.mod 
 rst2shy.o: ../../lib/mod/basin.mod ../../lib/mod/clo.mod \
@@ -1108,9 +1112,10 @@ turbulence.o: ../../lib/mod/basin.mod ../../lib/mod/evgeom.mod \
 		../../lib/mod/mod_keps.mod \
 		../../lib/mod/mod_layer_thickness.mod \
 		../../lib/mod/mod_meteo.mod \
+		../../lib/mod/mod_restart.mod \
 		../../lib/mod/mod_roughness.mod \
 		../../lib/mod/mod_ts.mod ../../lib/mod/pkonst.mod \
-		../../lib/mod/shympi.mod 
+		../../lib/mod/shympi.mod
 tvd_admin.o: ../../lib/mod/basin.mod ../../lib/mod/evgeom.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/mod_hydro_print.mod \
