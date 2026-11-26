@@ -104,6 +104,8 @@
 ! 18.03.2022    ggu     bug fix in increase_output_d() itend -> dtend
 ! 04.12.2024    ggu     routines updated, more documentation
 ! 10.12.2024    ggu     new routine is_last_output_d()
+! 26.11.2026    arb     a string convert_date_d or convert_time_d cannot
+!			parse stops every process (exit 33, #330)
 !
 ! info :
 !
@@ -496,7 +498,8 @@
             write(6,*) '    format should be YYYY-MM-DD::hh:mm:ss'
             write(6,*) '    possible also YYYY-MM-DD[::hh[:mm[:ss]]]'
             write(6,*) '    or it should be an integer (relative time)'
-	    stop 'error stop convert_date: cannot parse'
+	    call shympi_abort_internal('error stop convert_date_d:' &
+     &			//' cannot parse '//trim(name))
 	  end if
 	  dtime = atime - atime0
 	  dit = dtime
@@ -540,8 +543,11 @@
 	if( text .ne. ' ' ) then
 	  call dtstimespand(didt,text,ierr)	!still in integer
 	  if( ierr .ne. 0 ) then
-	    write(6,*) 'name: ',name
-	    stop 'error stop convert_time: cannot parse'
+	    write(6,*) 'name: ',trim(name)
+	    write(6,*) 'text: ',trim(text)
+	    write(6,*) '*** cannot parse time span: ',ierr
+	    call shympi_abort_internal('error stop convert_time_d:' &
+     &			//' cannot parse '//trim(name))
 	  end if
 	  if( bdebug ) then
 	    write(6,*) 'time span as string found'
