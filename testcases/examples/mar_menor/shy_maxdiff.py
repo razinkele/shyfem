@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""shy_maxdiff.py A B : max|A - B| per variable and time of two SHYFEM output
-files of the same kind, both .shy (shyfile, id 1617) or both .ext (extra
+"""shy_maxdiff.py --first H A B : max|A - B| per variable and time of two SHYFEM
+output files of the same kind, both .shy (shyfile, id 1617) or both .ext (extra
 points, id 947336; the kind is taken from the file, not from its name).
 
 Written for check_restart_fidelity.sh (#303, #304): A is the continuous run,
 B the run read from a restart file.  Ported from the audit's shycmp.py and
 extcmp.py (docs/investigation/2026-11-restart-v20/tools_i304b).
+
+--first H (required): the time of the first record B must have, in hours
+from the start date (see Times below), which the caller knows from B's
+settings (restart time, output start and step, #323), never from B itself.
 
 Records.  A data record is matched by its time (the .shy time relative to
 the file's date, the absolute .ext time), its variable (ivar), its size
@@ -16,9 +20,12 @@ The same value in both (also the same infinity) or NaN in both at the same
 place counts as equal, NaN against a number as an infinite difference.
 
 Compared: every record of B with its match in A.  A record of B without a
-match in A, or a record of A at or after B's first time without a match in
-B, is "unmatched" and counts as a difference (the runs wrote at other times,
-for example after another time-step history).
+match in A, a record of B before the first time H, or a record of A at or
+after H without a match in B, is "unmatched" and counts as a difference
+(the runs wrote at other times, for example after another time-step
+history, or B lacks a record it must have written; #323: before, A's
+records were required only from B's own first time on, so a B without its
+first records passed).
 
 Prints one line per time and variable: the largest |d| over the matched
 records of that variable at that time, and how many values differ; one
@@ -27,13 +34,14 @@ line per unmatched record; then a summary line
           (B NUB, A NUA), byte-identical NI; max|d| NAME=X@T ...
 with the largest |d| of every variable over the run and the time where it
 occurs.  Times are in hours from the file's start date (.shy) or from A's
-start time atime0 (.ext).
+reference time atime0 (.ext, the absolute time of the start date).
 
-Exit status: 0 if every record of B has its match in A, every record of A
-from B's first time on has its match in B, and every value is equal
-(max|d| = 0); 1 if a value differs or a record is unmatched; 2 if the files
-cannot be compared (unreadable, of another or an unknown kind, another
-start date, no data record in B, or no record compared).
+Exit status: 0 if every record of B has its match in A, B has no record
+before H, every record of A from H on has its match in B, and every value
+is equal (max|d| = 0); 1 if a value differs or a record is unmatched; 2 if
+the files cannot be compared (unreadable, of another or an unknown kind,
+another start date, no data record in B, A without a record at H, or no
+record compared) or --first is missing.
 """
 import struct
 import sys
@@ -175,34 +183,47 @@ def name(ivar):
 
 
 def main(argv):
-    if len(argv) != 3:
+    first = None
+    if len(argv) == 5 and argv[1] == '--first':
+        try:
+            first = float(argv[2])
+        except ValueError:
+            pass
+    if first is None:
         print(__doc__.strip().splitlines()[0])
         return 2
+    fa, fb = argv[3], argv[4]
     try:
-        ka, sa, t0, a = load(argv[1])
-        kb, sb, _, b = load(argv[2])
+        ka, sa, t0, a = load(fa)
+        kb, sb, _, b = load(fb)
     except (OSError, FormatError, struct.error) as e:
         print(f"shy_maxdiff: cannot read: {e}")
         return 2
     if ka != kb:
-        print(f"shy_maxdiff: {argv[1]} is a .{ka} file, {argv[2]} a .{kb} file")
+        print(f"shy_maxdiff: {fa} is a .{ka} file, {fb} a .{kb} file")
         return 2
     if sa != sb:
         print(f"shy_maxdiff: the start dates differ: {sa} and {sb}")
         return 2
     if not b:
-        print(f"shy_maxdiff: {argv[2]} has no data record")
+        print(f"shy_maxdiff: {fb} has no data record")
         return 2
     # hours from the start date (.shy) or from A's atime0 (.ext)
     def hours(t):
         return (t - t0) / 3600.
 
-    tb0 = min(k[0] for k in b)
+    # the first record B must have: A must have a record then (else the
+    # time given is not one of the runs' output times and the check below
+    # would require nothing); times within 0.5 s are the same time
+    tf = t0 + 3600. * first
+    if not any(abs(k[0] - tf) < 0.5 for k in a):
+        print(f"shy_maxdiff: {fa} has no record at {first:g}h (--first)")
+        return 2
     per = {}       # (time, ivar) -> [maxd, nonzero, size, nrec]
     run = {}       # ivar -> [maxd, time]
     nc = nd = ni = 0
-    unmatched_b = sorted(k for k in b if k not in a)
-    unmatched_a = sorted(k for k in a if k[0] >= tb0 and k not in b)
+    unmatched_b = sorted(k for k in b if k not in a or k[0] < tf - 0.5)
+    unmatched_a = sorted(k for k in a if k[0] >= tf - 0.5 and k not in b)
     for k in sorted(b):
         if k not in a:
             continue
@@ -224,9 +245,11 @@ def main(argv):
               f"differ {nz}/{n} values in {nrec} record(s)")
     for side, ks in (('B', unmatched_b), ('A', unmatched_a)):
         for k in ks:
-            other = 'A' if side == 'B' else 'B'
-            print(f"  t={hours(k[0]):7.3f}h  {name(k[1]):9s} record #{k[3]} of {side}: "
-                  f"no record in {other} at this time")
+            if side == 'B' and k in a:
+                why = f"before the first record B must have ({first:g}h)"
+            else:
+                why = f"no record in {'A' if side == 'B' else 'B'} at this time"
+            print(f"  t={hours(k[0]):7.3f}h  {name(k[1]):9s} record #{k[3]} of {side}: {why}")
     nu = len(unmatched_b) + len(unmatched_a)
     mx = " ".join(f"{name(iv)}={run[iv][0]:.3e}@{hours(run[iv][1]):g}h" for iv in sorted(run))
     print(f"SUMMARY {ka}: B has {len(b)} records, compared {nc}, differ {nd}, "
