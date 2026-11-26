@@ -16,7 +16,7 @@
 #           non-empty, no "error stop" in the log, and the same number of
 #           records read as rstinf
 #   err   : rst2shy given only the restart file (no basin file) must exit
-#           non-zero with an "error stop" line (it exited 0 before #327)
+#           7 with "rst_init: missing files" (it exited 0 before #327)
 #   warm  : a second run restarts from the file
 #
 # The overrun only faults reliably in a bounds-checked build:
@@ -53,8 +53,8 @@ n_inf=$(nrec rstinf.log); n_shy=$(nrec rst2shy.log)
 echo "ok   rst2shy converted $n_shy record(s) to .hydro.shy and .ts.shy"
 rm -f rst2shy_err.log
 timeout 300 rst2shy strip_rst.rst > rst2shy_err.log 2>&1; rc=$?
-{ [ "$rc" -ne 0 ] && grep -qi "error stop" rst2shy_err.log; } \
-  || { echo "FAIL rst2shy without a basin file: exit $rc (want non-zero + error stop)"; exit 1; }
+{ [ "$rc" -eq 7 ] && grep -q "rst_init: missing files" rst2shy_err.log; } \
+  || { echo "FAIL rst2shy without a basin file: exit $rc (want 7 + rst_init: missing files)"; exit 1; }
 echo "ok   rst2shy without a basin file exits $rc"
 step warm    warm.log    shyfem strip_warm.str
 grep -q "A restart has been performed" warm.log \

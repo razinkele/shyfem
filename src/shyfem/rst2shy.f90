@@ -46,6 +46,7 @@
 	use mod_hydro
 	use mod_geom_dynamic
 	use mod_restart
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -91,11 +92,11 @@
 
 	open(newunit=iunit,file=rstfile,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) call error_stop('rst2shy','cannot open rst file')
+	if( ierr /= 0 ) call tool_error_stop('rst2shy','cannot open rst file')
 	call rst_skip_record(iunit,atime,nvers,nrec &
      &					,nknr,nelr,nlvr,iflag,ierr)
 	if( ierr .ne. 0 ) then
-	  call error_stop('rst2shy','reading parameters')
+	  call tool_error_stop('rst2shy','reading parameters')
 	end if
 	close(iunit)
 	ic = iconz_rst		!tracer count, exported by rst_skip_record
@@ -136,13 +137,13 @@
 	! the real structure; older 3d files carry no vertical info and
 	! cannot be converted faithfully)
 	if( .not. allocated(hlvrst) ) then
-	  call error_stop('rst2shy','no vertical structure in file')
+	  call tool_error_stop('rst2shy','no vertical structure in file')
 	end if
 	hlv(1:nlv) = hlvrst(1:nlv)
 	ilhv(:) = ilhrst(:)
 	ilhkv(:) = ilhkrst(:)
 	if( nlv > 1 .and. all(hlvrst == 0.) ) then
-	  call error_stop('rst2shy','3d file older than version 10')
+	  call tool_error_stop('rst2shy','3d file older than version 10')
 	end if
 	call shympi_set_hlv(nlv,hlv)
 
@@ -172,7 +173,7 @@
 
 	open(newunit=iunit,file=rstfile,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) call error_stop('rst2shy','cannot reopen rst file')
+	if( ierr /= 0 ) call tool_error_stop('rst2shy','cannot reopen rst file')
 
 	do
 	  call rst_read_record(iunit,atime,iflag,ierr)
@@ -188,7 +189,7 @@
 	  if( bhydro ) call hydro_write_output(id_hydro,dtime)
 	end do
 
-	if( ierr > 0 ) call error_stop('rst2shy','error reading record')
+	if( ierr > 0 ) call tool_error_stop('rst2shy','error reading record')
 
 !-------------------------------------------------------------------
 ! final message
