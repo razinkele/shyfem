@@ -43,7 +43,7 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and five cases of another kind, each with its own write run (serial):
+# and six cases of another kind, each with its own write runs (serial):
 #   old_v19       a version 19 file (venlag_smoke, as ven_s), written by
 #                 the reference binary REF_BIN_DIR/shyfem (an origin/main
 #                 build, before version 20) and read by this binary (r)
@@ -94,6 +94,31 @@
 #                 initialised"; r's .hydro.shy, .ts.shy and .ext must hold
 #                 no NaN or infinity; and r must equal o (max|d| = 0;
 #                 compared even if a log line is missing)
+#   tools         rstinf and rst2shy (this build's, on PATH) on version 20
+#                 files, and on version 19 files as main's (REF_BIN_DIR's)
+#                 rstinf and rst2shy; six write runs, serial, with a record
+#                 every 3 h (m: mm_h6d4's write run, 03:00 and 06:00) or
+#                 every hour (k: ven_keps_s's, with k-epsilon; g: ven_s's,
+#                 with GOTM; 01:00 to 03:00), each by this binary (m20, k20,
+#                 g20: version 20) and by REF_BIN_DIR (m19, k19, g19: version
+#                 19).  On each version 20 file: rstinf lists version 20, the
+#                 number of records, the version 20 records of the hydro
+#                 block, the heat flag (1: qflux3d ran) and whether the
+#                 turbulence block holds the k-epsilon state; rstinf of the
+#                 file and of a copy finds no difference in any record;
+#                 rstinf of the file and of the file with some version 20
+#                 records of its first record changed (m: evapv, windcd, tws,
+#                 dtw; k: evapv, tken, difv; g: tws) names exactly those
+#                 records; rst2shy converts every record, and its .shy files
+#                 are the same bytes as REF_BIN_DIR's rst2shy makes from the
+#                 version 19 file of the same run.  On each version 19 file:
+#                 rstinf (list, and file against copy) and rst2shy print what
+#                 REF_BIN_DIR's print (but the commit line of the banner),
+#                 and rst2shy's .shy files are the same bytes as REF_BIN_DIR's;
+#                 without REF_BIN_DIR the case fails
+# and a case kept out of the default list, a canary for the comparator:
+#   mm_e0         mm_i0 with ievap = 0: no evaporation, no wet/dry, no
+#                 closure, so it passes also with 9187cdf1 (version 19)
 # Required for a case: the three runs end (exit code 0 and "simulation
 # end" in the log, timeout 1200 s each); the log of an NP-process run has
 # "shympi initialized: ID NP" once from each rank 0 to NP-1 (so that NP
@@ -117,15 +142,16 @@
 # and exits 0 or 1.
 #
 # Usage:  [REF_BIN_DIR=DIR] ./check_restart_fidelity.sh [case ...]
-#         (no case: every case; old_v19 needs REF_BIN_DIR, the bin folder
-#         of an origin/main build)
-# Needs shyfem, shypre and python3 with numpy on PATH, and mpirun (an
-# OpenMPI build) for the cases on several processes.  Works in a folder
+#         (no case: every case but mm_e0; old_v19 and tools need
+#         REF_BIN_DIR, the bin folder of an origin/main build)
+# Needs shyfem, shypre and python3 with numpy on PATH, rstinf and rst2shy
+# for the case tools, and mpirun (an OpenMPI build) for the cases on
+# several processes.  Works in a folder
 # made with mktemp -d under ${TMPDIR:-/tmp}: the basins are built there
 # with shypre from GRID/MM_coarse_smooth.grd and ../venice_lagoon/GRID/
 # venlag62.grd, INPUT is linked and the STR files are made there with sed
 # from mm_hyd_41.str and venlag_smoke.str, so nothing in the source
-# folders changes.  The cases run at the same time (37 processes at the
+# folders changes.  The cases run at the same time (43 processes at the
 # start); every mpirun has --bind-to none, so that the runs do not share
 # the two cores Open MPI binds a 2-process run to.  Takes about 2 minutes
 # on the development machine (the serial venlag cases are the longest).
@@ -136,15 +162,22 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
 ALL="$ALL old_v19 drag0_reads_cd4 flgrst_no_hydro evap_reads_noheat keps_to_gotm"
+ALL="$ALL tools"
+OPT="mm_e0"     # cases kept out of the default list
 CASES="${*:-$ALL}"
-needmm=no; needven=no; needmpi=no
+needmm=no; needven=no; needmpi=no; needtools=no
 for c in $CASES; do
-  case " $ALL " in *" $c "*) ;; *) echo "usage: [REF_BIN_DIR=DIR] $0 [case ...], cases: $ALL"; exit 2 ;; esac
-  case "$c" in mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat) needmm=yes ;; ven_*|old_v19|keps_to_gotm) needven=yes ;; esac
+  case " $ALL $OPT " in *" $c "*) ;; *) echo "usage: [REF_BIN_DIR=DIR] $0 [case ...], cases: $ALL (and $OPT)"; exit 2 ;; esac
+  case "$c" in
+    mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat) needmm=yes ;;
+    ven_*|old_v19|keps_to_gotm) needven=yes ;;
+    tools) needmm=yes; needven=yes; needtools=yes ;;
+  esac
   case "$c" in *_np*) needmpi=yes ;; esac
 done
 tools="shyfem shypre python3"
 [ "$needmpi" = yes ] && tools="$tools mpirun"
+[ "$needtools" = yes ] && tools="$tools rstinf rst2shy"
 for t in $tools; do
   command -v "$t" > /dev/null 2>&1 || { echo "RESTART FIDELITY: FAIL ($t is not on PATH)"; exit 1; }
 done
@@ -238,6 +271,14 @@ mkmm() {
        "$d/r/r.str")" = 3 ] || return 1
   RTIME="2009-01-01::$tr:00:00"; H1=$(( 10#$tr + 1 )); H2=$(( 10#$te ))
 }
+# evap0 CASE: the STR files mkmm made, with ievap = 0
+evap0() {
+  local s
+  for s in c w r; do
+    sed -i 's/^\(        iturb = [0-9]      ievap = \)1 /\10 /' "$P/$1/$s/$s.str" || return 1
+    grep -q '^        iturb = [0-9]      ievap = 0 ' "$P/$1/$s/$s.str" || return 1
+  done
+}
 # mkven CASE ITURB: c (00:00-06:00), w (00:00-03:00), r (03:00-06:00)
 # from venlag_smoke.str with iturb = ITURB
 mkven() {
@@ -310,6 +351,7 @@ onecase() {
     mm_i1)        mkmm "$cs" 1 06 12 ;;
     mm_h6d4)      mkmm "$cs" 0 06 12 "iheat = 6   itdrag = 4" ;;
     mm_h6noon)    mkmm "$cs" 0 12 18 "iheat = 6   itdrag = 4" ;;
+    mm_e0)        mkmm "$cs" 0 06 12 && evap0 "$cs" ;;
     ven_s|ven_np*)           mkven "$cs" 1 ;;
     ven_keps_s|ven_keps_np*) mkven "$cs" 2 ;;
   esac
@@ -465,20 +507,24 @@ case_old_v19() {
 }
 
 # rstpatch SRC DST NAME=VALUE ...: DST is the version 20 restart file SRC
-# with every value of its record NAME (evapv or windcd) set to VALUE (as
-# a 4-byte real); walks the record markers and checks the sizes of the
-# records of the hydro block, so that a change of the layout fails here;
-# fails if a record already holds VALUE everywhere (then the read of SRC
-# and of DST could not differ)
+# with every value of the record NAME of its first time record set to
+# VALUE (as a 4-byte real); NAME is evapv, windcd, tws or dtw (hydro
+# block) or tken, eps, visv or difv (turbulence block of a k-epsilon
+# file); walks the record markers and checks the sizes of the records of
+# the hydro block (and, for a turbulence record, of the records up to it),
+# so that a change of the layout fails here; fails if a record already
+# holds VALUE everywhere (then the read of SRC and of DST could not differ)
 rstpatch() {
   python3 - "$@" << 'EOF'
 import struct, sys
 src, dst = sys.argv[1], sys.argv[2]
+HYDRO = ('evapv', 'windcd', 'tws', 'dtw')
+KEPS = ('tken', 'eps', 'visv', 'difv')
 sets = []                       # (record name, value) to set
 for arg in sys.argv[3:]:
     nm, _, val = arg.partition('=')
-    if nm not in ('evapv', 'windcd') or not val:
-        sys.exit(f"bad argument {arg}: evapv=VALUE or windcd=VALUE")
+    if nm not in HYDRO + KEPS or not val:
+        sys.exit(f"bad argument {arg}: NAME=VALUE, NAME one of {' '.join(HYDRO + KEPS)}")
     sets.append((nm, float(val)))
 if not sets:
     sys.exit("nothing to set")
@@ -513,16 +559,38 @@ if len(recs) < i + len(names):
 for k, (nm, sz) in enumerate(zip(names, sizes)):
     if recs[i + k][1] != 4 * sz:
         sys.exit(f"record {nm} has {recs[i + k][1]} bytes, not {4 * sz}")
+where = {nm: i + k for k, nm in enumerate(names)}       # record index of each name
+if any(nm in KEPS for nm, _ in sets):
+    # after hm3v: ibarcl [saltv tempv rhov] iturb [tken eps visv difv]
+    def need(j, nm, sz):
+        if len(recs) <= j or recs[j][1] != 4 * sz:
+            sys.exit(f"record {nm} is missing or has not {4 * sz} bytes")
+    j = i + len(names)
+    need(j, 'ibarcl', 1)
+    ibarcl = ints(j)[0]
+    j += 1
+    if ibarcl > 0:
+        for nm in ('saltv', 'tempv', 'rhov'):
+            need(j, nm, nlv * nkn)
+            j += 1
+    need(j, 'iturb', 1)
+    iturb = ints(j)[0]
+    if iturb != 2:
+        sys.exit(f"the file's iturb is {iturb}, not 2: no k-epsilon records")
+    for k, nm in enumerate(KEPS):
+        need(j + 1 + k, nm, (nlv + 1) * nkn)
+        where[nm] = j + 1 + k
 for nm, val in sets:
-    o = recs[i + names.index(nm)][0]
-    x = struct.unpack_from(f'<{nkn}f', data, o)
+    o, nb = recs[where[nm]]
+    n = nb // 4
+    x = struct.unpack_from(f'<{n}f', data, o)
     v = struct.unpack('<f', struct.pack('<f', val))[0]
     ndiff = sum(1 for y in x if y != v)
-    print(f"{nm} of the file: {nkn} values from {min(x):.6g} to {max(x):.6g}, {ndiff} differ from "
+    print(f"{nm} of the file: {n} values from {min(x):.6g} to {max(x):.6g}, {ndiff} differ from "
           f"{v:.6g}; heat flag {ints(i + 8)[0]}")
     if ndiff == 0:
         sys.exit(f"the file's {nm} is {v:.6g} everywhere: r and p could not differ")
-    struct.pack_into(f'<{nkn}f', data, o, *([v] * nkn))
+    struct.pack_into(f'<{n}f', data, o, *([v] * n))
 with open(dst, 'wb') as fp:
     fp.write(data)
 EOF
@@ -793,6 +861,175 @@ case_keps_to_gotm() {
   return "$rc"
 }
 
+#--- the case tools (rstinf, rst2shy)
+# tooldo DIR OUT TOOL ARG...: runs TOOL ARG... in DIR (timeout 300 s),
+# its output to DIR/OUT; the exit code is not used (rstinf and rst2shy end
+# with stop, also on an error), the output is checked
+tooldo() {
+  local dd="$1" out="$2"
+  shift 2
+  ( cd "$dd" && exec timeout 300 nice -n 10 "$@" < /dev/null > "$out" 2>&1 )
+  return 0
+}
+# nocommit FILE: FILE without the commit line of the banner
+nocommit() {
+  grep -v '^ *commit *: ' "$1"
+}
+# tcount FILE PATTERN WANT LABEL: prints "LABEL: ...; " unless PATTERN
+# (grep, basic) matches WANT lines of FILE
+tcount() {
+  local k
+  k="$(grep -c -- "$2" "$1")"
+  [ "$k" = "$3" ] || echo -n "$4: '$2' $k times in $1, not $3; "
+}
+# tinfo FILE NVERS NREC LABEL: rstinf's listing FILE shows version NVERS
+# (in its two header lines) and NREC records
+tinfo() {
+  local v
+  v="$(awk '/^version nrec/ { getline; printf "%s ", $1 }' "$1")"
+  [ "$v" = "$2 $2 " ] || echo -n "$4: version '${v% }' in $1, not $2 twice; "
+  tcount "$1" "Number of records read: *$3\$" 1 "$4"
+}
+# t2shy DIR BIN BAS: rst2shy of BIN (this build's on PATH or REF_BIN_DIR's)
+# on DIR/w.rst (as x.rst) in a new folder DIR/t (this build) or DIR/tm
+# (REF_BIN_DIR)
+t2shy() {
+  local dd="$1/t"
+  [ "$2" = rst2shy ] || dd="$1/tm"
+  mkdir "$dd" && ln -s ../w.rst "$dd/x.rst" || return 1
+  tooldo "$dd" rst2shy.txt "$2" x.rst "../GRID/$3"
+}
+# tshy DIR1 DIR2 LABEL: the .shy files rst2shy wrote in DIR1 and DIR2 are
+# the same files with the same bytes (x.hydro.shy and x.ts.shy at least)
+tshy() {
+  local f n=0
+  for f in hydro ts; do
+    [ -s "$1/x.$f.shy" ] || echo -n "$3: no x.$f.shy in $1; "
+  done
+  [ "$(cd "$1" && ls x.*.shy 2> /dev/null)" = "$(cd "$2" && ls x.*.shy 2> /dev/null)" ] \
+    || echo -n "$3: rst2shy wrote other files in $1 than in $2; "
+  for f in "$1"/x.*.shy; do
+    [ -e "$f" ] || continue
+    cmp -s "$f" "$2/${f##*/}" || echo -n "$3: ${f##*/} differs (cmp $f $2/${f##*/}); "
+    n=$(( n + 1 ))
+  done
+  echo "$n" > "$1/nshy.txt"
+}
+# case_tools: rstinf and rst2shy on version 20 and version 19 files
+case_tools() {
+  local cs=tools d="$P/tools" ref="${REF_BIN_DIR:-}" s x t0 why="" bad="" k bin bas nrec pargs nm np i
+  local -a pl
+  t0=$(date +%s)
+  if [ -z "$ref" ] || [ ! -x "$ref/shyfem" ] || [ ! -x "$ref/rstinf" ] || [ ! -x "$ref/rst2shy" ]; then
+    echo "case $cs: did not run (REF_BIN_DIR='$ref' is not the bin folder of an origin/main build" \
+         "with shyfem, rstinf and rst2shy) -> FAIL" > "$d.line"
+    return 1
+  fi
+  mkdir "$d" || return 1
+  # the write runs: mkmm and mkven make the STR files of a case in
+  # $P/tools/{m,k,g}/{c,w,r}; w.str gets a record every 3 h (m) or 1 h
+  for s in m k g; do mkdir "$d/$s" "$d/$s/c" "$d/$s/w" "$d/$s/r" || return 1; done
+  RTIME=""
+  if mkmm tools/m 0 06 12 "iheat = 6   itdrag = 4" && mkven tools/k 2 && mkven tools/g 1 && [ -n "$RTIME" ]; then
+    sed -e "s/^        idtrst = -1\$/        idtrst = '3h'/" "$d/m/w/w.str" > "$d/m.str"
+    sed -e "s/^        idtrst = -1\$/        idtrst = '1h'/" "$d/k/w/w.str" > "$d/k.str"
+    sed -e "s/^        idtrst = -1\$/        idtrst = '1h'/" "$d/g/w/w.str" > "$d/g.str"
+  fi
+  if [ -z "$RTIME" ] || [ "$(grep -c "^        idtrst = '3h'\$" "$d/m.str" 2> /dev/null)" != 1 ] \
+     || [ "$(cat "$d/k.str" "$d/g.str" 2> /dev/null | grep -c "^        idtrst = '1h'\$")" != 2 ]; then
+    echo "case $cs: did not run (cannot make its STR files, see $d/*.str) -> FAIL" > "$d.line"; return 1
+  fi
+  pl=()
+  for x in m20 m19 k20 k19 g20 g19; do
+    case "$x" in m*) rundir "$d/$x" mm ;; *) rundir "$d/$x" ven ;; esac || return 1
+    cp "$d/${x%??}.str" "$d/$x/w.str" || return 1
+    case "$x" in *20) bin=shyfem ;; *) bin="$ref/shyfem" ;; esac
+    run "$d/$x" w 1 "$bin" > "$d/$x.why" & pl+=($!)
+  done
+  i=0
+  for x in m20 m19 k20 k19 g20 g19; do
+    if ! wait "${pl[$i]}"; then
+      why="$why$x: $(cat "$d/$x.why"); "
+    elif [ ! -s "$d/$x/w.rst" ]; then
+      why="$why$x: no restart file $d/$x/w.rst; "
+    fi
+    i=$(( i + 1 ))
+  done
+  donecase "$cs" "$t0" "$why" || return 1
+  : > "$d.detail"
+  # x NREC (records), heat flag, writer's iturb, the records changed in
+  # the first record of the patched copy
+  for x in m k g; do
+    case "$x" in
+      m) nrec=2; bas=MM_coarse_smooth.bas; k=0; pargs="evapv=99 windcd=99 tws=99 dtw=99" ;;
+      k) nrec=3; bas=venlag62.bas;         k=2; pargs="evapv=99 tken=99 difv=99" ;;
+      g) nrec=3; bas=venlag62.bas;         k=1; pargs="tws=99" ;;
+    esac
+    # the version 20 file
+    s="$d/${x}20"
+    tooldo "$s" info.txt rstinf w.rst
+    bad="$bad$(tinfo "$s/info.txt" 20 "$nrec" "${x}20 rstinf")"
+    bad="$bad$(tcount "$s/info.txt" '^   hydro block, after vtlnv: iwetv, evapv, windcd, heat flag, tws, dtw$' 1 "${x}20 rstinf")"
+    bad="$bad$(tcount "$s/info.txt" '^   heat flag: 1 ' 1 "${x}20 rstinf")"
+    if [ "$k" = 2 ]; then
+      bad="$bad$(tcount "$s/info.txt" '^   turbulence block, after iturb = 2: tken, eps, visv, difv (k-epsilon)$' 1 "${x}20 rstinf")"
+    else
+      bad="$bad$(tcount "$s/info.txt" "^   turbulence block, after iturb = $k: no k-epsilon state\$" 1 "${x}20 rstinf")"
+    fi
+    cp "$s/w.rst" "$s/w2.rst" || return 1
+    tooldo "$s" same.txt rstinf w.rst w2.rst
+    bad="$bad$(tcount "$s/same.txt" 'Differences found: *0$' 1 "${x}20 rstinf diff")"
+    bad="$bad$(tcount "$s/same.txt" "Number of records read: *$nrec\$" 1 "${x}20 rstinf diff")"
+    bad="$bad$(tcount "$s/same.txt" 'records are different' 0 "${x}20 rstinf diff")"
+    if rstpatch "$s/w.rst" "$s/wp.rst" $pargs > "$s/patch.txt" 2>&1; then
+      tooldo "$s" patched.txt rstinf w.rst wp.rst
+      np=0
+      for nm in $pargs; do
+        nm="${nm%=*}"
+        bad="$bad$(tcount "$s/patched.txt" "records are different: $nm  *[0-9]" 1 "${x}20 rstinf diff patched")"
+        np=$(( np + 1 ))
+      done
+      bad="$bad$(tcount "$s/patched.txt" 'records are different' "$np" "${x}20 rstinf diff patched")"
+      bad="$bad$(tcount "$s/patched.txt" "Differences found: *$np\$" 1 "${x}20 rstinf diff patched")"
+      bad="$bad$(tcount "$s/patched.txt" "Number of records read: *$nrec\$" 1 "${x}20 rstinf diff patched")"
+    else
+      bad="$bad${x}20: cannot change $pargs of $s/w.rst: $(tail -1 "$s/patch.txt"); "
+    fi
+    t2shy "$s" rst2shy "$bas" || return 1
+    bad="$bad$(tcount "$s/t/rst2shy.txt" "Number of records read: *$nrec\$" 1 "${x}20 rst2shy")"
+    # the version 19 file: this build's tools as REF_BIN_DIR's
+    s="$d/${x}19"
+    tooldo "$s" info.txt rstinf w.rst
+    tooldo "$s" info_m.txt "$ref/rstinf" w.rst
+    bad="$bad$(tinfo "$s/info_m.txt" 19 "$nrec" "${x}19 rstinf of REF_BIN_DIR")"
+    [ "$(nocommit "$s/info.txt")" = "$(nocommit "$s/info_m.txt")" ] \
+      || bad="$bad${x}19: rstinf prints other lines than REF_BIN_DIR's (diff $s/info.txt $s/info_m.txt); "
+    cp "$s/w.rst" "$s/w2.rst" || return 1
+    tooldo "$s" same.txt rstinf w.rst w2.rst
+    tooldo "$s" same_m.txt "$ref/rstinf" w.rst w2.rst
+    bad="$bad$(tcount "$s/same_m.txt" 'Differences found: *0$' 1 "${x}19 rstinf diff of REF_BIN_DIR")"
+    bad="$bad$(tcount "$s/same_m.txt" "Number of records read: *$nrec\$" 1 "${x}19 rstinf diff of REF_BIN_DIR")"
+    [ "$(nocommit "$s/same.txt")" = "$(nocommit "$s/same_m.txt")" ] \
+      || bad="$bad${x}19: rstinf diff prints other lines than REF_BIN_DIR's (diff $s/same.txt $s/same_m.txt); "
+    t2shy "$s" rst2shy "$bas" && t2shy "$s" "$ref/rst2shy" "$bas" || return 1
+    bad="$bad$(tcount "$s/tm/rst2shy.txt" "Number of records read: *$nrec\$" 1 "${x}19 rst2shy of REF_BIN_DIR")"
+    [ "$(nocommit "$s/t/rst2shy.txt")" = "$(nocommit "$s/tm/rst2shy.txt")" ] \
+      || bad="$bad${x}19: rst2shy prints other lines than REF_BIN_DIR's (diff $s/t/rst2shy.txt $s/tm/rst2shy.txt); "
+    bad="$bad$(tshy "$s/t" "$s/tm" "${x}19 rst2shy")"
+    # the version 20 file converts as the version 19 file of the same run
+    bad="$bad$(tshy "$d/${x}20/t" "$s/tm" "${x}20 rst2shy against ${x}19")"
+    echo "    $x: version 20 and 19 files of $nrec records; rstinf diff of the patched copy: $(grep -c 'records are different' \
+      "$d/${x}20/patched.txt" 2> /dev/null) records differ; rst2shy: $(cat "$d/${x}20/t/nshy.txt" 2> /dev/null) .shy files" \
+      >> "$d.detail"
+  done
+  if [ -n "$bad" ]; then
+    echo "case $cs: ${bad%; } -> FAIL" > "$d.line"; return 1
+  fi
+  echo "case $cs: rstinf (list, diff, diff of a patched copy) and rst2shy read the version 20 files (mm COARE," \
+       "venlag k-epsilon, venlag GOTM), and work on the version 19 files as REF_BIN_DIR's -> PASS" > "$d.line"
+  return 0
+}
+
 for cs in $CASES; do
   case "$cs" in
     old_v19)         case_old_v19 ;;
@@ -800,6 +1037,7 @@ for cs in $CASES; do
     flgrst_no_hydro) case_flgrst ;;
     evap_reads_noheat) case_evap ;;
     keps_to_gotm)    case_keps_to_gotm ;;
+    tools)           case_tools ;;
     *)               onecase "$cs" ;;
   esac & PIDS="$PIDS $!"
 done

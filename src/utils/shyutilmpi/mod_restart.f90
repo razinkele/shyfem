@@ -32,6 +32,7 @@
 ! 08.03.2025    ggu     extract module for restart routines
 ! 24.11.2026    arb     gathered arrays labelled for the ghost check (#268)
 ! 26.11.2026    arb     version 20 (#303 #304)
+! 26.11.2026    arb     btool_rst, iheatflag_rst: the tools on version 20
 !
 ! notes :
 !
@@ -112,11 +113,23 @@
 	integer, save :: imerc_rst  = 0
 	integer, save :: iturb_rst  = 0		!the writer's iturb (v >= 15):
 						!the turbulence block holds
-						!GOTM's arrays only if 1 (#304)
+						!GOTM's arrays only if 1 (#304);
+						!also set by rst_skip_record
+	integer, save :: iheatflag_rst = 0	!the writer's heat flag (v20:
+						!1 if qflux3d ran), set by
+						!rst_skip_record (rstinf), 0
+						!before version 20
 
 	logical, save :: bsetweg_rst = .false.	!the record read restored
 						!iwetv (v20): reset the
 						!setweg clock (#303)
+	logical, save :: btool_rst = .false.	!a tool (rst2shy) reads the
+						!file: no parameter table and
+						!no meteo arrays, so
+						!rst_read_hydro_v20 reads its
+						!records past, never applies
+						!them (rst_read_keps does so
+						!when id 8 is not wanted)
 
 	character*20, save :: descript_rst(nidmax) = (/    &
      &		 'hydrodynamics       '    &

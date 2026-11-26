@@ -106,6 +106,9 @@
 !			setweg clock is reset at a restart (#303 #304)
 ! 26.11.2026    arb     version 20: the k-epsilon state (tken, eps, visv,
 !			difv) in the turbulence block (#304, N25)
+! 26.11.2026    arb     version 20 and the tools: rst2shy reads the hydro
+!			records past (btool_rst); rst_skip_record exports
+!			the heat flag and iturb for rstinf (#303 #304)
 !
 ! notes :
 !
@@ -876,6 +879,7 @@
         ierr = 0
 
 	nvers_rst = nvers
+	iheatflag_rst = 0	!the writer's heat flag, read from version 20
 
 	date = 0
 	time = 0
@@ -1000,6 +1004,7 @@
 	  end if
 	  read(iunit,iostat=ios) iheat_rst
 	  call rst_check_read(ios,'heat flag')
+	  iheatflag_rst = iheat_rst	!export the heat flag (rstinf lists it)
 	  if( brewrite ) then
 	    write(iuout,*) 'rst: heat flag'
 	    write(iuout,*) iheat_rst
@@ -1056,6 +1061,7 @@
 	  id = id_gotm_rst
 	  read(iunit,iostat=ios) iturb
 	  call rst_check_read(ios,'iturb')
+	  iturb_rst = iturb	!export the writer's closure (rstinf lists it)
 	  if( iturb .eq. 1 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_gotm(iunit)
@@ -1500,8 +1506,10 @@
 !			qflux3d to keep them instead of its start-up values
 !
 ! with bwant false (flgrst without hydro) the six records are skipped
-! and nothing is applied. bsetweg_rst = .true. tells rst_perform_restart
-! that iwetv was restored, so that it resets the setweg clock.
+! and nothing is applied; so too when a tool reads the file (btool_rst:
+! rst2shy has no parameter table and no meteo arrays). bsetweg_rst =
+! .true. tells rst_perform_restart that iwetv was restored, so that it
+! resets the setweg clock.
 
 	use mod_geom_dynamic, only : iwetv
 	use mod_meteo, only : evapv,windcd,tws_heat,dtw_heat,brst_heat
@@ -1514,6 +1522,7 @@
 	logical, intent(in) :: bwant	!hydro is wanted (flgrst)
 
 	logical bheat		!qflux3d runs in this run
+	logical bskip		!read the six records past
 	integer ios
 	integer itdrag
 	integer iheat_rst
@@ -1523,7 +1532,10 @@
 
 	logical heat_flux_active
 
-	if( .not. bwant ) then
+	bskip = .not. bwant
+	if( btool_rst ) bskip = .true.
+
+	if( bskip ) then
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'iwetv (skip)')
 	  read(iunit,iostat=ios)
@@ -1536,8 +1548,13 @@
 	  call rst_check_read(ios,'tws (skip)')
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'dtw (skip)')
-	  write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
+	  if( btool_rst ) then
+	    write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
+     &			//' (read by a tool)'
+	  else
+	    write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
      &			//' (hydro not wanted)'
+	  end if
 	  return
 	end if
 
