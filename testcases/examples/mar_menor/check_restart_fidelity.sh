@@ -167,8 +167,17 @@
 #                 shows it here: iwetv decides only the re-wetting of an
 #                 element dry for some steps (and the simple sediments),
 #                 and no element is dry in this run; the restart record
-#                 written by the read run shows it
-#   tools         rstinf and rst2shy (this build's, on PATH) on version 20
+#                 written by the read run shows it.  What it pins is dtanf
+#                 against the record's time, not the reset line itself:
+#                 with an explicit itrst the cold start's clock is already
+#                 the STR's itanf (setup_time runs before setweg(0)), which
+#                 equals dtanf, so the case passes also without the reset;
+#                 the reset matters with itrst = -1, where the start moves
+#                 to the record's time after setweg(0) while the cold clock
+#                 stays at the STR's itanf (when that differs), and only
+#                 an element that re-wets in the read window would show
+#                 it in a result
+#   tools        rstinf and rst2shy (this build's, on PATH) on version 20
 #                 files; three write runs of this binary, serial, with a
 #                 record every 3 h (m20: mm_h6d4's write run, 03:00 and
 #                 06:00) or every hour (k20: ven_keps_s's, with k-epsilon;
