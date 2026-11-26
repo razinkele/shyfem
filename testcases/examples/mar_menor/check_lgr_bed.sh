@@ -44,7 +44,14 @@
 # 22:55 in element 1149, of a particle in layer 1 at 22:00 and 23:00 (in
 # element 10, a column of one layer), with the walk of #286 and the bed
 # velocity of #299 (main has none here, but writes two at elements 1148
-# and 1149 in part 3; the cause is not known).
+# and 1149 in part 3).  These lines come from a trap in the horizontal
+# tracker (track_xi), not from the walk or the bed form: a particle
+# converges onto a node around which the layer-1 fluxes circulate, each
+# call ends at an element side and th shrinks geometrically (seen at
+# mm_hyd_41 elements 1148 / 1149, also 583, 191, 66).  Main has the same
+# trap (2 such lines in part 3); the walk and the bed form only change
+# which particles arrive there.  The line stays printed, not gated; the
+# trap is tracked as a follow-up issue.
 #
 #========================= part 2: settling (#299) =========================
 # The bed velocity must not taper the settling velocity: settling is the
@@ -117,11 +124,13 @@
 #     every particle of its first output settles at 1e-3 m/s (s);
 #   - the basin is closed: every output holds the 39960 particles as active
 #     ones, none exited, and the log has no line of particles "lost with
-#     time left".
+#     time left";
+#   - settling is applied: at 24:00 at least 0.85 of the active particles
+#     are in the bottom layer of their column (measured 0.926 on this
+#     branch, 0.933 on main; else the check would pass if settling stopped).
 # Printed, not gated: the log lines of particles with their "element
-# crossings used up with time left" (main writes two in this case: a
-# particle that stays in the basin) and the particles in the bottom layer
-# of their column at 24:00.
+# crossings used up with time left" (a trap in the horizontal tracker, see
+# part 1; main writes two in this case: a particle that stays in the basin).
 #
 # Measured (2026-11-25), part 1: the bottom 5 % and 15 % at 24:00, the
 # chi-square (release-column weight) mean over 12:00 ... 24:00 and at
@@ -129,15 +138,17 @@
 #                                bottom 5 %     bottom 15 %   chi-square    at 24:00
 #   origin/main 576abae5       0.487 / 0.495  0.754 / 0.754  221.1 / 213.0  450 / 425
 #   the walk of #286 and the
-#   bed velocity of #299       0.881 / 0.885  0.912 / 0.912   54.5 /  59.1  156 / 155
+#   bed velocity of #299       0.884 / 0.882  0.912 / 0.912   54.0 /  59.7  154.7 / 158.3
 # The measurements of #299 (anaA, on the particle files of the same case)
 # gave 0.49 / 0.49, 221.1 / 213.0 and 450 / 425 for main's walk, and 0.88
 # / 0.89, 54.5 / 59.1 and 156 / 155 for the prototype of the walk of #286
 # with the prototype of the bed velocity (which tapered sv; sv = 0 here,
-# where the two forms are the same): the check reproduces both.  The
-# same build without the re-read of w and hd after the layer switch at
-# the start of track_xi gives 0.881 / 0.885, 54.5 / 59.1 and 156.1 /
-# 154.6.  The chi-square left (55 ... 59; 19 +- 6 if well mixed) is the
+# where the two forms are the same): the check reproduces both (the
+# numbers of this table are the final head's; an earlier head, before
+# f66edaab moved the set-up step, which changes GOTM runs, gave 0.881 /
+# 0.885, 54.5 / 59.1 and 156 / 155).  The same build without the re-read
+# of w and hd after the layer switch at the start of track_xi gave 0.881
+# / 0.885, 54.5 / 59.1 and 156.1 / 154.6 (also before f66edaab).  The chi-square left (55 ... 59; 19 +- 6 if well mixed) is the
 # other residuals of #299, not the subject of this check.
 # Part 2: 2350 particles of class 3 start in the bottom layer of a column
 # of at least two layers, 1067 of them judged; R_tap = 0.586:
@@ -151,7 +162,7 @@
 #   origin/main 576abae5 (the layer mean; bbott)        0 / 0 /  2 / 37294
 #   39b8247d (the bed velocity, a zero time to leave
 #   the layer kept as 0)                                6 / 6 / 43 / 36992 (FAIL)
-#   the bed velocity, a zero time = no vertical motion  0 / 0 /  4 / 36993
+#   the bed velocity, a zero time = no vertical motion  0 / 0 /  4 / 36988
 # 39b8247d lost its particles through walls (elements 659, 254, ...; the
 # first at 06:45); it gives part 1 particle files byte-identical to the
 # fixed build (sv = 0 there).
@@ -562,8 +573,11 @@ if nact != npart or nex:
     ok = False
 act = times[-1][1][0]
 nbl = sum(1 for p in act.values() if p["lb"] == ilhv[p["ie"] - 1])
-print("  at %.0f s %d of the %d active particles in the bottom layer of their column (not gated)"
-      % (times[-1][0], nbl, len(act)))
+print("  at %.0f s %d of the %d active particles in the bottom layer of their column"
+      " (share %.3f, required at least 0.85)" % (times[-1][0], nbl, len(act), nbl / len(act)))
+if nbl < 0.85 * len(act):
+    print("  FAIL: settling is not applied: fewer than 0.85 of the particles in the bottom layer")
+    ok = False
 sys.exit(0 if ok else 1)
 EOF
   fi

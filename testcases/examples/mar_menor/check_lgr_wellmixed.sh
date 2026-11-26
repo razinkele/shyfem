@@ -125,6 +125,10 @@
 #     keeps the position and element of its release at every output;
 #   - 39960 particles released, all of them active (none exited) at
 #     every output;
+#   - the walk ran: the log's particle steps are at least 39960 x 288,
+#     calls >= particle steps, and no step stopped at the cap or ended by
+#     two calls in a row that used no time (else a walk that never moved
+#     would keep the uniform release and pass);
 #   - well mixed: the mean over the 13 hourly outputs 12:00 ... 24:00 of
 #     the chi-square of the 20-bin histogram of the relative depth of all
 #     active particles (unweighted) is below 31, the limit of mode const.
@@ -146,10 +150,13 @@
 #                                        seed 1  seed 2  seed 3  top 5 %
 #   the walk of #286, linear               25.4    22.0    21.7   1.019
 #                     parabolic            20.3    20.5    18.6   1.007
-#                     gotm                 18.8    22.0    19.6   1.036
+#                     gotm                 18.5    21.8    19.4   1.036
 #   the walk before (#284), linear       3196.7  3206.9  3383.4   0.437
 #                           parabolic     147.2   124.6   128.1   0.844
 #                           gotm           17.6    20.8    19.0   0.981
+# (The gotm row is the final head's; linear and parabolic were measured before
+# f66edaab moved the set-up step, which changes only GOTM runs; the gotm row
+# before it was 18.8 / 22.0 / 19.6.)
 # The walk of #286 made 112.6 calls per particle step in mode linear
 # (most 1501 in a step; the gradient term of the step set it in 650603
 # element steps, its floor 0.2 s in 23575; 650603 is also the number of
@@ -345,8 +352,24 @@ if [ "$MODE" = linear ] || [ "$MODE" = parabolic ] || [ "$MODE" = gotm ]; then
       grep -qxF " test hook LGR_TEST_KPROF: the vertical diffusivity of the particles is profile $KPROF" "$log" \
         || fail "$c: the log does not acknowledge the test hook LGR_TEST_KPROF with profile $KPROF (a binary without the hooks?)"
     fi
-    # the walk's lines (lgr_vdiff_stats: step, step rule, calls), not gated
+    # the walk's lines (lgr_vdiff_stats: step, step rule, calls)
     grep 'lgr vertical diffusion' "$log" | sed 's/^/  /'
+    # the walk ran in every step (a walk that never moved would keep the
+    # uniform release and pass the chi-square): calls >= particle steps >=
+    # 39960 x 288, no step stopped at the cap or ended by two calls in a
+    # row that used no time
+    l1="$(grep 'lgr vertical diffusion: particle steps:' "$log")"
+    l2="$(grep 'lgr vertical diffusion: steps stopped at the cap of' "$log")"
+    nst="$(printf '%s' "$l1" | sed -n 's/.*particle steps: *\([0-9][0-9]*\),.*/\1/p')"
+    ncl="$(printf '%s' "$l1" | sed -n 's/.*, calls: *\([0-9][0-9]*\),.*/\1/p')"
+    ncap="$(printf '%s' "$l2" | sed -n 's/.*steps stopped at the cap of [0-9]* calls: *\([0-9][0-9]*\),.*/\1/p')"
+    nend="$(printf '%s' "$l2" | sed -n 's/.*steps ended by 2 calls in a row that used no time: *\([0-9][0-9]*\),.*/\1/p')"
+    echo "  walk ran: particle steps ${nst:-not reported}, calls ${ncl:-not reported}, stopped at the cap ${ncap:-not reported}, ended by 2 calls in a row ${nend:-not reported} (required: calls >= steps >= $((39960 * 288)), 0, 0)"
+    if [ -z "$nst" ] || [ -z "$ncl" ] || [ "$nst" -lt $((39960 * 288)) ] || [ "$ncl" -lt "$nst" ]; then
+      fail "$c: particle steps ${nst:-not reported} and calls ${ncl:-not reported}, expected calls >= particle steps >= 39960 x 288"
+    fi
+    [ "${ncap:-x}" = 0 ] || fail "$c: particle steps stopped at the cap ${ncap:-not reported}, expected 0"
+    [ "${nend:-x}" = 0 ] || fail "$c: particle steps ended by two calls in a row that used no time ${nend:-not reported}, expected 0"
     PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$CHI2MAX" "$MODE" <<'EOF' || fail "$c: see above"
 import sys
 sys.path.insert(0, sys.argv[1])
