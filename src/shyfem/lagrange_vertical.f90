@@ -317,7 +317,8 @@
 ! mean of w, which does not vanish at the bed: an upward mean lifted the
 ! particles off the bed, a downward one held them there, and the bottom
 ! 5 % of the column held about half its share of particles (0.49 in the
-! closed forced case of check_lgr_bed.sh, 0.88 and 0.89 with this form).
+! closed forced case of check_lgr_bed.sh; 0.88 and 0.89 with the prototype
+! of this form, 0.884 and 0.882 in production).
 ! The bed condition belongs to the water; settling is the particle's
 ! motion relative to it (a tapered (wt-sv)*(1-z) would make a settling
 ! particle approach the bed exponentially, never reach it). One-layer
@@ -524,7 +525,8 @@
 	! switch into a layer whose w points back. Left at 0, tv would make
 	! the material-boundary rule below give th = 0 and t = 0, and a
 	! particle on a wall side would be moved through it out of the basin
-	! (#299). Before #299 tv = 0 needed hd = 0; that path is unchanged
+	! (#299). Before #299 tv = 0 needed hd = 0 or time = 0; that path is
+	! unchanged
 	if( tv == 0.d0 ) then
 	  if( hd > 0.d0 ) then
 	    w = 0.d0

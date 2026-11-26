@@ -93,8 +93,9 @@
 ! diffusivity (dtvd is the model step there), at most 1500 (1501 with
 ! that rounding) at T = 300 s (the floor 0.2 s of the gradient term of
 ! dtvd, lag_vdiff_ele). The cap
-! is reached only by a step longer than 2000 s where that floor binds; a
-! step that reaches it stops there. Until #286 a call also ended where
+! is reached only by a step of 2000 s or longer (from 2000 s, because of
+! the rounding call) where that floor binds; a step that reaches it
+! stops there. Until #286 a call also ended where
 ! the particle reached an interface of its layer, so the calls of a step
 ! grew with the diffusivity: in mm_hyd_41 with ilagr = 3 (one day, GOTM
 ! gives up to 49 m2/s) up to about 19000 calls, and one step of 777212
@@ -336,7 +337,8 @@
 ! its layer (a particle in an element with one layer was put at a random
 ! depth there), with two corrections of the stop (#284: the thickness of
 ! the layer entered, and the time tv**2/dt counted for a stopped call),
-! and used the Milstein scheme (Grawe 2010) with a gaussian draw (about
+! and used the Milstein scheme (Graewe 2011, Ocean Modelling 36, 80-89)
+! with a gaussian draw (about
 ! 3.5 uniform draws per call). That walk spread the particles more
 ! slowly than K (#287: K_eff/K 0.14 ... 0.70 in layers 0.5 ... 2 m thick,
 ! about 0.76 at the levels of mm_hyd_41), and where K changes smoothly
