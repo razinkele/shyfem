@@ -219,6 +219,7 @@ clo.o: ../../../lib/mod/mod_error_stop.mod
 color_utils.o: ../../../lib/mod/mod_physical_constants.mod
 dates.o: ../../../lib/mod/iso8601.mod
 geometrical.o: ../../../lib/mod/mod_physical_constants.mod
+grd.o: ../../../lib/mod/mod_error_stop.mod
 flood.o: ../../../lib/mod/mod_connect.mod \
 		../../../lib/mod/queue.mod 
 nls.o: ../../../lib/mod/para.mod
