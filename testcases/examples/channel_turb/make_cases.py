@@ -13,7 +13,7 @@ Runs (each at 20 and 40 uniform layers):
 import re
 from pathlib import Path
 
-SHIPPED = Path("../venice_lagoon/INPUT/gotmturb.nml").read_text()
+SHIPPED = (Path(__file__).resolve().parent / "../venice_lagoon/INPUT/gotmturb.nml").read_text()
 INFLOW = "325 244 163 82 1"
 OUTFLOW = "81 162 243 324 405"
 
