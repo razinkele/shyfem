@@ -31,6 +31,7 @@
 !
 ! 08.03.2025    ggu     extract module for restart routines
 ! 24.11.2026    arb     gathered arrays labelled for the ghost check (#268)
+! 26.11.2026    arb     version 20 (#303 #304)
 !
 ! notes :
 !
@@ -62,7 +63,9 @@
 ! 15	write gotm arrays
 ! 16	adapted for mpi
 ! 17	write bfm restart
-! 18	write simple-sediment bed mass (conza) (N25)
+! 18	read only: upstream shyfemcm layout (iwetv, zov, zeov after vtlnv)
+! 19	write simple-sediment bed mass (conza) (N25)
+! 20	write iwetv, evapv, windcd, heat flag, tws, dtw after vtlnv
 !
 !*********************************************************************
 
@@ -83,9 +86,10 @@
 	! 18 = READ-ONLY, upstream shyfemcm layout (old-time-level hydro:
 	! iwetv, zov, zeov) - never written by this fork (the fork briefly
 	! wrote 18 with the ssedi layout 2026-07-21/22 only; such files
-	! fail to read and must be regenerated); 19 = ssedi bed-mass block
-	! (this fork, what we write)
-	integer, save :: nvmax = 19		!last version of file
+	! fail to read and must be regenerated); 19 = ssedi bed-mass block;
+	! 20 = the hydro block also holds iwetv, evapv, windcd, a heat flag
+	! and tws/dtw (this fork, what we write, #303 #304)
+	integer, save :: nvmax = 20		!last version of file
 	integer, parameter :: nidmax = 10
 
 	integer, save :: id_hydro_rst = 1	!1		hydro
@@ -105,6 +109,10 @@
 	integer, save :: ieco_rst   = 0
 	integer, save :: imerc_rst  = 0
 	integer, save :: iturb_rst  = 0
+
+	logical, save :: bsetweg_rst = .false.	!the record read restored
+						!iwetv (v20): reset the
+						!setweg clock (#303)
 
 	character*20, save :: descript_rst(nidmax) = (/    &
      &		 'hydrodynamics       '    &

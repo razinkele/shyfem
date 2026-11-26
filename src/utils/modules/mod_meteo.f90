@@ -74,6 +74,9 @@
         real, allocatable, save :: dtw_heat(:)	! warm layer dT (qflux3d, COARE)
         real, allocatable, save :: tws_heat(:)	! skin temperature (qflux3d, COARE)
         logical, save :: brst_heat = .false.	! true: restart gave tws/dtw
+        logical, save :: brun_heat = .false.	! true: qflux3d is active, so
+						! tws/dtw hold its state (the
+						! heat flag of the restart)
 
         contains
 

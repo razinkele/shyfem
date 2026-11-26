@@ -102,6 +102,8 @@
 ! 09.03.2025    ggu     call shympi_barrier after finishing restart file
 ! 24.11.2026    arb     restart_write_start: labels of the ghost check (#268)
 ! 24.11.2026    arb     3D restart read on a process with fewer levels (#278)
+! 26.11.2026    arb     version 20: iwetv, evapv, windcd, tws, dtw; the
+!			setweg clock is reset at a restart (#303 #304)
 !
 ! notes :
 !
@@ -133,7 +135,10 @@
 ! 15	write gotm arrays
 ! 16	adapted for mpi
 ! 17	write bfm restart
-! 18	write simple-sediment bed mass (conza) (N25)
+! 18	read only: upstream shyfemcm layout (iwetv, zov, zeov after vtlnv)
+! 19	write simple-sediment bed mass (conza) (N25)
+! 20	write iwetv, evapv, windcd, heat flag, tws, dtw after vtlnv
+!	(rst_read_hydro_v20 says which of them a read applies)
 !
 !	integer, save :: id_hydro_rst = 1	!1		hydro
 !	integer, save :: id_depth_rst = 2	!10		depth
@@ -164,6 +169,7 @@
 ! reads and initializes values from restart
 
 	use mod_restart
+	use mod_geom_dynamic, only : dtime_setweg_old
 	use shympi
 
         use para
@@ -259,6 +265,16 @@
 
 	close(iunit)
 
+	! setweg counts a new time step when the time differs from that of
+	! its last call (dtime_setweg_old, set by setweg(0) at the cold
+	! start time above). With iwetv restored (version 20) the clock must
+	! be the restart time, as in the run that wrote the record, or the
+	! first set_dry counts one step too many (#303). Older versions do
+	! not restore iwetv and keep the cold start's clock, as before.
+	if( bsetweg_rst ) then
+	  dtime_setweg_old = atime - atime0
+	end if
+
 	if( blast ) then	!reset initial time
 	  call dts_format_abs_time(atime,aline)
 	  write(6,*) 'setting new initial time: ',aline
@@ -281,6 +297,13 @@
 	call dts_format_abs_time(atime,aline)
         write(6,*) ' used restart time =      ',aline
         write(6,*) ' nvers = ',nvers_rst
+	if( bsetweg_rst ) then
+	  write(6,*) ' setweg clock reset to the restart time: ' &
+     &			,dtime_setweg_old
+	else
+	  write(6,*) ' setweg clock not reset (iwetv not restored): ' &
+     &			,dtime_setweg_old
+	end if
 	write(6,*) '         id bwant bavail buse   description'
 	do id=1,nidmax
 	  bwant = rst_is_set(id,iflag_want_rst)
@@ -643,6 +666,7 @@
 	use mod_hydro_vel
 	use mod_hydro
 	use mod_restart
+	use mod_meteo, only : evapv,windcd,tws_heat,dtw_heat,brun_heat
 	use levels, only : nlvdi,nlv,hlv,ilhv,ilhkv
 	use basin
 	use shympi
@@ -660,6 +684,7 @@
         integer nvers
 	integer date,time
 	integer ios
+	integer iheat_rst
 
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
@@ -708,6 +733,17 @@
 	call restart_write_value(iunit,be,3,zenv)
 	call restart_write_value(iunit,be,utlnv)
 	call restart_write_value(iunit,be,vtlnv)
+
+	! version 20: what the next step needs besides the fields above
+	! (#303 #304); the reader decides what it applies (rst_read_hydro_v20)
+	iheat_rst = 0
+	if( brun_heat ) iheat_rst = 1	!qflux3d ran: tws/dtw hold its state
+	call restart_write_value(iunit,be,iwetv)	!wet/dry counter
+	call restart_write_value(iunit,bn,evapv)	!evaporation
+	call restart_write_value(iunit,bn,windcd)	!drag coefficient
+	call restart_write_value(iunit,iheat_rst)	!heat flag
+	call restart_write_value(iunit,bn,tws_heat)	!skin temperature
+	call restart_write_value(iunit,bn,dtw_heat)	!warm layer difference
 
 	call restart_write_value(iunit,be,3,hm3v)
 
@@ -813,6 +849,7 @@
 	logical brewrite
 	integer iuout
 	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm,issedi
+	integer iheat_rst
 	integer idfile
 	integer date,time,it,id,ios
 	integer nmax,ialloc
@@ -940,6 +977,45 @@
 	    write(iuout,*) rval2d(1:nkn)
 	    write(iuout,*) 'rst: zeov'
 	    write(iuout,*) rval2d3(1:3*nel)
+	  end if
+	end if
+
+	if( nvers .ge. 20 ) then	!iwetv, evapv, windcd, heat flag, tws, dtw
+	  read(iunit,iostat=ios) ival(1:nel)
+	  call rst_check_read(ios,'iwetv')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: iwetv'
+	    write(iuout,*) ival(1:nel)
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'evapv')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: evapv'
+	    write(iuout,*) rval2d(1:nkn)
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'windcd')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: windcd'
+	    write(iuout,*) rval2d(1:nkn)
+	  end if
+	  read(iunit,iostat=ios) iheat_rst
+	  call rst_check_read(ios,'heat flag')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: heat flag'
+	    write(iuout,*) iheat_rst
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'tws')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: tws'
+	    write(iuout,*) rval2d(1:nkn)
+	  end if
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'dtw')
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: dtw'
+	    write(iuout,*) rval2d(1:nkn)
 	  end if
 	end if
 
@@ -1121,6 +1197,7 @@
         ierr = 0
 
 	nvers_rst = nvers
+	bsetweg_rst = .false.	!set if this record restores iwetv (v20)
 
 	date = 0
 	time = 0
@@ -1216,6 +1293,12 @@
 	      read(iunit,iostat=ios)
 	      call rst_check_read(ios,'zeov (skip)')
 	    end if
+	  end if
+
+	  if( nvers .ge. 20 ) then
+	    ! iwetv, evapv, windcd, heat flag, tws, dtw (#303 #304)
+	    id = id_hydro_rst
+	    call rst_read_hydro_v20(iunit,rst_want_restart(id))
 	  end if
 
           if( nvers .ge. 4 ) then
@@ -1359,6 +1442,93 @@
 
         return
         end
+
+!*******************************************************************
+
+	subroutine rst_read_hydro_v20(iunit,bwant)
+
+! reads the records that version 20 adds to the hydro block, after
+! vtlnv (#303 #304), and applies them by these rules:
+!
+!   iwetv, evapv	always
+!   windcd		only if this run's itdrag is 4 or 3 (COARE or the
+!			waves set it each step); with any other itdrag
+!			windcd is the user's dragco (windcd_init) or is not
+!			used, and the file's values must not replace it
+!   tws, dtw		only if the writer's heat flag is set (qflux3d ran
+!			there); then brst_heat tells qflux3d to keep them
+!			instead of its start-up values
+!
+! with bwant false (flgrst without hydro) the six records are skipped
+! and nothing is applied. bsetweg_rst = .true. tells rst_perform_restart
+! that iwetv was restored, so that it resets the setweg clock.
+
+	use mod_geom_dynamic, only : iwetv
+	use mod_meteo, only : evapv,windcd,tws_heat,dtw_heat,brst_heat
+	use mod_restart
+
+	use para
+	implicit none
+
+	integer, intent(in) :: iunit	!unit of the restart file
+	logical, intent(in) :: bwant	!hydro is wanted (flgrst)
+
+	integer ios
+	integer itdrag
+	integer iheat_rst
+
+	logical, parameter :: be = .true.
+	logical, parameter :: bn = .false.
+
+	if( .not. bwant ) then
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'iwetv (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'evapv (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'windcd (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'heat flag (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'tws (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'dtw (skip)')
+	  write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
+     &			//' (hydro not wanted)'
+	  return
+	end if
+
+	call restart_read_value(iunit,be,iwetv)
+	call restart_read_value(iunit,bn,evapv)
+	bsetweg_rst = .true.
+
+	itdrag = nint(getpar('itdrag'))
+	if( itdrag == 4 .or. itdrag == 3 ) then
+	  call restart_read_value(iunit,bn,windcd)
+	  write(6,*) 'restart: windcd applied (itdrag = ',itdrag,')'
+	else
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'windcd (skip)')
+	  write(6,*) 'restart: windcd not applied (itdrag = ',itdrag,')'
+	end if
+
+	read(iunit,iostat=ios) iheat_rst
+	call rst_check_read(ios,'heat flag')
+	if( iheat_rst > 0 ) then
+	  call restart_read_value(iunit,bn,tws_heat)
+	  call restart_read_value(iunit,bn,dtw_heat)
+	  brst_heat = .true.
+	  write(6,*) 'restart: tws, dtw applied (heat flag set)'
+	else
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'tws (skip)')
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'dtw (skip)')
+	  brst_heat = .false.
+	  write(6,*) 'restart: tws, dtw not applied (heat flag not set)'
+	end if
+
+	end subroutine rst_read_hydro_v20
 
 !*******************************************************************
 

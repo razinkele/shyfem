@@ -99,6 +99,7 @@
 ! 13.09.2024    lrp     iatm and coupling with atmospheric model
 ! 21.09.2024    ggu     new handle_skin() for handling skin temperature output
 ! 08.02.2025    ggu     some new debug code
+! 26.11.2026    arb     brun_heat: the heat flag of the restart (#304)
 !
 ! notes :
 !
@@ -339,6 +340,7 @@
 	      tws_heat(k) = temp(lmin,k)
 	    end do
 	  end if
+	  brun_heat = .true.		!a restart record carries tws/dtw
 
           itdrag = nint(getpar('itdrag'))
 	  bwind = itdrag .eq. 4
