@@ -50,10 +50,14 @@
 #                 main commit before version 20) and read by this binary
 #                 (r) and by the reference binary (m): r must read it as
 #                 main did, so r's .hydro.shy, .ts.shy and .ext must be the
-#                 same bytes as m's (cmp); r's log must show "nvers = 19"
-#                 and "setweg clock not reset" (only a version 20 record
-#                 restores iwetv, so only then is setweg's clock reset);
-#                 without REF_BIN_DIR the case is skipped
+#                 same bytes as m's (cmp) and equal from the first record r
+#                 must write (the comparator exits 0, #330: cmp alone would
+#                 pass two files that both lack it; a canary drops it from
+#                 copies of both, which must be rejected); r's log must
+#                 show "nvers = 19" and "setweg clock not reset" (only a
+#                 version 20 record restores iwetv, so only then is
+#                 setweg's clock reset); without REF_BIN_DIR the case is
+#                 skipped
 #   drag0_reads_cd4  the version 20 file of mm_h6d4's write run (windcd
 #                 set by COARE, itdrag = 4) read with itdrag = 0, as written
 #                 (r) and with its windcd record set to the STR's dragco
@@ -92,7 +96,13 @@
 #                 reset" with the cold start's clock (not the restart
 #                 time); and T and S in its .ext at the restart time must
 #                 equal the write run's, so the records after the skipped
-#                 ones were read right
+#                 ones were read right: the comparator on the T and S
+#                 records of both .ext files, to the restart time, must
+#                 exit 0 (#330; not on the whole files: the read run's
+#                 records after the restart time have none in the write
+#                 run's, and zeta differs, hydro is not read), and a
+#                 canary, the read run's .ext without its records at the
+#                 restart time, must be rejected
 #   evap_reads_noheat  the version 20 file of mm_h6d4's write run (evapv of
 #                 the heat flux, windcd set by COARE) read with ibarcl = 0,
 #                 so that qflux3d does not run (ievap = 1, iheat = 6,
@@ -233,7 +243,14 @@
 # runs (the cases of another kind) uses the same first records.  A canary
 # of each case of the first list drops the first expected record of each
 # file from a copy of the read run's file, which the comparator must
-# reject.
+# reject.  With it, a self-check of the comparator's two guards of --first
+# (#330), on inputs made from each file of the case: the read run's file
+# with the continuous run's records at its last output time before the
+# first expected record added, which the comparator must reject with exit
+# 1 ("before the first record B must have"), and the continuous run's
+# file without its records at the first expected record, which it must
+# reject with exit 2 ("has no record at"); so that a guard taken out of
+# shy_maxdiff.py fails here.
 #
 # Prints one line per case,
 #   case NAME: max|d| zeta X@T, transport X@T, S X@T, T X@T, ext X -> PASS|FAIL
@@ -495,7 +512,7 @@ run() {
 # onecase NAME: runs the case, writes NAME.line (the case line) and
 # NAME.detail (the summary lines)
 onecase() {
-  local cs="$1" d="$P/$1" np=1 s t0 why rc pc pw f k line="" ext="" un=0 nr fh can=""
+  local cs="$1" d="$P/$1" np=1 s t0 why rc pc pw f k line="" ext="" un=0 nr fh can="" grd=""
   t0=$(date +%s)
   case "$cs" in *_np*) np="${cs##*_np}" ;; esac
   mkdir "$d" || return 1
@@ -551,8 +568,11 @@ onecase() {
       why="$why$f: $(grep -v '^ \|^SUMMARY' "$d/cmp.$f.txt" | head -1); "
       continue
     fi
-    # the canary: r's file without its first expected record must fail
+    # the canary: r's file without its first expected record must fail;
+    # and the comparator's two guards of --first, on inputs made from c's
+    # and r's files
     can="$can$(canary "$d/c/c.$f" "$d/r/r.$f" "$d/drop.$f" "$fh")"
+    grd="$grd$(guards "$d/c/c.$f" "$d/r/r.$f" "$d" "$f" "$fh")"
     s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
     nr="$(echo "$s" | sed -n 's/.*unmatched \([0-9]*\) .*/\1/p')"
     un=$(( un + ${nr:-0} ))
@@ -574,43 +594,80 @@ onecase() {
   line="case $cs: max|d| ${line}ext $ext"
   [ "$un" = 0 ] || line="$line, $un unmatched records"
   if [ -n "$can" ]; then line="$line; canary: ${can%; }"; rc=1; fi
+  if [ -n "$grd" ]; then line="$line; guards of --first: ${grd%; }"; rc=1; fi
   echo "    first records required: hydro.shy ${FHYD}h, ts.shy ${FTS}h, ext ${FEXT}h; canary (each without it):" \
-       "$(if [ -z "$can" ]; then echo rejected; else echo FAILED; fi)" >> "$d.detail"
+       "$(if [ -z "$can" ]; then echo rejected; else echo FAILED; fi); guards of --first (a record of r before it," \
+       "c without it): $(if [ -z "$grd" ]; then echo rejected; else echo FAILED; fi)" >> "$d.detail"
   if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
   return "$rc"
 }
-# shydrop SRC DST H: DST is the .shy or .ext file SRC without its data
-# records at H hours from the file's start date (the hours of
-# shy_maxdiff.py), or at its last time if H is "last"; prints how many it
-# dropped, fails if none
-shydrop() {
+# shyfix MODE SRC DST H [ARG ...]: DST is the .shy or .ext file SRC with
+# other data records, H in hours from the file's start date (the hours of
+# shy_maxdiff.py); prints what it did:
+#   drop   SRC without its records at H, or at its last time if H is
+#          "last"; fails if there is none
+#   keep   only SRC's records at H or before whose variable (ivar) is one
+#          of ARG...; none kept is no error (the comparator rejects a file
+#          without data records)
+#   graft  SRC with the records of the file ARG (of the same kind, A of a
+#          comparison) at ARG's last time before H added before its own;
+#          fails if ARG has none
+shyfix() {
   python3 -B - "$HERE" "$@" << 'EOF'
 import struct, sys
 sys.path.insert(0, sys.argv[1])
 import shy_maxdiff
-src, dst, h = sys.argv[2], sys.argv[3], sys.argv[4]
-recs = shy_maxdiff.records(src)
-if shy_maxdiff.kind_of(recs, src) == 'shy':
-    i0 = [k for k, r in enumerate(recs) if len(r) == 0][1] + 1   # header: to its second empty record
-    t0, step = 0., 2                                               # data: (time, ivar, n, m, lmax), values
-else:
-    i0 = 7                                                          # header: 7 records, atime0 the third
-    t0, step = struct.unpack('<d', recs[2])[0], 1                  # data: (atime, ivar, ...) values
-ts = [struct.unpack_from('<d', recs[i])[0] for i in range(i0, len(recs), step)]
-t = max(ts) if h == 'last' and ts else t0 + 3600. * float(h if h != 'last' else 0)
-keep, n = recs[:i0], 0
-for i, ti in zip(range(i0, len(recs), step), ts):
-    if abs(ti - t) < 0.5:
-        n += 1
+mode, src, dst, h, args = sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6:]
+def parts(path):    # kind, header records, t0, data records (each a list of its records)
+    recs = shy_maxdiff.records(path)
+    kind = shy_maxdiff.kind_of(recs, path)
+    if kind == 'shy':
+        i0 = [k for k, r in enumerate(recs) if len(r) == 0][1] + 1   # header: to its second empty record
+        t0, step = 0., 2                                               # data: (time, ivar, n, m, lmax), values
     else:
-        keep += recs[i:i + step]
-if n == 0:
-    sys.exit(f"no data record at {h}h in {src}")
+        i0 = 7                                                          # header: 7 records, atime0 the third
+        t0, step = struct.unpack('<d', recs[2])[0], 1                  # data: (atime, ivar, ...) values
+    return kind, recs[:i0], t0, [recs[i:i + step] for i in range(i0, len(recs), step)]
+def tim(d):         # the time of a data record (the first 8 bytes)
+    return struct.unpack_from('<d', d[0])[0]
+def ivar(d):        # its variable (the integer after the time)
+    return struct.unpack_from('<i', d[0], 8)[0]
+kind, head, t0, data = parts(src)
+ts = [tim(d) for d in data]
+t = max(ts) if h == 'last' and ts else t0 + 3600. * float(h if h != 'last' else 0)
+if mode == 'drop':
+    keep = [d for d in data if abs(tim(d) - t) >= 0.5]
+    n = len(data) - len(keep)
+    if n == 0:
+        sys.exit(f"no data record at {h}h in {src}")
+    msg = f"{n} records at {(t - t0) / 3600.:g}h dropped"
+elif mode == 'keep' and h != 'last' and args:
+    iv = {int(a) for a in args}
+    keep = [d for d in data if tim(d) < t + 0.5 and ivar(d) in iv]
+    msg = f"{len(keep)} records of variables {' '.join(args)} at {h}h or before kept"
+elif mode == 'graft' and h != 'last' and len(args) == 1:
+    ko, _, _, other = parts(args[0])
+    if ko != kind:
+        sys.exit(f"{args[0]} is a .{ko} file, {src} a .{kind} file")
+    before = [tim(d) for d in other if tim(d) < t - 0.5]
+    if not before:
+        sys.exit(f"{args[0]} has no data record before {h}h")
+    tg = max(before)
+    add = [d for d in other if abs(tim(d) - tg) < 0.5]
+    keep = add + data
+    msg = f"{len(add)} records of {args[0]} at {(tg - t0) / 3600.:g}h added"
+else:
+    sys.exit(f"shyfix: bad arguments {' '.join(sys.argv[2:])}")
 with open(dst, 'wb') as fp:
-    for r in keep:
+    for r in head + [r for d in keep for r in d]:
         fp.write(struct.pack('<i', len(r)) + r + struct.pack('<i', len(r)))
-print(f"{n} records at {(t - t0) / 3600.:g}h dropped")
+print(msg)
 EOF
+}
+# shydrop SRC DST H: shyfix drop (SRC without its records at H, or at its
+# last time if H is "last")
+shydrop() {
+  shyfix drop "$@"
 }
 # canary A B DROP H: B (a read run's file, which passed against A) without
 # its records at H, the first record it must have, is DROP; the comparator
@@ -623,6 +680,34 @@ canary() {
   k=$?
   if [ "$k" != 1 ] || ! grep -q "^  t= *$4\.000h .* of A: no record in B at this time\$" "$3.txt"; then
     echo -n "${2##*/} without its records at ${4}h not rejected (exit $k, see $3.txt); "
+  fi
+}
+# guards A B DIR F H: the two guards of the comparator's --first, on
+# inputs made from A and B (a case's files of kind F, which passed, H the
+# first record B must have): B with A's records at A's last time before H
+# added (DIR/g1.F) must be rejected with exit 1 and "of B: before the
+# first record B must have (Hh)", and A without its records at H
+# (DIR/g2.F) with exit 2 and "has no record at Hh (--first)"; prints
+# "F: reason; " for each that is not
+guards() {
+  local a="$1" b="$2" dd="$3" f="$4" h="$5" k w
+  if ! w="$(shyfix graft "$b" "$dd/g1.$f" "$h" "$a" 2>&1)"; then
+    echo -n "$f: cannot add A's records before ${h}h to B ($w); "
+  else
+    python3 -B "$HERE/shy_maxdiff.py" --first "$h" "$a" "$dd/g1.$f" > "$dd/g1.$f.txt" 2>&1
+    k=$?
+    if [ "$k" != 1 ] || ! grep -q "of B: before the first record B must have (${h}h)\$" "$dd/g1.$f.txt"; then
+      echo -n "$f: B with A's records before ${h}h not rejected (exit $k, see $dd/g1.$f.txt); "
+    fi
+  fi
+  if ! w="$(shydrop "$a" "$dd/g2.$f" "$h" 2>&1)"; then
+    echo -n "$f: cannot drop A's records at ${h}h ($w); "
+  else
+    python3 -B "$HERE/shy_maxdiff.py" --first "$h" "$dd/g2.$f" "$b" > "$dd/g2.$f.txt" 2>&1
+    k=$?
+    if [ "$k" != 2 ] || ! grep -q "has no record at ${h}h (--first)\$" "$dd/g2.$f.txt"; then
+      echo -n "$f: --first ${h}h with no record in A not rejected (exit $k, see $dd/g2.$f.txt); "
+    fi
   fi
 }
 # athour CMPFILE H: " NAME X ..." of the lines "t= H.000h NAME max|d|=X"
@@ -661,9 +746,24 @@ donecase() {
   return 1
 }
 
+# same19 A B H OUT: the files A (m's) and B (r's) of old_v19 are the same:
+# the comparator, with B's first record H, exits 0 (its output in OUT),
+# and cmp finds the same bytes; prints "same bytes" or why not, and fails
+# unless both hold (cmp alone would pass two files that both lack their
+# first record, #330)
+same19() {
+  local k bad=""
+  python3 -B "$HERE/shy_maxdiff.py" --first "$3" "$1" "$2" > "$4" 2>&1
+  k=$?
+  [ "$k" = 0 ] || bad="comparator exit $k, "
+  cmp -s "$1" "$2" || bad="${bad}DIFFERS (cmp), "
+  if [ -n "$bad" ]; then echo -n "${bad%, }"; return 1; fi
+  echo -n "same bytes"
+}
+
 # case_old_v19: a version 19 file read as main reads it
 case_old_v19() {
-  local cs=old_v19 d="$P/old_v19" s t0 why="" f k w rc=0 ref pr pm line=""
+  local cs=old_v19 d="$P/old_v19" s t0 why="" f k w rc=0 ref pr pm line="" fh can=""
   t0=$(date +%s)
   ref="${REF_BIN_DIR:-}/shyfem"
   if [ -z "${REF_BIN_DIR:-}" ]; then
@@ -709,17 +809,31 @@ case_old_v19() {
   donecase "$cs" "$t0" "$why" || return 1
   : > "$d.detail"
   for f in hydro.shy ts.shy ext; do
-    python3 -B "$HERE/shy_maxdiff.py" --first "$(firstof "$f")" "$d/m/r.$f" "$d/r/r.$f" > "$d/cmp.$f.txt" 2>&1
+    fh="$(firstof "$f")"
+    w="$(same19 "$d/m/r.$f" "$d/r/r.$f" "$fh" "$d/cmp.$f.txt")" || rc=1
+    line="${line}$f $w, "
     s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
     [ -n "$s" ] || s="$(head -1 "$d/cmp.$f.txt")"
     echo "    $f (m against r): ${s#SUMMARY *: }" >> "$d.detail"
-    if cmp -s "$d/m/r.$f" "$d/r/r.$f"; then
-      line="${line}$f same bytes, "
+    # the canary: both files without their first expected record are the
+    # same bytes, so only the comparator (exit 2: A has no record at fh)
+    # can reject them
+    if ! shydrop "$d/m/r.$f" "$d/dropm.$f" "$fh" > /dev/null 2>&1 \
+       || ! shydrop "$d/r/r.$f" "$d/dropr.$f" "$fh" > /dev/null 2>&1; then
+      can="$can$f: cannot drop its records at ${fh}h; "
+    elif w="$(same19 "$d/dropm.$f" "$d/dropr.$f" "$fh" "$d/drop.$f.txt")"; then
+      can="$can$f of m and r without their records at ${fh}h passed ($w); "
     else
-      line="${line}$f DIFFERS, "; rc=1
+      case "$w" in
+        *"comparator exit 2"*) ;;
+        *) can="$can$f of m and r without their records at ${fh}h not rejected by the comparator ($w); " ;;
+      esac
     fi
   done
+  echo "    first records required: hydro.shy ${FHYD}h, ts.shy ${FTS}h, ext ${FEXT}h; canary (m and r without it):" \
+       "$(if [ -z "$can" ]; then echo rejected; else echo FAILED; fi)" >> "$d.detail"
   line="case $cs: REF_BIN_DIR's version 19 file read by this binary and by REF_BIN_DIR: ${line%, }"
+  if [ -n "$can" ]; then line="$line; canary: ${can%; }"; rc=1; fi
   if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
   return "$rc"
 }
@@ -1058,10 +1172,29 @@ case_offline() {
   return "$rc"
 }
 
+# tsrst W R H PFX: the T and S records (ivar 12 and 11) of the .ext files
+# W (the write run's, to the restart time) and R (the read run's), to H
+# hours (copies PFX.w.ext and PFX.r.ext), compared from H (output in
+# PFX.txt): R must have W's T and S records at H, equal, and none before
+# (the comparator exits 0; zeta and the velocities are not compared, as
+# hydro is not read, nor R's records after H, which W does not have);
+# prints the comparator's exit code and summary, or why it could not
+# compare, and fails unless it exits 0
+tsrst() {
+  local k w
+  w="$(shyfix keep "$1" "$4.w.ext" "$3" 11 12 2>&1)" || { echo -n "$w"; return 1; }
+  w="$(shyfix keep "$2" "$4.r.ext" "$3" 11 12 2>&1)" || { echo -n "$w"; return 1; }
+  python3 -B "$HERE/shy_maxdiff.py" --first "$3" "$4.w.ext" "$4.r.ext" > "$4.txt" 2>&1
+  k=$?
+  w="$(grep '^SUMMARY' "$4.txt")"
+  [ -n "$w" ] || w="$(head -1 "$4.txt")"
+  echo -n "comparator exit $k: ${w#SUMMARY *: }"
+  [ "$k" = 0 ]
+}
 # case_flgrst: a read without hydro skips the version 20 records and
 # keeps the setweg clock
 case_flgrst() {
-  local cs=flgrst_no_hydro d="$P/flgrst_no_hydro" s t0 why="" k w v ts trs
+  local cs=flgrst_no_hydro d="$P/flgrst_no_hydro" s t0 why="" k w v ts trs cn
   t0=$(date +%s)
   mkdir "$d" || return 1
   for s in c w r; do rundir "$d/$s" mm || return 1; done
@@ -1097,13 +1230,21 @@ case_flgrst() {
   elif awk -v v="$v" -v t="$trs" 'BEGIN { exit !(v + 0 == t + 0) }'; then
     why="${why}the setweg clock $v is the restart time; "
   fi
-  # T and S at the restart time: r's .ext against w's
-  python3 -B "$HERE/shy_maxdiff.py" --first "$FEXT" "$d/w/w.ext" "$d/r/r.ext" > "$d/cmp.ext.txt" 2>&1
-  ts="$(athour "$d/cmp.ext.txt" "$(( H1 - 1 ))")"
-  k="$(echo "$ts" | awk '{ for (i = 1; i < NF; i += 2) if (($i == "S" || $i == "T") && $(i + 1) + 0 == 0) n++ }
-    END { print n + 0 }')"
-  [ "$k" = 2 ] || why="${why}T and S of r.ext at the restart time are not w.ext's (max|d|:${ts:- no record}); "
-  echo "    setweg clock not reset: ${v:-none}; max|d| r.ext against w.ext at $(( H1 - 1 ))h:${ts:- no record}" > "$d.detail"
+  # T and S at the restart time (FEXT, the first record of r.ext): the
+  # comparator on the T and S records of w.ext and r.ext to that time must
+  # exit 0; the canary: r.ext without its records at that time must fail
+  ts="$(tsrst "$d/w/w.ext" "$d/r/r.ext" "$FEXT" "$d/ts")" \
+    || why="${why}T and S of r.ext at the restart time are not w.ext's ($ts); "
+  cn=FAILED
+  if ! w="$(shydrop "$d/r/r.ext" "$d/drop.ext" "$FEXT" 2>&1)"; then
+    why="${why}canary: cannot drop the records at ${FEXT}h of r.ext ($w); "
+  elif w="$(tsrst "$d/w/w.ext" "$d/drop.ext" "$FEXT" "$d/tsdrop")"; then
+    why="${why}canary: r.ext without its records at ${FEXT}h passed ($w); "
+  else
+    cn=rejected
+  fi
+  echo "    setweg clock not reset: ${v:-none}; T and S of r.ext against w.ext to ${FEXT}h: $ts;" \
+       "canary (r.ext without its records at ${FEXT}h): $cn" > "$d.detail"
   if [ -n "$why" ]; then
     echo "case $cs: ${why%; } -> FAIL" > "$d.line"; return 1
   fi
