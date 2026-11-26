@@ -77,6 +77,14 @@ c 29.01.2023    ggu     more on correct area computation (eliminated areatr)
 c 10.05.2024    ggu     new routine write_basin_txt() (bbastxt)
 c 03.10.2024    ggu     new call to test_fast_find()
 c 21.11.2024    ggu     renamed call to some routines
+c 26.11.2026    arb     errors exit 7 through mod_error_stop (#336)
+c
+c notes :
+c
+c every error ends through error_stop of mod_error_stop (exit 7, the
+c message "error stop ROUTINE: TEXT" on stdout), not a bare stop (exit 0,
+c #336). It is imported as tool_error_stop: the program uses shympi,
+c whose own error_stop exits 33
 c
 c todo :
 c
@@ -209,6 +217,7 @@ c*******************************************************************
 
 	use basin
 	use basutil
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -220,7 +229,8 @@ c*******************************************************************
 
 	if( .not. filex(file) ) then
 	  write(6,*) 'file not existing: ',trim(file)
-	  stop 'error stop read_command_line_file: no such file'
+	  call tool_error_stop('read_command_line_file'
+     +				,'no such file')
 	else if( basin_is_basin(file) ) then
 	  if( bwrite ) write(6,*) 'reading BAS file: ',trim(file)
 	  call basin_read(file)
@@ -234,7 +244,8 @@ c*******************************************************************
 	  breadbas = .false.
 	else
 	  write(6,*) 'Cannot read this file: ',trim(file)
-	  stop 'error stop read_command_line_file: unknown format'
+	  call tool_error_stop('read_command_line_file'
+     +				,'unknown format')
 	end if
 
 	end
@@ -798,6 +809,7 @@ c writes frequency distribution of depth
 
 	use mod_depth
 	use basin
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -821,9 +833,11 @@ c area code
 c-----------------------------------------------------------------
 
 	allocate(freqa(0:ndim),stat=ierr)
-	if (ierr /= 0) stop 'error stop: allocation failed'
+	if (ierr /= 0) call tool_error_stop('freqdep'
+     +				,'allocation of freqa failed')
 	allocate(freqv(0:ndim),stat=ierr)
-	if (ierr /= 0) stop 'error stop: allocation failed'
+	if (ierr /= 0) call tool_error_stop('freqdep'
+     +				,'allocation of freqv failed')
 
 	dh = 0.01
 
@@ -861,7 +875,7 @@ c-----------------------------------------------------------------
 		ih = imax
 	    else		!never
 	        write(6,*) ih,imax,hmin,hmax,h
-	        stop 'error stop freqdep: index out of range'
+	        call tool_error_stop('freqdep','index out of range')
 	    end if
 	  end if
 	  do i=ih,imax
@@ -879,7 +893,7 @@ c-----------------------------------------------------------------
      +			,form='formatted',iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: areavol.dat'
-	  stop 'error stop: cannot open file'
+	  call tool_error_stop('freqdep','cannot open file')
 	end if
 
 	do i=0,imax
@@ -1098,13 +1112,14 @@ c writes grid in gr3 format from bas file
 c the gr3 format is used by WWMIII wave model
 
 	use basutil
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
 	if (.not. breadbas) then
 	  write(*,*)
 	  write(*,*)'You need a bas file for creating a gr3 grid'
-	  stop 'error: write_gr3_from_bas'
+	  call tool_error_stop('write_gr3_from_bas','no bas file')
 	end if
 
         write(6,*) 'making unique depth...'
@@ -1126,13 +1141,14 @@ c writes grid in msh (gmsh v.2) format from bas file
 c the msh format is used by WWM3 wave model
 
 	use basutil
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
 	if (.not. breadbas) then
 	  write(*,*)
 	  write(*,*)'You need a bas file for creating a msh grid'
-	  stop 'error: write_msh_from_bas'
+	  call tool_error_stop('write_msh_from_bas','no bas file')
 	end if
 
         write(6,*) 'making unique depth...'
@@ -1269,6 +1285,8 @@ c*******************************************************************
 
 c writes xy as data to file (format is gis format)
 
+        use mod_error_stop, only: tool_error_stop => error_stop
+
         implicit none
 
         character*(*) nfile
@@ -1284,7 +1302,7 @@ c writes xy as data to file (format is gis format)
      +			,iostat=ierr)
         if( ierr /= 0 ) then
           write(6,*) 'error opening file: ',trim(nfile)
-          stop 'error stop: cannot open file'
+          call tool_error_stop('write_xy','cannot open file')
         end if
         write(iu,*) 0,nkn,5,'0'
         do k=1,nkn
@@ -1307,6 +1325,7 @@ c writes statistics on basin
 
         use evgeom
         use basin
+        use mod_error_stop, only: tool_error_stop => error_stop
 
         implicit none
 
@@ -1362,7 +1381,7 @@ c-----------------------------------------------------------------
             k = nen3v(ii,ie)
             w = ev(10+ii,ie)
             iang = (w-90.)/10. + 1. - eps
-	    if( iang > ndim ) stop 'error stop bascheck: iang'
+	    if( iang > ndim ) call tool_error_stop('bascheck','iang')
             if( iang .gt. 0 ) then
               icount(iang) = icount(iang) + 1
 c             write(6,*) k,ii,w,iang
@@ -1402,6 +1421,7 @@ c compares two basins and writes delta depths to file
 	use basin
 	use evgeom
 	use clo
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -1415,13 +1435,13 @@ c compares two basins and writes delta depths to file
 	call clo_get_file(2,file)
 	if( file == ' ' ) then
 	  write(6,*) 'for -compare we need two bas files'
-	  stop 'error stop bascomp: missing second file'
+	  call tool_error_stop('bascomp','missing second file')
 	end if
 	call basin_read(file)
 
 	if( nel /= nel_aux ) then
 	  write(6,*) 'dimension of basins incompatible: ',nel,nel_aux
-	  stop 'error stop bascomp: nel'
+	  call tool_error_stop('bascomp','nel')
 	end if
 
 	!call ev_init(nel)
@@ -1440,6 +1460,7 @@ c*******************************************************************
         subroutine node_test
 
         use basin
+        use mod_error_stop, only: tool_error_stop => error_stop
 
         implicit none
 
@@ -1468,7 +1489,7 @@ c*******************************************************************
 
         !write(6,*) 'end of node_test ... '
 
-        if( bstop ) stop 'error stop node_test: errors'
+        if( bstop ) call tool_error_stop('node_test','errors')
 
         end
 
@@ -1479,6 +1500,7 @@ c*******************************************************************
 ! writes depth values of elements to file
 
         use basin
+        use mod_error_stop, only: tool_error_stop => error_stop
 
         implicit none
 
@@ -1489,13 +1511,15 @@ c*******************************************************************
      +			,form='formatted',iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: depth.grd'
-	  stop 'error stop: cannot open file'
+	  call tool_error_stop('write_depth_from_bas'
+     +				,'cannot open file')
 	end if
 	open(newunit=iu2,file='depth.xyz',status='unknown'
      +			,form='formatted',iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: depth.xyz'
-	  stop 'error stop: cannot open file'
+	  call tool_error_stop('write_depth_from_bas'
+     +				,'cannot open file')
 	end if
 
         do ie=1,nel
@@ -1531,6 +1555,7 @@ c*******************************************************************
 	subroutine write_nodal_partition(bwrite)
 
 	use basin
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -1545,7 +1570,8 @@ c*******************************************************************
 
 	nc = maxval(iarnv)
 	allocate(nic(0:nc),stat=ierr)
-	if (ierr /= 0) stop 'error stop: allocation failed'
+	if (ierr /= 0) call tool_error_stop('write_nodal_partition'
+     +				,'allocation of nic failed')
 	nic = 0
 	do k=1,nkn
 	  ic = iarnv(k)
@@ -1658,6 +1684,7 @@ c****************************************************************
 ! try sort on basin points - only for testing
 
 	use basin
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -1704,7 +1731,8 @@ c****************************************************************
 	end do
 
 	write(6,*) 'sorted basin tested...',nkn,nerror,nequal
-	if( nerror>0 ) stop 'error stop sort_basin: sort coords'
+	if( nerror>0 ) call tool_error_stop('sort_basin'
+     +				,'sort coords')
 
 	write(6,*) 'locate nodes...'
 
@@ -1748,6 +1776,7 @@ c****************************************************************
 
         use basin
         use mod_depth
+        use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -1785,10 +1814,13 @@ c****************************************************************
 !-------------------------------------------------------------
 
 	allocate( hreg(nx*ny),stat=ierr )
-	if (ierr /= 0) stop 'error stop: allocation failed'
+	if (ierr /= 0) call tool_error_stop('write_regular_depth'
+     +				,'allocation of hreg failed')
 
-	if( dx /= dy ) stop 'error stop write_regular_depth: dx/=dy'
-	if( dx /= dreg ) stop 'error stop write_regular_depth: dx/=dreg'
+	if( dx /= dy ) call tool_error_stop('write_regular_depth'
+     +				,'dx/=dy')
+	if( dx /= dreg ) call tool_error_stop('write_regular_depth'
+     +				,'dx/=dreg')
 	call setgeo(xmin,ymin,dx,dy,flag)
 
 	call av2am(hkv,hreg,nx,ny)
@@ -1805,7 +1837,8 @@ c****************************************************************
      +			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
-	  stop 'error stop: cannot open file'
+	  call tool_error_stop('write_regular_depth'
+     +				,'cannot open file')
 	end if
 	call write_regular_2d_1var_record(iunit,string,regpar,np,hreg)
 	close(iunit)
@@ -1823,6 +1856,8 @@ c****************************************************************
 
 	subroutine code_count(imax,n,iarray)
 
+	use mod_error_stop, only: tool_error_stop => error_stop
+
 	implicit none
 
 	integer imax,n
@@ -1832,7 +1867,8 @@ c****************************************************************
 	integer, allocatable :: count(:)
 
 	allocate(count(0:imax),stat=ierr)
-	if (ierr /= 0) stop 'error stop: allocation failed'
+	if (ierr /= 0) call tool_error_stop('code_count'
+     +				,'allocation of count failed')
 	count = 0
 
 	write(6,*) '  details:'
@@ -1859,6 +1895,7 @@ c****************************************************************
 	use basin
 	use mod_depth
 	use mod_sort
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -1876,7 +1913,8 @@ c****************************************************************
 	iu = 567
 	nmax = max(nkn,nel)
 	allocate(index(nmax),stat=ierr)
-	if (ierr /= 0) stop 'error stop: allocation failed'
+	if (ierr /= 0) call tool_error_stop('write_basin_txt'
+     +				,'allocation of index failed')
 
 !-------------------------------------------------------
 ! compute area of nodes

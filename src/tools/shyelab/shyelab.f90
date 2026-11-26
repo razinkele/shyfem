@@ -42,6 +42,15 @@
 ! 30.08.2018	ccf	new functionality lgrelab
 ! 25.10.2018	ggu	changed VERS_7_5_51
 ! 16.02.2019	ggu	changed VERS_7_5_60
+! 26.11.2026	arb	a missing or unknown file exits 7 (#336)
+!
+! notes :
+!
+! a file that does not exist or whose type is unknown wrote a line and
+! ended with exit 0; it now ends through error_stop of mod_error_stop
+! (exit 7, "error stop shyelab: TEXT" on stdout, #336), imported as
+! tool_error_stop (shyelab links shympi, whose own error_stop exits 33).
+! No file at all still gives the usage (exit 0)
 !
 !**************************************************************
 
@@ -49,6 +58,7 @@
 
 	use clo
 	use elabutil
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 ! elaborates output file
 
@@ -69,6 +79,7 @@
 	  call elabutil_init('NONE','shyelab')
 	else if( type == 'NOTEXIST' ) then
 	  write(6,*) 'file does not exist: ',trim(file)
+	  call tool_error_stop('shyelab','file does not exist')
 	else if( type == 'SHY' ) then
 	  call shyelab1
 	else if( type == 'LGR' ) then
@@ -87,9 +98,11 @@
 	  call tselab
 	else if( type == 'UNKNOWN' ) then
 	  write(6,*) 'unknown file type: ',trim(file)
+	  call tool_error_stop('shyelab','unknown file type')
 	else
 	  write(6,*) 'inconsistent file type: ',trim(type)
 	  write(6,*) 'internal error (1)'
+	  call tool_error_stop('shyelab','internal error (1)')
 	end if
 	
         end
@@ -139,6 +152,8 @@
 
 	subroutine ask_to_convert_file(type)
 
+	use mod_error_stop, only: tool_error_stop => error_stop
+
 	implicit none
 
 	character*(*) type
@@ -151,7 +166,7 @@
 	else if( type == 'OUS' ) then
 	  tool = 'ous2shy'
 	else
-	  stop 'error stop convert_file: file type not recognized'
+	  call tool_error_stop('convert_file','file type not recognized')
 	end if
 
 	write(6,*) 'please convert to SHY format using ',trim(tool)

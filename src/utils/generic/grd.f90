@@ -121,6 +121,21 @@
 ! 10.05.2024	ggu	handles isphe given in grd file (FEM-SPHER)
 ! 07.11.2024	ggu	in write_grd_file_with_detail() also write zoom window
 ! 08.03.2025	ggu	in grd_init() make sure that lines are allocated
+! 26.11.2026	arb	errors exit 7 through mod_error_stop (#336)
+!
+! notes :
+!
+! every error ends through error_stop of mod_error_stop (exit 7, the
+! message "error stop ROUTINE: TEXT" on stdout), not a bare stop (exit 0,
+! #336). Not shympi_abort_internal (exit 33): shyadj links grd.o without
+! the shympi library (and shypre and shyproj do not pull it in). The model
+! reads a grd file (a basin given as .grd in the STR file) before MPI is
+! initialized (cstfile -> handle_grid_read -> shypre_sub), every process
+! the same file, so every process stops the same way there. After MPI is
+! initialized the model writes grd files only on rare paths (close_init
+! writes dist_close.grd on every process when closing sections are given,
+! which sp136 refuses on several processes anyway; write_partition_grd
+! on the master in debug mode); an exit 7 there ends the job through mpirun
 !
 !**********************************************************
 
@@ -173,6 +188,8 @@
 
 	subroutine grd_init(nkk,nee,nll,nnee,nnll)
 
+	use mod_error_stop, only : error_stop
+
 	integer nkk,nee,nll,nnee,nnll
 
 	integer nk,ne,nl,nne,nnl
@@ -203,7 +220,8 @@
 	  nk_grd_alloc = nk
 	  if( balloc ) then
 	    allocate(ippnv(nk),ianv(nk),hhnv(nk),xv(nk),yv(nk),stat=ierr)
-	    if( ierr /= 0 ) stop 'error stop: allocation failed'
+	    if( ierr /= 0 ) call error_stop('grd_init' &
+     &				,'allocation of node arrays failed')
 	  end if
 	end if
 	nk_grd = nk
@@ -217,13 +235,15 @@
 	  ne_grd_alloc = ne
 	  if( balloc ) then
 	    allocate(ippev(ne),iaev(ne),hhev(ne),stat=ierr)
-	    if( ierr /= 0 ) stop 'error stop: allocation failed'
+	    if( ierr /= 0 ) call error_stop('grd_init' &
+     &				,'allocation of element arrays failed')
 	  end if
 	end if
 	ne_grd = ne
 	if( allocated(ipntev) ) deallocate(ipntev)
 	allocate(ipntev(0:ne),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('grd_init' &
+     &				,'allocation of ipntev failed')
 	ipntev = 0
 
 	if( bdebug ) write(6,*) 'nl: ',nl,nl_grd,nl_grd_alloc
@@ -235,13 +255,15 @@
 	  nl_grd_alloc = nl
 	  if( balloc ) then
 	    allocate(ipplv(nl),ialv(nl),hhlv(nl),stat=ierr)
-	    if( ierr /= 0 ) stop 'error stop: allocation failed'
+	    if( ierr /= 0 ) call error_stop('grd_init' &
+     &				,'allocation of line arrays failed')
 	  end if
 	end if
 	nl_grd = nl
 	if( allocated(ipntlv) ) deallocate(ipntlv)
 	allocate(ipntlv(0:nl),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('grd_init' &
+     &				,'allocation of ipntlv failed')
 	ipntlv = 0
 
 	if( bdebug ) write(6,*) 'nne: ',nne,nne_grd,nne_grd_alloc
@@ -253,7 +275,8 @@
 	  nne_grd_alloc = nne
 	  if( balloc ) then
 	    allocate(inodev(nne),stat=ierr)
-	    if( ierr /= 0 ) stop 'error stop: allocation failed'
+	    if( ierr /= 0 ) call error_stop('grd_init' &
+     &				,'allocation of inodev failed')
 	  end if
 	end if
 	nne_grd = nne
@@ -267,7 +290,8 @@
 	  nnl_grd_alloc = nnl
 	  if( balloc ) then
 	    allocate(inodlv(nnl),stat=ierr)
-	    if( ierr /= 0 ) stop 'error stop: allocation failed'
+	    if( ierr /= 0 ) call error_stop('grd_init' &
+     &				,'allocation of inodlv failed')
 	  end if
 	end if
 	nnl_grd = nnl
@@ -359,6 +383,7 @@
 	subroutine grd_read(file)
 
 	use grd
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -408,7 +433,7 @@
 
 	return
    99	continue
-	stop 'error stop grd_read: error reading grd file'
+	call error_stop('grd_read','error reading grd file')
 	end
 
 !*****************************************************************
@@ -781,6 +806,7 @@
 ! reads nodes from .grd file
 
 	use grd, only : xscale_grd,yscale_grd,zscale_grd
+	use mod_error_stop, only : error_stop
 
         implicit none
 
@@ -839,7 +865,7 @@
 	return
    99	continue
 	write(ner,*) 'dimension of nknddi too low: ',nknddi
-	stop 'error stop rdnode: nknddi'
+	call error_stop('rdnode','nknddi')
         end
 
 !**********************************************************
@@ -848,6 +874,8 @@
      &				,ipev,iaev,ipntev,inodev,hev)
 
 ! reads elements from .grd file
+
+	use mod_error_stop, only : error_stop
 
         implicit none
 
@@ -934,10 +962,10 @@
 	return
    98   continue
         write(6,*) 'dimension of nenddi too low: ',nenddi
-        stop 'error stop rdelem: nenddi'
+        call error_stop('rdelem','nenddi')
    99	continue
 	write(ner,*) 'dimension of nelddi too low: ',nelddi
-	stop 'error stop rdelem: nelddi'
+	call error_stop('rdelem','nelddi')
 	end
 
 !**********************************************************
@@ -946,6 +974,8 @@
      &				,iplv,ialv,ipntlv,inodlv,hlv)
 
 ! reads lines from .grd file
+
+	use mod_error_stop, only : error_stop
 
         implicit none
 
@@ -1012,10 +1042,10 @@
 	return
    98	continue
 	write(6,*) 'dimension of nlnddi too low: ',nlnddi
-	stop 'error stop rdline: nlnddi'
+	call error_stop('rdline','nlnddi')
    99	continue
 	write(6,*) 'dimension of nliddi too low: ',nliddi
-	stop 'error stop rdline: nliddi'
+	call error_stop('rdline','nliddi')
 	end
 
 !**********************************************************
@@ -1154,6 +1184,7 @@
 !
 	use grd
 	!use basin
+	use mod_error_stop, only : error_stop
 
         implicit none
 
@@ -1243,7 +1274,7 @@
 !----------------------------------------------------
 
 	if( berror ) then
-	  stop 'error stop fempar: error reading FEM comments'
+	  call error_stop('fempar','error reading FEM comments')
 	end if
 
 !----------------------------------------------------
@@ -1329,6 +1360,7 @@
 ! initializes reading from grid file
 
 	use grd
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -1349,7 +1381,7 @@
         if( file .eq. ' ' ) then
           write(ner,*) 'no file given...'
           write(ner,*) 'cannot read GRD file from stdin...'
-	  stop 'error stop grd_internal_init: cannot read file'
+	  call error_stop('grd_internal_init','cannot read file')
         else
 	  nin_grd = ifileo(nin_grd,file,'formatted','old')
         end if
@@ -1357,7 +1389,7 @@
 	if(nin_grd.le.0) then
 	  write(ner,*) 'error opening file'
 	  write(ner,*) file
-	  stop 'error stop grd_internal_init: cannot open file'
+	  call error_stop('grd_internal_init','cannot open file')
 	end if
 
 	end
@@ -1382,6 +1414,7 @@
 ! reads next line from file
 
 	use grd
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -1402,7 +1435,7 @@
         else if( ios .gt. 0 ) then
           write(ner,*) 'read error close to line ',iline_grd
           write(ner,*) line_grd
-          stop 'error stop grd_next_line: reading line'
+          call error_stop('grd_next_line','reading line')
         end if
 
 	iline_grd = iline_grd + 1
@@ -1414,7 +1447,7 @@
 	return
    99	continue
 	write(ner,*) 'dimension of array f too small ',80,ianz_grd
-	stop 'error stop grd_next_line: ianz_grd'
+	call error_stop('grd_next_line','ianz_grd')
 	end
 
 !*****************************************************************
@@ -1537,6 +1570,8 @@
 
 ! writes grd file
 
+	use mod_error_stop, only : error_stop
+
 	implicit none
 
 	character*(*) file	!file name
@@ -1595,13 +1630,15 @@
 
 	nmax = max(nk,ne,nl)
 	allocate(ipdex(nmax),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('grd_write_grid' &
+     &				,'allocation of ipdex failed')
 	do i=1,nmax
 	  ipdex(i) = i
 	end do
 
 	allocate(nextern(nk),nodes(nk),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('grd_write_grid' &
+     &				,'allocation of nextern failed')
 	do k=1,nk
 	  if( bextern ) then
 	    nextern(k) = ippnv(k)		!use external numbering
@@ -1671,7 +1708,7 @@
    99	continue
 	write(6,*) 'error opening output file'
 	write(6,*) file
-	stop 'error stop grd_write_grid: cannot open file'
+	call error_stop('grd_write_grid','cannot open file')
 	end
 
 !*****************************************************************
@@ -1779,6 +1816,7 @@
 	subroutine grd_get_depth(nk,ne,hkv,hev)
 
 	use grd
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -1789,7 +1827,7 @@
 	if( ne > 0 ) then
 	  if( ne .ne. ne_grd ) then
 	    write(6,*) 'ne,ne_grd: ',ne,ne_grd
-	    stop 'error stop grd_get_depth: dimension mismatch'
+	    call error_stop('grd_get_depth','dimension mismatch')
 	  end if
 	  hev = hhev
 	end if
@@ -1797,7 +1835,7 @@
 	if( nk > 0 ) then
 	  if( nk .ne. nk_grd ) then
 	    write(6,*) 'nk,nk_grd: ',nk,nk_grd
-	    stop 'error stop grd_get_depth: dimension mismatch'
+	    call error_stop('grd_get_depth','dimension mismatch')
 	  end if
 	  hkv = hhnv
 	end if
@@ -1809,6 +1847,7 @@
 	subroutine grd_get_nodes(np,xp,yp,hp)
 
 	use grd
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -1819,7 +1858,7 @@
 
 	if( np < nk_grd ) then
 	  write(6,*) 'np,nk_grd: ',np,nk_grd
-	  stop 'error stop grd_get_nodes: np'
+	  call error_stop('grd_get_nodes','np')
 	end if
 
 	np = nk_grd
@@ -1937,6 +1976,7 @@
 	subroutine grd_get_node_arrays(n,ipv,iav,hv,x,y)
 
 	use grd
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -1944,7 +1984,7 @@
 	integer ipv(n),iav(n)
 	real hv(n),x(n),y(n)
 
-	if( n /= nk_grd ) stop 'error stop grd_get_node_arrays: n'
+	if( n /= nk_grd ) call error_stop('grd_get_node_arrays','n')
 
 	ipv = ippnv
 	iav = ianv
@@ -1959,6 +1999,7 @@
 	subroutine grd_get_elem_arrays(n,ipv,iav,hv)
 
 	use grd
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -1966,7 +2007,7 @@
 	integer ipv(n),iav(n)
 	real hv(n)
 
-	if( n /= ne_grd ) stop 'error stop grd_get_node_arrays: n'
+	if( n /= ne_grd ) call error_stop('grd_get_elem_arrays','n')
 
 	ipv = ippev
 	iav = iaev
@@ -1997,6 +2038,8 @@
 
 ! reads file with lines and general format (grd,bnd,xy)
 
+	use mod_error_stop, only : error_stop
+
 	implicit none
 
 	character*(*) file
@@ -2014,7 +2057,7 @@
 	  call read_xy_lines(file,n,x,y,ifl)
 	else
 	  write(6,*) 'cannot determine file format: ',trim(file)
-	  stop 'error stop read_all_lines: file format'
+	  call error_stop('read_all_lines','file format')
 	end if
 
 	end
@@ -2026,6 +2069,8 @@
 	subroutine read_grd_lines(grdfile,n,x,y,ifl)
 
 ! reads grd file for lines to be treated (plot or particle release)
+
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -2078,7 +2123,7 @@
 	return
    99	continue
 	write(6,*) 'ndim = ',ndim
-	stop 'error stop read_grd_lines: ndim'
+	call error_stop('read_grd_lines','ndim')
 	end
 
 !*****************************************************************
@@ -2086,6 +2131,8 @@
 	subroutine read_bnd_lines(bndfile,n,x,y,ifl)
 
 ! reads old bnd file format
+
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -2122,7 +2169,7 @@
 	return
    99	continue
 	write(6,*) 'ndim = ',ndim
-	stop 'error stop read_bnd_lines: ndim'
+	call error_stop('read_bnd_lines','ndim')
 	end
 
 !*****************************************************************
@@ -2130,6 +2177,8 @@
 	subroutine read_xy_lines(xyfile,n,x,y,ifl)
 
 ! reads xy file format - only one line allowed
+
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -2168,7 +2217,7 @@
 	return
    99	continue
 	write(6,*) 'ndim = ',ndim
-	stop 'error stop read_xy_lines: ndim'
+	call error_stop('read_xy_lines','ndim')
 	end
 
 !*****************************************************************
@@ -2245,6 +2294,8 @@
 
 ! writes grd file with no depth information
 
+	use mod_error_stop, only : error_stop
+
 	implicit none
 
 	character*(*) file		!file name
@@ -2265,7 +2316,7 @@
 	open(nout,file=file,status='unknown',form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
-	  stop 'error stop write_grd_file: error opening file'
+	  call error_stop('write_grd_file','error opening file')
 	end if
 
 	depth = flag
@@ -2308,6 +2359,8 @@
 
 ! writes grd file with depth information
 
+	use mod_error_stop, only : error_stop
+
 	implicit none
 
 	character*(*) file		!file name
@@ -2329,7 +2382,8 @@
 	open(nout,file=file,status='unknown',form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
-	  stop 'error stop write_grd_file_with_depth: error opening file'
+	  call error_stop('write_grd_file_with_depth' &
+     &				,'error opening file')
 	end if
 
 	depth = flag
@@ -2374,6 +2428,8 @@
 
 ! writes grd file with depth information
 
+	use mod_error_stop, only : error_stop
+
 	implicit none
 
 	character*(*) file		!file name
@@ -2411,7 +2467,7 @@
 	kc = k
 	if( kc > nk ) then
 	  write(6,*) 'kcext = ',kcext
-	  stop 'error stopwrite_grd_file_with_detail: no such node'
+	  call error_stop('write_grd_file_with_detail','no such node')
 	end if
 
 	!write(6,*) 'node (ext/int) : ',kcext,kc
@@ -2419,7 +2475,8 @@
 	n = 0
 	do ie=1,ne
 	  if( all( index(:,ie) /= kc ) ) cycle
-	  if( n+3 > ndim ) stop 'error stop write_grd_file_with_detail: ndim'
+	  if( n+3 > ndim ) call error_stop('write_grd_file_with_detail' &
+     &				,'ndim')
 	  do ii=1,3
 	    n = n + 1
 	    k = index(ii,ie)
@@ -2441,9 +2498,11 @@
 	ymax = ymax + window*dy
 
 	allocate(kin(nk),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call error_stop('write_grd_file_with_detail' &
+     &				,'allocation of kin failed')
 	allocate(ein(ne),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call error_stop('write_grd_file_with_detail' &
+     &				,'allocation of ein failed')
 	kin = 0
 	ein = 0
 
@@ -2474,7 +2533,8 @@
 	open(nout,file=file,status='unknown',form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
-	  stop 'error stop write_grd_file_with_detail: error opening file'
+	  call error_stop('write_grd_file_with_detail' &
+     &				,'error opening file')
 	end if
 
 	depth = flag
@@ -2512,7 +2572,8 @@
 	open(nout,file=zoom,status='unknown',form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(zoom)
-	  stop 'error stop write_grd_file_with_detail: error opening zoom'
+	  call error_stop('write_grd_file_with_detail' &
+     &				,'error opening zoom')
 	end if
 	call make_rect(nout,1.,xmin,ymin,xmax,ymax)
 	call make_rect(nout,0.5,xmin,ymin,xmax,ymax)

@@ -252,7 +252,8 @@ lgrelab1.o: ../../../lib/mod/basin.mod ../../../lib/mod/clo.mod \
 		../../../lib/mod/shympi.mod \
 		../../../lib/mod/shyutil.mod 
 shyelab.o: ../../../lib/mod/clo.mod ../../../lib/mod/elabutil.mod \
-		../../../lib/mod/shyfile.mod 
+		../../../lib/mod/mod_error_stop.mod \
+		../../../lib/mod/shyfile.mod
 shyelab1.o: ../../../lib/mod/basin.mod ../../../lib/mod/clo.mod \
 		../../../lib/mod/custom_dates.mod \
 		../../../lib/mod/elabtime.mod \
@@ -294,7 +295,8 @@ shyproj.o: ../../../lib/mod/basin.mod ../../../lib/mod/clo.mod \
 		../../../lib/mod/grd.mod \
 		../../../lib/mod/projection.mod 
 shystrings.o: ../../../lib/mod/clo.mod \
-		../../../lib/mod/shyfem_strings.mod 
+		../../../lib/mod/shyfem_strings.mod
+shy_util2.o: ../../../lib/mod/mod_error_stop.mod
 tselab1.o: ../../../lib/mod/clo.mod ../../../lib/mod/elabtime.mod \
 		../../../lib/mod/elabutil.mod \
 		../../../lib/mod/shyfem_strings.mod 

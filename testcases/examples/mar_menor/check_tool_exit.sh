@@ -1,0 +1,156 @@
+#!/bin/bash
+#------------------------------------------------------------------------
+# Tool exit status gate (#336): the SHYFEM tools that shyfem-ui runs
+# (shypre, shybas, shyparts, shyelab, shyplot, shyadj, lgrelab) exit 7 on
+# a missing or wrong input file.
+#
+# Before #336 every one of these rows ended on an error message with exit
+# status 0 (a bare stop, "STOP error stop ..." on stderr, or in shyelab a
+# written line and a normal end), so a script or the UI could not tell a
+# failed run from a good one. They now end through error_stop of
+# mod_error_stop: exit 7 and "error stop ROUTINE: TEXT" on stdout.
+#
+# It works in a mktemp -d folder with the binaries found on PATH (it does
+# not put this tree's bin first: with another build first on PATH it
+# checks that build) and asserts:
+#   1. error rows, exit 7 and the message on stdout:
+#        shypre    missing.grd, wrong.grd       (grd.f90)
+#        shybas    missing.bas, wrong.bas       (shybas.f)
+#        shyparts  missing.grd, wrong.grd       (no -np: shyparts.f90)
+#        shyparts  -np 2 missing.grd, -np 2 wrong.grd (grd.f90, shyparts)
+#        shyelab   missing.shy, wrong.shy       (shyelab.f90)
+#        shyplot   missing.shy, wrong.shy       (plotutil.f90)
+#        shyadj    missing.grd, wrong.grd       (grd.f90)
+#        lgrelab   missing.lgr, wrong.lgr       (shy_util2.f)
+#      a wrong file is "junk line" / "1 2 3"; and the two clo.f90 messages:
+#        shyelab -  and  shyelab - FILE   (no option name after "-")
+#        shyplot -tmin <1100 characters> FILE (value too long for option)
+#   2. exit 0 for -h (with "Usage: TOOL") and for no argument (the usage,
+#      #332 kept it at 0) of each of the seven tools
+#   3. exit 0, and no "error stop" in the output, for a good run of each:
+#        shypre -noopti MM_geo.grd, shybas MM_coarse.bas,
+#        shyparts -np 2 MM_coarse.grd, shyadj MM_coarse.grd,
+#        shyelab mm_lgr.hydro.shy, shyplot -varid 1 mm_lgr.hydro.shy,
+#        lgrelab -lgmean mm_lgr.lgr.shy
+#      (the .shy files come from mm_lgr.str run for 6 hours with shyfem)
+#
+# Needs shyfem and the seven tools on PATH. Leaves nothing in this folder.
+# Usage:  ./check_tool_exit.sh
+#         PATH=<other bin>:$PATH ./check_tool_exit.sh   (checks that build)
+#------------------------------------------------------------------------
+set -u
+HERE="$(cd "$(dirname "$0")" && pwd)"
+TOOLS="shypre shybas shyparts shyelab shyplot shyadj lgrelab"
+verdict() { echo "=================================================================="
+  if [ "$1" -eq 0 ]; then echo "TOOL EXIT: PASS"; else echo "TOOL EXIT: FAIL"; fi; }
+
+for t in shyfem $TOOLS; do
+  command -v "$t" > /dev/null || { echo "FAIL: $t not on PATH"; verdict 1; exit 1; }
+done
+echo "binaries: $(dirname "$(command -v shypre)")"
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/check_tool_exit.XXXXXX")" || exit 1
+trap 'rm -rf "$TMP"' EXIT
+cd "$TMP" || exit 1
+rc=0
+n=0
+nfail=0
+
+# row WANT PATTERN CMD...: CMD exits WANT; PATTERN ("" for none) is a fixed
+# string that its stdout must contain. A good row (WANT 0) must also print
+# no "error stop" on stdout or stderr.
+row() {
+  local want=$1 pat=$2; shift 2
+  n=$((n + 1))
+  timeout 300 "$@" > "out.$n" 2> "err.$n"
+  local st=$? why=""
+  [ "$st" -eq "$want" ] || why="exit $st, want $want"
+  if [ -z "$why" ] && [ -n "$pat" ] && ! grep -qF -- "$pat" "out.$n"; then
+    why="no \"$pat\" on stdout"
+  fi
+  if [ -z "$why" ] && [ "$want" -eq 0 ] && grep -qi "error stop" "out.$n" "err.$n"; then
+    why="\"$(grep -hi -m1 "error stop" "out.$n" "err.$n" | sed 's/^ *//')\""
+  fi
+  local cmd="$*"
+  [ "${#cmd}" -gt 60 ] && cmd="${cmd:0:57}..."
+  if [ -z "$why" ]; then
+    printf 'ok   %-60s exit %s\n' "$cmd" "$st"
+  else
+    printf 'FAIL %-60s %s\n' "$cmd" "$why"
+    local f last
+    for f in out err; do
+      last=$(grep -v '^ *$' "$f.$n" | tail -1 | sed 's/^ *//; s/ *$//' | cut -c1-100)
+      [ -n "$last" ] && echo "       last line on std$f: $last"
+    done
+    rc=1; nfail=$((nfail + 1))
+  fi
+}
+
+#------------------------------------------------------------------------
+# inputs
+#------------------------------------------------------------------------
+
+mkdir GRID INPUT good || exit 1
+cp "$HERE/GRID/MM_coarse.grd" "$HERE/GRID/MM_coarse.bas" "$HERE/GRID/MM_geo.grd" GRID/ \
+  && cp "$HERE/INPUT/wind_scir.txt" INPUT/ \
+  && cp "$HERE/release_areas.txt" "$HERE/mm_lgr.str" . \
+  || { echo "FAIL: cannot copy the inputs"; verdict 1; exit 1; }
+for e in grd bas shy lgr; do printf 'junk line\n1 2 3\n' > "wrong.$e"; done
+rm -f missing.grd missing.bas missing.shy missing.lgr
+
+echo "=== good runs (exit 0)"
+cd GRID || exit 1
+row 0 "" shypre -noopti MM_geo.grd
+cd .. || exit 1
+[ -s GRID/MM_geo.bas ] || { echo "FAIL: shypre made no GRID/MM_geo.bas"; rc=1; nfail=$((nfail + 1)); }
+sed -i "s/itend = '2009-01-05'/itend = '2009-01-01::06:00:00'/" mm_lgr.str
+grep -q "itend = '2009-01-01::06:00:00'" mm_lgr.str \
+  || { echo "FAIL: cannot shorten mm_lgr.str"; verdict 1; exit 1; }
+timeout 600 shyfem mm_lgr.str > shyfem.log 2>&1 \
+  || { echo "FAIL: shyfem mm_lgr.str did not complete"; tail -3 shyfem.log; verdict 1; exit 1; }
+for f in mm_lgr.hydro.shy mm_lgr.lgr.shy; do
+  [ -s "$f" ] || { echo "FAIL: shyfem made no $f"; verdict 1; exit 1; }
+done
+cd good || exit 1
+row 0 "" shybas ../GRID/MM_coarse.bas
+row 0 "domain successfully partitioned" shyparts -np 2 ../GRID/MM_coarse.grd
+row 0 "Successful completion" shyadj ../GRID/MM_coarse.grd
+row 0 "time records read" shyelab ../mm_lgr.hydro.shy
+row 0 "total number of plots" shyplot -varid 1 ../mm_lgr.hydro.shy
+row 0 "time records read" lgrelab -lgmean ../mm_lgr.lgr.shy
+cd .. || exit 1
+
+echo "=== help and usage (exit 0)"
+for t in $TOOLS; do
+  row 0 "Usage: $t" "$t" -h
+  row 0 "Usage: $t" "$t"
+done
+
+echo "=== missing or wrong input file (exit 7, message on stdout)"
+row 7 "error stop grd_internal_init: cannot open file"           shypre missing.grd
+row 7 "error stop grd_read: error reading grd file"              shypre wrong.grd
+row 7 "error stop read_command_line_file: no such file"          shybas missing.bas
+row 7 "error stop read_command_line_file: unknown format"        shybas wrong.bas
+row 7 "error stop shyparts_init: no np given"                    shyparts missing.grd
+row 7 "error stop shyparts_init: no np given"                    shyparts wrong.grd
+row 7 "error stop grd_internal_init: cannot open file"           shyparts -np 2 missing.grd
+row 7 "error stop read_given_file: format not recognized"        shyparts -np 2 wrong.grd
+row 7 "error stop shyelab: file does not exist"                  shyelab missing.shy
+row 7 "error stop shyelab: unknown file type"                    shyelab wrong.shy
+row 7 "error stop classify_files: file not existing: missing.shy" shyplot missing.shy
+row 7 "error stop classify_files: cannot determine file type"    shyplot wrong.shy
+row 7 "error stop grd_internal_init: cannot open file"           shyadj missing.grd
+row 7 "error stop grd_read: error reading grd file"              shyadj wrong.grd
+row 7 "error stop shyelab: file not existing"                    lgrelab missing.lgr
+row 7 "error stop shyelab: not a valid shy file"                 lgrelab wrong.lgr
+
+echo "=== option errors of clo.f90 (exit 7, message on stdout)"
+long=$(printf '%01100d' 0)
+row 7 'error stop clo_parse_options: no option name after "-"'   shyelab -
+row 7 'error stop clo_parse_options: no option name after "-"'   shyelab - mm_lgr.hydro.shy
+row 7 "error stop clo_parse_options: value too long for option: tmin" \
+  shyplot -tmin "$long" mm_lgr.hydro.shy
+
+echo "$n rows, $nfail failed"
+verdict $rc
+exit $rc

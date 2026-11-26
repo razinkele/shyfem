@@ -133,5 +133,6 @@ basutil_layers.o: ../../../lib/mod/basin.mod \
 		../../../lib/mod/levels.mod \
 		../../../lib/mod/mod_depth.mod 
 msh.o: ../../../lib/mod/grd.mod \
-		../../../lib/mod/mod_geom_dynamic.mod 
+		../../../lib/mod/mod_geom_dynamic.mod
+shybas.o: ../../../lib/mod/mod_error_stop.mod
 

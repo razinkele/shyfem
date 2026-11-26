@@ -149,6 +149,7 @@ strip:
 shyparts.o: ../../../lib/mod/basin.mod ../../../lib/mod/clo.mod \
 		../../../lib/mod/evgeom.mod \
 		../../../lib/mod/grd.mod \
+		../../../lib/mod/mod_error_stop.mod \
 		../../../lib/mod/mod_geom.mod \
-		../../../lib/mod/shympi.mod 
+		../../../lib/mod/shympi.mod
 

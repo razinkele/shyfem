@@ -48,6 +48,15 @@
 ! 18.12.2018	ggu	changed VERS_7_5_52
 ! 21.05.2019	ggu	changed VERS_7_5_62
 ! 25.06.2021	ggu	do not call shyfem_copyright()
+! 26.11.2026	arb	errors exit 7 through mod_error_stop (#336)
+!
+! notes :
+!
+! every error ends through error_stop of mod_error_stop (exit 7, the
+! message "error stop ROUTINE: TEXT" on stdout), not a bare stop (exit 0,
+! #336). It is imported in each routine as tool_error_stop (shyplot uses
+! shympi, whose own error_stop exits 33), not in the module, so the
+! module does not export it
 !
 !************************************************************
 
@@ -126,6 +135,7 @@
 	subroutine plotutil_set_options(type,program)
 
 	use clo
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	character*(*) type
 	character*(*) program
@@ -141,7 +151,7 @@
           call clo_init(program,'file(s)',version)
 	else
 	  write(6,*) 'type : ',trim(type)
-	  stop 'error stop plotutil_set_options: unknown type'
+	  call tool_error_stop('plotutil_set_options','unknown type')
 	end if
 
         call clo_add_info('plots a shy file')
@@ -199,6 +209,7 @@
 	subroutine plotutil_get_options(type,program)
 
 	use clo
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	character*(*) type
 	character*(*) program
@@ -239,7 +250,7 @@
           text = 'shyplot - Plot SHY/FEM/LGR/BAS/GRD files'
 	else
 	  write(6,*) 'type : ',trim(type)
-	  stop 'error stop plotutil_get_options: unknown type'
+	  call tool_error_stop('plotutil_get_options','unknown type')
 	end if
 
         call shyfem_set_short_copyright(bquiet)
@@ -263,14 +274,16 @@
 
         if( count( (/bvarid,bvarnum,bvarname/) ) > 1 ) then
 	  write(6,*) 'You can give only one of varid, varnum and varname'
-          stop 'error stop plotutil_get_options'
+          call tool_error_stop('plotutil_get_options' &
+     &			,'only one of varid, varnum and varname')
         end if
 
 	if( varname .ne. ' ' ) call string2ivar(varname,ivar3)
 
 	if( ivar3 < 0 ) then
           write(6,*) 'variable name unknown: ',trim(varname)
-          stop 'error stop plotutil_get_options'
+          call tool_error_stop('plotutil_get_options' &
+     &			,'variable name unknown: '//trim(varname))
 	end if
 
 	call setlev(layer)
@@ -305,6 +318,7 @@
 	use shyfile
 	use basin
 	use nls
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	logical bdebug
 	character*256 file
@@ -327,7 +341,8 @@
 
 	nfile = clo_number_of_files()
 	allocate(file_type(nfile),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('classify_files' &
+     &				,'allocation of file_type failed')
 	if( nfile == 0 ) return
 
 	file_type = 'unknown'
@@ -338,10 +353,12 @@
 	    if( file(1:1) == '-' ) then
 	      write(6,*) 'option ',trim(file),' in wrong place'
 	      write(6,*) 'all options must lead files'
-	      stop 'error stop classify_files'
+	      call tool_error_stop('classify_files' &
+     &			,'option in wrong place: '//trim(file))
 	    else
 	      write(6,*) 'file not existing: ',trim(file)
-	      stop 'error stop classify_files'
+	      call tool_error_stop('classify_files' &
+     &			,'file not existing: '//trim(file))
 	    end if
 	  end if
 	  if( shy_is_shy_file(file) ) then
@@ -388,26 +405,32 @@
 	  end do
 	end if
 
-	if( nunk > 0 ) stop 'error stop classify_files'
+	if( nunk > 0 ) call tool_error_stop('classify_files' &
+     &			,'cannot determine file type')
 	if( nshy > 1 ) then
 	  write(6,*) 'cannot plot more than one SHY file'
-	  stop 'error stop classify_files'
+	  call tool_error_stop('classify_files' &
+     &			,'more than one SHY file')
 	end if
 	if( nfem > 1 ) then
 	  write(6,*) 'cannot plot more than one FEM file'
-	  stop 'error stop classify_files'
+	  call tool_error_stop('classify_files' &
+     &			,'more than one FEM file')
 	end if
 	if( nlgr > 1 ) then
 	  write(6,*) 'cannot plot more than one LGR file'
-	  stop 'error stop classify_files'
+	  call tool_error_stop('classify_files' &
+     &			,'more than one LGR file')
 	end if
 	if( nbas > 0 .and. ngrd > 0 ) then
 	  write(6,*) 'both BAS and GRD files given... cannot handle'
-	  stop 'error stop classify_files'
+	  call tool_error_stop('classify_files' &
+     &			,'both BAS and GRD files given')
 	end if
 	if( nshy > 0 .and. nfem > 0 ) then
 	  write(6,*) 'both SHY and FEM files given... cannot handle'
-	  stop 'error stop classify_files'
+	  call tool_error_stop('classify_files' &
+     &			,'both SHY and FEM files given')
 	end if
 	if( nshy > 0 ) then
 	  if( nbas > 0 .or. ngrd > 0 ) then
@@ -432,6 +455,7 @@
 
 	use clo
 	use nls
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	integer ivar
 
@@ -455,7 +479,8 @@
 	return
    99	continue
 	write(6,*) 'cannot read file: ',trim(file)
-	stop 'error stop read_str_files'
+	call tool_error_stop('read_str_files' &
+     &			,'cannot read file: '//trim(file))
 	end subroutine read_str_files
 
 ! ***************************************************************
