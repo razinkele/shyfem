@@ -6495,7 +6495,7 @@
 	integer, save :: iunode = 0		!unit of lgrdbg.node.NN.txt
 	logical, save :: bflux = .false.	!flux and node files written
 
-	integer :: i,ie,ii,k,ieg,ng
+	integer :: i,ie,ii,k,ieg,ng,ierr
 	double precision :: x,y,xi(3)
 	character(len=1) :: what
 
@@ -6531,7 +6531,12 @@
 	  ie = lgr_ar(i)%actual%ie
 	  if( ie > 0 ) then
 	    xi = lgr_ar(i)%actual%xi
-	    call xi2xy(ie,x,y,xi)
+	    call xi2xy_ierr(ie,x,y,xi,ierr)
+	    if( ierr /= 0 ) then	!a bare stop in xi2xy until #305
+	      call xi2xy_write_error(ie,xi)
+	      call shympi_abort_internal('error stop lgr_mpi_debug_dump:'	&
+     &		//' error of xi2xy')
+	    end if
 	    ieg = ip_int_elem(ie)
 	    ng = lgr_mpi_ghost_nodes(ie)
 	    if( ng == 0 ) then

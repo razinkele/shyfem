@@ -48,6 +48,7 @@
 	real rlinit,x,y,z,rl
         double precision xx,yy
         double precision xi(3)
+	integer ierr
 
 
 	integer, save :: icall = 0
@@ -68,7 +69,12 @@
 	  ie = lgr_ar(i)%actual%ie
           z  = lgr_ar(i)%actual%z	!rel. depth   0=surface  1=bottom
 	  rl = lgr_ar(i)%custom(1)
-          call xi2xy(abs(ie),xx,yy,xi)
+          call xi2xy_ierr(abs(ie),xx,yy,xi,ierr)
+	  if( ierr /= 0 ) then		!a bare stop in xi2xy until #305
+	    call xi2xy_write_error(abs(ie),xi)
+	    call shympi_abort_internal('error stop lgr_larvae:'		&
+     &		//' error of xi2xy')
+	  end if
           x   = xx
           y   = yy
 	  
