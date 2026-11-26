@@ -52,6 +52,13 @@
 !                       mode compares them (#303 #304)
 ! 26.11.2026    arb     version 20: the writer's itdrag (#303 #304, R4)
 ! 26.11.2026    arb     the itdrag line names the heat flag rule (#323)
+! 26.11.2026    arb     the diff mode exits 1 when it finds differences
+!                       (#332)
+!
+! exit status: 0 for the list, the usage and help, and a diff that finds
+! no difference; 1 for a diff that finds differences in the records; 7
+! for an error (error_stop, also a diff whose headers or flag integers
+! differ: compare_header, get_integer)
 
 !******************************************************************
 
@@ -78,7 +85,7 @@
 
 	implicit none
 
-	integer nc,ierr
+	integer nc
 
 	call rst_init
 
@@ -86,22 +93,18 @@
 
         if( bverbose ) write(6,*) 'running rstinf...'
 
+	! every branch ends the program: clo_usage and rst_info with exit 0,
+	! rst_diff with 0 or 1 (differences found), error_stop with 7
+
         if( nc == 0 ) then
           call clo_usage
         else if( nc == 1 ) then
           call rst_info
         else if( nc == 2 ) then
-          call rst_diff(ierr)
+          call rst_diff
         else
           write(6,*) 'nc = ',nc
           call error_stop('rstinf','wrong number of files')
-        end if
-
-        if( ierr > 0 ) then
-          if( ierr == 99 ) ierr = 100   !terrible hack - FIXME
-          call exit(ierr)
-        else
-          call exit(99)
         end if
 
         end
@@ -296,7 +299,11 @@
 !******************************************************************
 !******************************************************************
 
-	subroutine rst_diff(ierr)
+	subroutine rst_diff
+
+! compares the records of two restart files and ends the program: exit 1
+! if a record differs (nerror, counted by check_real, check_double and
+! check_integer), 0 if none does (#332; it ended with exit 0 in both cases)
 
         use clo
         use mod_rstinf
@@ -371,8 +378,13 @@
 	write(6,*)
 
 !-------------------------------------------------------------------
-! end of routine
+! end of routine: exit 1 if the files differ, else 0
 !-------------------------------------------------------------------
+
+	if( nerror > 0 ) then
+	  flush(6)
+	  call exit(1)
+	end if
 
 	stop
  1000	format(a)
