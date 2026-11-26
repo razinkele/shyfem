@@ -118,6 +118,7 @@
 !			run, not to the record's time (#303, R5)
 ! 26.11.2026    arb     windcd with itdrag = 4 applied only if the file's
 !			heat flag is set (#323)
+! 26.11.2026    arb     the skip line names the seven records (#323)
 !
 ! notes :
 !
@@ -1600,11 +1601,11 @@
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'dtw (skip)')
 	  if( btool_rst ) then
-	    write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
-     &			//' (read by a tool)'
+	    write(6,*) 'restart: iwetv, evapv, itdrag, windcd, heat flag,' &
+     &			//' tws, dtw skipped (read by a tool)'
 	  else
-	    write(6,*) 'restart: iwetv, evapv, windcd, tws, dtw skipped' &
-     &			//' (hydro not wanted)'
+	    write(6,*) 'restart: iwetv, evapv, itdrag, windcd, heat flag,' &
+     &			//' tws, dtw skipped (hydro not wanted)'
 	  end if
 	  return
 	end if

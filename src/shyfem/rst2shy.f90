@@ -105,11 +105,11 @@
 	! (wvert, gotm, eco, mercury, bfm, ssedi) is skipped, otherwise
 	! rst_read_record would read into unallocated module arrays
 	iflag_want_rst = 1111
-	! the records version 20 adds to the hydro block (iwetv, evapv,
-	! windcd, heat flag, tws, dtw) are read past: applying them needs
-	! the parameter table and the meteo arrays, which a tool does not
-	! have (#303 #304); the k-epsilon records of the turbulence block
-	! (id 8) are read past as not wanted
+	! the seven records version 20 adds to the hydro block (iwetv,
+	! evapv, the writer's itdrag, windcd, heat flag, tws, dtw) are read
+	! past: applying them needs the parameter table and the meteo
+	! arrays, which a tool does not have (#303 #304); the k-epsilon
+	! records of the turbulence block (id 8) are read past as not wanted
 	btool_rst = .true.
 
 	bhydro = has_flag(iflag,1)

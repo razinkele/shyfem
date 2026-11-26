@@ -77,10 +77,11 @@
 #   flgrst_no_hydro  mm_h6d4's write run read with flgrst = 110 (depth and
 #                 T/S, no hydro): the read must end, its log must show id 1
 #                 not wanted and ids 2 and 3 wanted, the seven version 20
-#                 records skipped, and "setweg clock not reset" with the
-#                 cold start's clock (not the restart time); and T and S in
-#                 its .ext at the restart time must equal the write run's,
-#                 so the records after the skipped ones were read right
+#                 records skipped (all seven named), and "setweg clock not
+#                 reset" with the cold start's clock (not the restart
+#                 time); and T and S in its .ext at the restart time must
+#                 equal the write run's, so the records after the skipped
+#                 ones were read right
 #   evap_reads_noheat  the version 20 file of mm_h6d4's write run (evapv of
 #                 the heat flux, windcd set by COARE) read with ibarcl = 0,
 #                 so that qflux3d does not run (ievap = 1, iheat = 6,
@@ -905,7 +906,7 @@ case_flgrst() {
   k="$(awk '($1 == 1 && $2 == "F" && $5 == "hydrodynamics") || ($1 == 2 && $2 == "T" && $3 == "T" && $5 == "depth") ||
             ($1 == 3 && $2 == "T" && $3 == "T" && $5 == "T/S/rho") { n++ } END { print n + 0 }' "$d/r/r.log")"
   [ "$k" = 3 ] || why="${why}the restart table of $d/r/r.log does not show hydro not wanted, depth and T/S wanted; "
-  k="$(grep -c 'iwetv, evapv, windcd, tws, dtw skipped (hydro not wanted)' "$d/r/r.log")"
+  k="$(grep -c 'iwetv, evapv, itdrag, windcd, heat flag, tws, dtw skipped (hydro not wanted)' "$d/r/r.log")"
   [ "$k" = 1 ] || why="${why}'... skipped (hydro not wanted)' $k times in $d/r/r.log, not 1; "
   k="$(grep -c 'setweg clock reset to' "$d/r/r.log")"
   [ "$k" = 0 ] || why="${why}'setweg clock reset to' $k times in $d/r/r.log; "
