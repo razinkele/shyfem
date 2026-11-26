@@ -114,6 +114,8 @@
 ! 26.11.2026    arb     version 20: the writer's itdrag before windcd, and
 !			windcd applied only if it equals the reader's (#303
 !			#304, R4)
+! 26.11.2026    arb     the setweg clock is set to the start time of the
+!			run, not to the record's time (#303, R5)
 !
 ! notes :
 !
@@ -277,18 +279,6 @@
 
 	close(iunit)
 
-	! setweg counts a new time step when the time differs from that of
-	! its last call (dtime_setweg_old, set by setweg(0) at the cold
-	! start time above). When a version 20 record with hydro restored
-	! iwetv, the clock must be the restart time, as in the run that wrote
-	! the record, or the first set_dry counts one step too many (#303).
-	! Any other record (an older version - also v18, which restores
-	! iwetv in its own branch - or hydro not wanted) keeps the cold
-	! start's clock, as before.
-	if( bsetweg_rst ) then
-	  dtime_setweg_old = atime - atime0
-	end if
-
 	if( blast ) then	!reset initial time
 	  call dts_format_abs_time(atime,aline)
 	  write(6,*) 'setting new initial time: ',aline
@@ -299,6 +289,23 @@
 
 	dtanf = dgetpar('itanf')
 	dtend = dgetpar('itend')
+
+	! setweg counts a new time step when the time differs from that of
+	! its last call (dtime_setweg_old, set by setweg(0) at the cold
+	! start time above). When a version 20 record with hydro restored
+	! iwetv, the clock must be the time the run starts from, as the
+	! writer's clock was the time of its record, or the first set_dry
+	! counts one step too many (#303). That is dtanf, the start time
+	! setup_time gives t_act (and setweg its dtime) after the restart, in
+	! seconds from the reference date: the record's time when the last
+	! record is read (blast, set above), the STR's itanf otherwise (not
+	! the requested or found record time, which may differ from the
+	! start). Any other record (an older version - also v18, which
+	! restores iwetv in its own branch - or hydro not wanted) keeps the
+	! cold start's clock, as before.
+	if( bsetweg_rst ) then
+	  dtime_setweg_old = dtanf
+	end if
 
         write(6,*) '---------------------------------------------'
         write(6,*) 'A restart has been performed'
@@ -312,8 +319,9 @@
         write(6,*) ' used restart time =      ',aline
         write(6,*) ' nvers = ',nvers_rst
 	if( bsetweg_rst ) then
-	  write(6,*) ' setweg clock reset to the restart time: ' &
-     &			,dtime_setweg_old
+	  write(6,*) ' setweg clock reset to the start of the run: ' &
+     &			,dtime_setweg_old,' (time of the record read: ' &
+     &			,atime-atime0,')'
 	else
 	  write(6,*) ' setweg clock not reset (not a version 20 record' &
      &			//' with hydro): ' &
