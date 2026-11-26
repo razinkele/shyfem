@@ -1199,6 +1199,17 @@
 
 	subroutine lgr_compute_depths(ie,lb,z,hl,ht,hr)
 
+! the depths of a particle in the element abs(ie), in its layer lb at the
+! relative depth z of that layer, with the layer thickness of the moment
+! (hdenv): hl its depth below the surface, ht the depth of its water
+! column, hr = hl/ht. ie = 0 (no element): all three 0.
+! A deposited particle (lb = -1, lgr_sediment; any lb < 1) sits on the
+! bed: hl = ht, the depth of its column (the sum over the layers 1 ...
+! ilhv, in the order that gives a particle at z = 1 of its bottom layer
+! the same value), and hr = 1, whatever its z. Before (#311) hl and ht
+! were summed with hdenv at the layers -1 and 0, outside the array: hl
+! was garbage, and a build with -fcheck=bounds stopped.
+
 	use mod_layer_thickness
 	use levels
 
@@ -1217,6 +1228,15 @@
 
 	ieh = abs(ie)
 	if( ieh == 0 ) return
+
+	if( lb < 1 ) then	!deposited: on the bed (#311)
+	  do l = 1,ilhv(ieh)
+	    ht = ht + hdenv(l,ieh)
+	  end do
+	  hl = ht
+	  hr = 1.
+	  return
+	end if
 
 	do l = 1,lb-1
 	  hl = hl + hdenv(l,ieh)
