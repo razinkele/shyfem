@@ -102,11 +102,18 @@
 #                 equal the write run's, so the records after the skipped
 #                 ones were read right: the comparator on the T and S
 #                 records of both .ext files, to the restart time, must
-#                 exit 0 (#330; not on the whole files: the read run's
-#                 records after the restart time have none in the write
-#                 run's, and zeta differs, hydro is not read), and a
-#                 canary, the read run's .ext without its records at the
-#                 restart time, must be rejected
+#                 exit 0 with an S and a T record compared at that time
+#                 (#330; not on the whole files: the read run's records
+#                 after the restart time have none in the write run's, and
+#                 zeta differs, hydro is not read); the write run's T at
+#                 the restart time must differ from its first T (else
+#                 equal T and S would show nothing); and two canaries must
+#                 be rejected: the read run's .ext without its records at
+#                 the restart time (the comparator exits 2), and with the
+#                 write run's records at its last output time before the
+#                 restart time added (exit 1, "before the first record B
+#                 must have", which the old check, from the comparator's
+#                 lines at the restart time, passed)
 #   evap_reads_noheat  the version 20 file of mm_h6d4's write run (evapv of
 #                 the heat flux, windcd set by COARE) read with ibarcl = 0,
 #                 so that qflux3d does not run (ievap = 1, iheat = 6,
@@ -1243,12 +1250,13 @@ case_offline() {
 # W (the write run's, to the restart time) and R (the read run's), to H
 # hours (copies PFX.w.ext and PFX.r.ext), compared from H (output in
 # PFX.txt): R must have W's T and S records at H, equal, and none before
-# (the comparator exits 0; zeta and the velocities are not compared, as
-# hydro is not read, nor R's records after H, which W does not have);
-# prints the comparator's exit code and summary, or why it could not
-# compare, and fails unless it exits 0
+# (the comparator exits 0, and it compared both an S and a T record at H;
+# zeta and the velocities are not compared, as hydro is not read, nor R's
+# records after H, which W does not have); prints the comparator's exit
+# code and summary, or why it could not compare, and fails unless it
+# exits 0 with S and T compared at H
 tsrst() {
-  local k w
+  local k w a
   w="$(shyfix keep "$1" "$4.w.ext" "$3" 11 12 2>&1)" || { echo -n "$w"; return 1; }
   w="$(shyfix keep "$2" "$4.r.ext" "$3" 11 12 2>&1)" || { echo -n "$w"; return 1; }
   python3 -B "$HERE/shy_maxdiff.py" --first "$3" "$4.w.ext" "$4.r.ext" > "$4.txt" 2>&1
@@ -1256,12 +1264,46 @@ tsrst() {
   w="$(grep '^SUMMARY' "$4.txt")"
   [ -n "$w" ] || w="$(head -1 "$4.txt")"
   echo -n "comparator exit $k: ${w#SUMMARY *: }"
-  [ "$k" = 0 ]
+  [ "$k" = 0 ] || return 1
+  a=" $(athour "$4.txt" "$3") "     # " S X T X " of the comparator's lines at H
+  case "$a" in *" S "*) ;; *) echo -n "; no S record compared at ${3}h"; return 1 ;; esac
+  case "$a" in *" T "*) ;; *) echo -n "; no T record compared at ${3}h"; return 1 ;; esac
+}
+# tsmoves W H: the T record (ivar 12) of the .ext file W at H hours differs
+# from W's first T record, so that T and S at H equal to W's show that they
+# were read (a read that kept the initial state would have W's first ones);
+# prints how many values of T, and of S, differ; fails if no T value does
+tsmoves() {
+  python3 -B - "$HERE" "$@" << 'EOF'
+import sys
+import numpy as np
+sys.path.insert(0, sys.argv[1])
+import shy_maxdiff
+path, h = sys.argv[2], float(sys.argv[3])
+try:
+    _, _, t0, recs = shy_maxdiff.load(path)
+except Exception as e:      # OSError, FormatError, struct.error
+    sys.exit(f"cannot read {path}: {e}")
+out, nt = [], 0
+for iv, nm in ((12, 'T'), (11, 'S')):
+    ks = sorted(k for k in recs if k[1] == iv)
+    kh = [k for k in ks if abs(k[0] - t0 - 3600. * h) < 0.5]
+    if not kh:
+        sys.exit(f"no {nm} record at {h:g}h in {path}")
+    a, b = np.frombuffer(recs[ks[0]], '<f4'), np.frombuffer(recs[kh[0]], '<f4')
+    n = int(np.count_nonzero(a != b))
+    nt = n if nm == 'T' else nt
+    out.append(f"{nm} {n} of {a.size} values")
+msg = f"from its first record ({(sorted(recs)[0][0] - t0) / 3600.:g}h) to {h:g}h differ: " + ", ".join(out)
+if nt == 0:
+    sys.exit(f"T does not change in {path}: {msg}")
+print(msg)
+EOF
 }
 # case_flgrst: a read without hydro skips the version 20 records and
 # keeps the setweg clock
 case_flgrst() {
-  local cs=flgrst_no_hydro d="$P/flgrst_no_hydro" s t0 why="" k w v ts trs cn
+  local cs=flgrst_no_hydro d="$P/flgrst_no_hydro" s t0 why="" k w v ts trs cn cg tm
   t0=$(date +%s)
   mkdir "$d" || return 1
   for s in c w r; do rundir "$d/$s" mm || return 1; done
@@ -1299,9 +1341,16 @@ case_flgrst() {
   fi
   # T and S at the restart time (FEXT, the first record of r.ext): the
   # comparator on the T and S records of w.ext and r.ext to that time must
-  # exit 0; the canary: r.ext without its records at that time must fail
+  # exit 0, with S and T compared at FEXT (tsrst); and w's T must change
+  # from its first record to FEXT, else equal T and S would show nothing
   ts="$(tsrst "$d/w/w.ext" "$d/r/r.ext" "$FEXT" "$d/ts")" \
     || why="${why}T and S of r.ext at the restart time are not w.ext's ($ts); "
+  tm="$(tsmoves "$d/w/w.ext" "$FEXT" 2>&1)" || why="${why}w.ext: $tm; "
+  # the canaries: r.ext without its records at FEXT (the comparator exits
+  # 2), and r.ext with w's records at w's last time before FEXT added, a
+  # record before the first r must have (exit 1, which the old check from
+  # the comparator's lines at FEXT passed); tsrst must reject both, the
+  # second as a record before the first
   cn=FAILED
   if ! w="$(shydrop "$d/r/r.ext" "$d/drop.ext" "$FEXT" 2>&1)"; then
     why="${why}canary: cannot drop the records at ${FEXT}h of r.ext ($w); "
@@ -1310,8 +1359,19 @@ case_flgrst() {
   else
     cn=rejected
   fi
+  cg=FAILED
+  if ! w="$(shyfix graft "$d/r/r.ext" "$d/graft.ext" "$FEXT" "$d/w/w.ext" 2>&1)"; then
+    why="${why}canary: cannot add w.ext's records before ${FEXT}h to r.ext ($w); "
+  elif w="$(tsrst "$d/w/w.ext" "$d/graft.ext" "$FEXT" "$d/tsgraft")"; then
+    why="${why}canary: r.ext with w.ext's records before ${FEXT}h passed ($w); "
+  elif ! grep -q "before the first record B must have (${FEXT}h)\$" "$d/tsgraft.txt"; then
+    why="${why}canary: r.ext with w.ext's records before ${FEXT}h not rejected for a record before the first ($w); "
+  else
+    cg=rejected
+  fi
   echo "    setweg clock not reset: ${v:-none}; T and S of r.ext against w.ext to ${FEXT}h: $ts;" \
-       "canary (r.ext without its records at ${FEXT}h): $cn" > "$d.detail"
+       "w.ext's T and S $tm; canaries (r.ext without its records at ${FEXT}h: $cn; with w.ext's records" \
+       "before ${FEXT}h: $cg)" > "$d.detail"
   if [ -n "$why" ]; then
     echo "case $cs: ${why%; } -> FAIL" > "$d.line"; return 1
   fi
@@ -1585,9 +1645,8 @@ case_keps_to_gotm() {
 
 #--- the case tools (rstinf, rst2shy)
 # tooldo DIR OUT TOOL ARG...: runs TOOL ARG... in DIR (timeout 300 s),
-# its output to DIR/OUT; the tools' exit status is not used here (rstinf's
-# diff mode exits 0 also when it finds differences; errors exit non-zero,
-# #327), the output is checked
+# its output to DIR/OUT; the tools' exit status is not used here (#327
+# and #332 define it); the output is checked
 tooldo() {
   local dd="$1" out="$2"
   shift 2
