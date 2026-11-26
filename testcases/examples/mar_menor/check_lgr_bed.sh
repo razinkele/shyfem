@@ -10,7 +10,8 @@
 # the whole bottom layer had the layer mean of w, which does not vanish
 # at the bed: an upward mean lifted the particles off the bed and a
 # downward one held them there, and the bottom of the column was left
-# with about half its share of particles.  Three parts:
+# with about half its share of particles.  Three parts on that, and a
+# fourth on the depth written for a deposited particle (#311):
 #
 #========================== part 1: the bottom (#299) ======================
 # Case: the closed forced mm_hyd_41: both boundaries closed (ibtyp = 0),
@@ -132,6 +133,44 @@
 # crossings used up with time left" (a trap in the horizontal tracker, see
 # part 1; main writes two in this case: a particle that stays in the basin).
 #
+#=============== part 4: the depth of a deposited particle (#311) ==========
+# The particle file gives every particle its depth hl below the surface
+# (lgr_compute_depths, with the layer thickness of the output time).  For
+# a deposited particle (layer -1, lgr_sediment) it summed the layer
+# thickness at the layers -1 and 0, outside the array: hl was garbage,
+# and a build with -fcheck=bounds stopped at the first output.  A
+# deposited particle sits on the bed: its hl is the depth of its column.
+# In a normal run particles practically never deposit (#311), so the
+# particles are put on the bed by hand.
+# Case: a run as part 2 (mm_hyd_41 in still water, ised = 1, so every
+# particle has a sediment class, its type, and a settling velocity) but
+# with ilagr = 2, to 01:00, writes the particle file; every active particle
+# of every output in it is put on the bed of its column (z = 1 in its
+# layer ilhv(ie), from the header; Python, the record layout of
+# lgr_compare.py); then the same still water to 02:00 with no release
+# (nbdy = 0) reads its particles at 01:00 (lgrini, itlgin = 01:00), with
+# ilagr = 2 (the depth z of a particle does not change) and ised = 1.  In
+# still water the bottom stress is 0, below every deposition threshold,
+# so lgr_sediment deposits every particle at z = 1 of its bottom layer in
+# its first step (the draw r**0 = 1 is never below 0.5).
+# Required:
+#   - both runs end, and the second read every particle of the file
+#     ("particles read:");
+#   - every output holds them all as active particles, each deposited
+#     (layer -1), and none exited (else the check judges nothing);
+#   - at every output the hl of every deposited particle is finite, not
+#     negative, and within HLTOL of the depth of its column, hev(ie) from
+#     the header (the mean of the depths of its nodes; the water level is
+#     0 in still water).
+# Measured (2026-11-26): 39960 particles, two outputs, 79920 deposited
+# particle records.  origin/main 9187cdf1 wrote hl from 0 to 12.499 m,
+# every record farther than HLTOL from the depth of its column (up to
+# 74.6 m off; FAIL); its -fcheck=bounds build (COMPILER_PROFILE=CHECK)
+# stopped at the first output, at 01:00 ("Index '-1' of dimension 1 of
+# array 'hdenv' below lower bound of 1", lgr_compute_depths).  With the
+# fix hl equals hev(ie) exactly (difference 0; hl from 1.000 to 74.623 m),
+# in the normal and in the -fcheck=bounds build.
+#
 # Measured (2026-11-25), part 1: the bottom 5 % and 15 % at 24:00, the
 # chi-square (release-column weight) mean over 12:00 ... 24:00 and at
 # 24:00, lgrseed 1 / 2:
@@ -168,10 +207,10 @@
 # fixed build (sv = 0 there).
 # A run of part 1 takes about 4 minutes (main's about 5, measured with
 # the other runs of the check beside it), the run of part 2 a few seconds,
-# part 3 about as long as part 1.
+# part 3 about as long as part 1, the two runs of part 4 a few seconds.
 #
-# Usage:  ./check_lgr_bed.sh [all | 1 | 2 | 3]
-# (all, the default: the three parts; 1, 2 or 3: that part only.)  Needs
+# Usage:  ./check_lgr_bed.sh [all | 1 | 2 | 3 | 4]
+# (all, the default: the four parts; 1, 2, 3 or 4: that part only.)  Needs
 # shyfem and python3 with numpy on PATH, and `make init` done.  The scratch
 # folder is made with mktemp under ${TMPDIR:-/tmp}; it is removed at the
 # end when the check passes and kept (its path is printed) when it fails.
@@ -191,11 +230,12 @@ RLO=0.95		# part 2: R within RLO ... RHI
 RHI=1.05
 SFAST=1.e-3		# part 3: the settling velocity set in the particle file [m/s]
 NPART=39960		# part 3: particles in the particle file
+HLTOL=1.e-4		# part 4: |hl - column depth| of a deposited particle, at most [m]
 
 PART="${1:-all}"
 case "$PART" in
-  all|1|2|3) ;;
-  *) echo "usage: $0 [all | 1 | 2 | 3]"; exit 2 ;;
+  all|1|2|3|4) ;;
+  *) echo "usage: $0 [all | 1 | 2 | 3 | 4]"; exit 2 ;;
 esac
 LABEL="BED"
 [ "$PART" = all ] || LABEL="BED part $PART"
@@ -287,6 +327,34 @@ mkx() {
   ! grep -q 'ised' "$P/$1.str"
 }
 
+# mkdr NAME (part 4): NAME.str as part 2's (still water, ised = 1,
+# lgrseed = 1) with ilagr = 2, to 01:00: the run that writes the particle
+# file
+mkdr() {
+  mks "$1" 1 || return 1
+  sed -i -e "s/itend = '2009-01-01::05:00:00'/itend = '2009-01-01::01:00:00'/" \
+         -e 's/^\([[:space:]]*\)ilagr = 3 /\1ilagr = 2 /' "$P/$1.str" || return 1
+  for o in "itend = '2009-01-01::01:00:00'" 'ilagr = 2 ' 'ised = 1'; do
+    grep -qF -- "$o" "$P/$1.str" || return 1
+  done
+}
+
+# mkd NAME FILE (part 4): NAME.str as part 2's (still water, ised = 1,
+# lgrseed = 1) with ilagr = 2, to 02:00, no release (nbdy = 0) and the
+# particles of the particle file FILE at 01:00 (lgrini, itlgin)
+mkd() {
+  mks "$1" 1 || return 1
+  sed -i -e "s/itend = '2009-01-01::05:00:00'/itend = '2009-01-01::02:00:00'/" \
+         -e 's/^\([[:space:]]*\)ilagr = 3 /\1ilagr = 2 /' \
+         -e 's/^\([[:space:]]*\)nbdy = 2000  idtl = 0 /\1nbdy = 0  idtl = 0 /' \
+         -e "s/^\([[:space:]]*\)ised = 1\$/&\n\1lgrini = '$2'\n\1itlgin = '2009-01-01::01:00:00'/" \
+         "$P/$1.str" || return 1
+  for o in "itend = '2009-01-01::02:00:00'" 'ilagr = 2 ' 'nbdy = 0  idtl = 0' 'ised = 1' \
+           "lgrini = '$2'" "itlgin = '2009-01-01::01:00:00'"; do
+    grep -qF -- "$o" "$P/$1.str" || return 1
+  done
+}
+
 # the runs of the check, all in parallel; the hooks of
 # check_lgr_wellmixed.sh are unset (a hook inherited from the caller's
 # environment would measure another case)
@@ -334,6 +402,59 @@ print("  particle file of part 3: %d records, settling velocity set to %g m/s;"
 EOF
   mkx bf_s1 bf_fast.lgr.shy || { fail "cannot make bf_s1.str"; finish; }
   RUNS="$RUNS bf_s1:7200"
+fi
+if want 4; then
+  # the particle file: a run to 01:00, then every active particle of every
+  # output put on the bed of its column: z = 1 and lb = ilhv(ie) (z and lb
+  # in the second record of a particle: x f4, y f4, z f4, lb i4, hl f4; ie
+  # the fifth field of the first: id i4, type i4, tt f8, s f4, ie i4);
+  # bd_npart gets the number of active particles at 01:00
+  mkdr bd_rel || { fail "cannot make bd_rel.str"; finish; }
+  ( cd "$P" && timeout 1800 nice -n 10 env -u LGR_TEST_KPROF -u LGR_TEST_NOADV \
+      shyfem bd_rel.str < /dev/null > bd_rel.log 2>&1 ) && grep -q "simulation end" "$P/bd_rel.log" \
+    || { tail -5 "$P/bd_rel.log" | sed 's/^/    /'; fail "bd_rel (the run that writes the particle file of part 4) did not end"; finish; }
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/bd_rel.lgr.shy" "$P/bd_bed.lgr.shy" "$P/bd_npart" <<'EOF' \
+    || { fail "cannot write the particle file of part 4"; finish; }
+import struct, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+import lgr_vprof as lv
+src, dst, nfile = sys.argv[2], sys.argv[3], sys.argv[4]
+ilhv = [int(v) for v in lv.read_geom(src)["ilhv"]]
+data = bytearray(open(src, "rb").read())
+recs = lc.split_records(bytes(data))
+i, ncust = lc.find_particle_start(bytes(data), recs)
+off_ie = struct.calcsize("<iidf")	# ie in (id, type, tt, s, ie)
+off_z = struct.calcsize("<ff")		# z, lb in (x, y, z, lb, hl)
+n = nskip = 0
+while i < len(recs):
+    dtime, npart, iwhat = lc.HEAD.unpack_from(data, recs[i][0])
+    i += 1
+    for _ in range(npart):
+        if iwhat == 0:
+            ie = struct.unpack_from("<i", data, recs[i][0] + off_ie)[0]
+            lb = struct.unpack_from("<i", data, recs[i + 1][0] + off_z + 4)[0]
+            if ie > 0 and lb > 0:
+                struct.pack_into("<fi", data, recs[i + 1][0] + off_z, 1.0, ilhv[ie - 1])
+                n += 1
+            else:
+                nskip += 1
+        i += 3
+open(dst, "wb").write(bytes(data))
+_, times = lc.read_file(dst)		# read back: the format holds
+t1, b1, _ = times[-1]
+act = b1[0]
+nbed = sum(1 for p in act.values() if p["z"] == 1.0 and p["lb"] == ilhv[p["ie"] - 1])
+print("  particle file of part 4: %d active particle records put on the bed (z = 1 in the layer"
+      " ilhv(ie)), %d not (no element or layer); record times %s s; at %.0f s %d active, %d of"
+      " them on the bed" % (n, nskip, " ".join("%.0f" % t for t, _, _ in times), t1, len(act), nbed))
+if t1 != 3600.0 or nskip or not act or nbed != len(act):
+    print("  the last output is not at 01:00, or not every active particle of it is on the bed")
+    sys.exit(1)
+open(nfile, "w").write("%d\n" % len(act))
+EOF
+  mkd bd_s1 bd_bed.lgr.shy || { fail "cannot make bd_s1.str"; finish; }
+  RUNS="$RUNS bd_s1:1800"
 fi
 for r in $RUNS; do
   c="${r%%:*}"; tmax="${r##*:}"
@@ -577,6 +698,74 @@ print("  at %.0f s %d of the %d active particles in the bottom layer of their co
       " (share %.3f, required at least 0.85)" % (times[-1][0], nbl, len(act), nbl / len(act)))
 if nbl < 0.85 * len(act):
     print("  FAIL: settling is not applied: fewer than 0.85 of the particles in the bottom layer")
+    ok = False
+sys.exit(0 if ok else 1)
+EOF
+  fi
+fi
+
+#=============== part 4: the depth of a deposited particle (#311) ==========
+if want 4; then
+  c=bd_s1
+  n="$(cat "$P/bd_npart")"
+  echo "=== $c: mm_hyd_41 in still water, the $n particles of a particle file put on the bed, ilagr = 2, ised = 1, to 02:00"
+  if ended $c; then
+    grep -Eq "particles read: +$n( |\$)" "$P/$c.log" \
+      || fail "$c: the log does not show the $n particles read from the particle file"
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$n" "$HLTOL" <<'EOF' || fail "$c: see above"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+import lgr_vprof as lv
+
+path, npart, tol = sys.argv[2], int(sys.argv[3]), float(sys.argv[4])
+ok = True
+geom = lv.read_geom(path)
+hev = [float(v) for v in geom["hev"]]
+ilhv = [int(v) for v in geom["ilhv"]]
+_, times = lc.read_file(path)
+print("  %d outputs (%s s)" % (len(times), " ".join("%.0f" % t for t, _, _ in times)))
+if not times:
+    print("  FAIL: no output")
+    sys.exit(1)
+nrec = nnan = nneg = nbeyond = 0
+dmax = 0.0
+hmin, hmax = math.inf, -math.inf
+first = None
+for t, b, _ in times:
+    act = b[0]
+    ndep = sum(1 for p in act.values() if p["lb"] == -1)
+    if len(act) != npart or ndep != npart or b[1]:
+        print("  FAIL: at %.0f s %d active particles (expected %d), %d of them deposited,"
+              " %d exited: the check judges not every particle" % (t, len(act), npart, ndep,
+                                                                    len(b[1])))
+        ok = False
+    for pid, p in act.items():
+        if p["lb"] != -1:
+            continue
+        nrec += 1
+        ie, hl = p["ie"], p["hl"]
+        if ie < 1 or not math.isfinite(hl):
+            nnan += 1
+            continue
+        if hl < 0.0:
+            nneg += 1
+        d = abs(hl - hev[ie - 1])
+        dmax = max(dmax, d)
+        hmin, hmax = min(hmin, hl), max(hmax, hl)
+        if d > tol:
+            nbeyond += 1
+            if first is None:
+                first = (t, pid, ie, ilhv[ie - 1], hev[ie - 1], hl)
+print("  deposited particle records judged: %d; hl from %.3f to %.3f m; |hl - column depth"
+      " hev(ie)| at most %.3e m (limit %g m)" % (nrec, hmin, hmax, dmax, tol))
+if nnan or nneg or nbeyond:
+    print("  FAIL: the depth hl of deposited particles: %d not finite (or no element), %d"
+          " negative, %d farther than %g m from the depth of their column"
+          % (nnan, nneg, nbeyond, tol))
+    if first is not None:
+        print("  first: at %.0f s particle %d in element %d (%d layers), column depth %.4f m,"
+              " hl %.4f m" % first)
     ok = False
 sys.exit(0 if ok else 1)
 EOF
