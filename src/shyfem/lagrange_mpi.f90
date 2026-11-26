@@ -240,7 +240,7 @@
 	! lgr_internal_error (kind 5 above, and lgr_internal_flag = 1, written
 	! and read with OMP ATOMIC: lgr_internal_failed) and the run stops in
 	! lgr_mpi_list_check after the loop; anywhere else the guard aborts at
-	! once, as before
+	! once, as before, after writing the events of the pass (#305)
 	integer, save :: lgr_internal_flag = 0
 
 	! test hook of the internal-error guards (read once by lgr_mpi_init,
@@ -6683,8 +6683,15 @@
 ! lgr_mpi_list_check after the loop, before any collective call.
 ! Anywhere else (a loop on one thread, the hand-over, the release) it
 ! aborts at once through shympi_abort_internal, as the guard did before
-! (#256). Must not be called inside the critical section lgr_export
+! (#256), after writing the events of the tracker recorded in the pass
+! (lgr_events, #305: among them the values of the error, for a guard
+! with an event kind; until #305 lgr_event wrote them only for such a
+! kind, so that a guard with none, "error stop drogue: internal error",
+! "lagr_connect_count: (1)" or "lagr_count: (1)", dropped the other
+! events of the pass on one thread, which lgr_mpi_list_check writes on
+! several). Must not be called inside the critical section lgr_export
 
+	use mod_lagrange, only : lgr_events
 	use mod_lagrange_mpi, only : lgr_omp_loop, lgr_internal_flag
 	use mod_lagrange_mpi, only : lgr_mpi_list_fail
 
@@ -6695,8 +6702,10 @@
 	logical :: openmp_in_parallel
 
 	if( .not. lgr_omp_loop ) then
+	  call lgr_events			!the events of the pass (#305)
 	  call shympi_abort_internal(message)
 	else if( .not. openmp_in_parallel() ) then
+	  call lgr_events			!the events of the pass (#305)
 	  call shympi_abort_internal(message)
 	end if
 

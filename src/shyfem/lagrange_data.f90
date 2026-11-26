@@ -188,10 +188,10 @@
         integer(kind=8), save :: lgr_nvdiff_zero = 0
 	!true while the OpenMP particle loop of drogue runs (set and cleared
 	!by drogue, outside the parallel region); read by lgr_internal_error
-	!(#256) and lgr_event (#288, #294): there a team of more than one
-	!thread records, anywhere else they write or abort at once. Here and
-	!not in mod_lagrange_mpi since #294, so that lgr_event (below) can
-	!read it; mod_lagrange_mpi passes it on to its users
+	!(#256; until #305 also by lgr_event): there a team of more than one
+	!thread records, anywhere else it writes the events of the pass and
+	!aborts at once. Here and not in mod_lagrange_mpi since #294, when
+	!lgr_event (below) read it; mod_lagrange_mpi passes it on to its users
 	logical, save :: lgr_omp_loop = .false.
 	!events of the tracker found by the particles in the particle loop
 	!of drogue, which until #288 (the vertical walk) and #294 (the
@@ -207,8 +207,9 @@
 	!for each kind with events, one line with the events of the pass and
 	!the values of the first, and clears them: once per pass, at its end
 	!(lagrange, after the particle loop and the hand-over), and before
-	!the run stops (lgr_mpi_list_check, and lgr_event for a kind that
-	!stops the run when its error aborts at once). Each process writes
+	!the run stops (lgr_mpi_list_check, and lgr_internal_error when it
+	!aborts at once, #305; until then lgr_event, only for a kind that
+	!stops the run). Each process writes
 	!its own lines, on several processes with its rank, and makes no
 	!collective call. lgr_ev_ntot sums each kind over the run. What each
 	!kind writes is in lgr_event_desc. The kinds (in parentheses the
@@ -567,16 +568,18 @@
 
 ! records an event of the tracker (#288, #294; the kinds and the arrays
 ! are described above at lgr_ev_n): called by any thread, inside the
-! particle loop of drogue or outside any parallel region; writes nothing
-! there, except for a kind that stops the run outside an active parallel
-! region (see below). The event is counted (OMP atomic); its values
-! replace those kept for its kind if its key is lower (critical section
-! lgr_ev, entered only for an event, which is rare). lgr_events writes
-! them at the end of the pass.
-! A kind that stops the run is followed by lgr_internal_error, which
-! aborts at once outside an active parallel region (outside the loop, or
-! a loop on one thread, run by the main thread): there the events are
-! written at once (lgr_events), as their lines were before #288 and #294
+! particle loop of drogue or outside any parallel region; writes nothing.
+! The event is counted (OMP atomic); its values replace those kept for
+! its kind if its key is lower (critical section lgr_ev, entered only for
+! an event, which is rare). lgr_events writes them at the end of the
+! pass, or before the run stops: a kind that stops the run is followed by
+! lgr_internal_error, which writes the events of the pass (lgr_events)
+! before it aborts at once outside an active parallel region (outside the
+! loop, or a loop on one thread, run by the main thread), and inside one
+! records the error, after which lgr_mpi_list_check writes them. Until
+! #305 this routine wrote them itself for a kind that stops the run when
+! it was not in an active parallel region, which lgr_internal_error now
+! does for every guard
 ! Must not be called inside the critical section lgr_ev
 
         implicit none
@@ -588,11 +591,6 @@
         character(len=*), intent(in), optional	:: text	!text of the site
 
         integer				:: ni,nd
-        logical				:: brun,bfix,bnow
-        character(len=32)		:: chead
-        character(len=80)		:: ctext
-        character(len=20)		:: cname(lgr_ev_ni+lgr_ev_nd)
-        logical				:: openmp_in_parallel
 
 !$OMP ATOMIC
         lgr_ev_n(kind) = lgr_ev_n(kind) + 1
@@ -612,12 +610,6 @@
           if( present(text) ) lgr_ev_text(kind) = text
         end if
 !$OMP END CRITICAL (lgr_ev)
-
-        call lgr_event_desc(kind,chead,ctext,brun,ni,nd,cname,bfix)
-        if( brun ) return		!written at the end of the pass
-        bnow = .not. lgr_omp_loop
-        if( .not. bnow ) bnow = .not. openmp_in_parallel()
-        if( bnow ) call lgr_events	!lgr_internal_error aborts next
 
         end subroutine lgr_event
 
@@ -815,8 +807,9 @@
 ! outside any parallel region: by lagrange once per pass, at its end
 ! (after the particle loop of drogue and the hand-over), by
 ! lgr_mpi_list_check before it stops the run (after an internal error
-! found in the particle loop), and by lgr_event before an internal error
-! aborts at once.
+! found in the particle loop), and by lgr_internal_error before it
+! aborts at once (#305; until then by lgr_event, for a kind that stops
+! the run).
 ! No collective call: each process writes its own events, on several
 ! processes with its rank, so a process with none writes nothing and
 ! waits for nobody
