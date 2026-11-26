@@ -116,6 +116,8 @@
 !			#304, R4)
 ! 26.11.2026    arb     the setweg clock is set to the start time of the
 !			run, not to the record's time (#303, R5)
+! 26.11.2026    arb     windcd with itdrag = 4 applied only if the file's
+!			heat flag is set (#323)
 !
 ! notes :
 !
@@ -1522,13 +1524,19 @@
 !   windcd		only if the writer's itdrag (the record before
 !			windcd) and the reader's are the same and 3 (the
 !			waves set it each step) or 4 with qflux3d running
-!			here (COARE sets it each step); in every other case
-!			windcd is the reader's dragco (windcd_init) or is not
-!			used, and the file's values must not replace it: a
-!			writer with itdrag = 0 wrote its dragco, which a
-!			reader with itdrag = 4 would use at the first step
+!			here and the writer's heat flag set (COARE set it
+!			there and sets it here each step); in every other
+!			case windcd is the reader's dragco (windcd_init) or
+!			is not used, and the file's values must not replace
+!			it: a writer with itdrag = 0, or with itdrag = 4 but
+!			no qflux3d (ibarcl = 0, no heat flux, T/S from an
+!			offline file: heat flag 0), wrote its dragco, which
+!			a reader with itdrag = 4 would use at the first step
 !			(meteo_force runs before qflux3d) and on the nodes
-!			that stay dry (qflux3d skips them)
+!			that stay dry (qflux3d skips them). The heat flag
+!			comes after windcd, so with itdrag = 4 windcd is
+!			read into windcd_file and applied after the flag
+!			(#323)
 !   tws, dtw		only if the writer's heat flag is set (qflux3d ran
 !			there) and qflux3d runs here; then brst_heat tells
 !			qflux3d to keep them instead of its start-up values
@@ -1558,11 +1566,13 @@
 
 	logical bheat		!qflux3d runs in this run
 	logical bskip		!read the seven records past
-	logical bwind		!apply the file's windcd
-	integer ios
+	logical bwind		!apply the file's windcd (itdrag = 3)
+	logical bdrag4		!itdrag = 4 here and in the file
+	integer ios,ierr
 	integer itdrag		!this run's itdrag
 	integer itdrag_file	!the writer's itdrag
 	integer iheat_rst
+	real, allocatable :: windcd_file(:)	!the file's windcd (itdrag = 4)
 
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
@@ -1625,19 +1635,27 @@
 	bwind = .false.
 	if( itdrag == itdrag_file ) then
 	  if( itdrag == 3 ) bwind = .true.
-	  if( itdrag == 4 ) bwind = bheat
 	end if
+	bdrag4 = ( itdrag == 4 .and. itdrag_file == 4 )
 
+	! itdrag = 4: the heat flag, the record after windcd, decides too
+	! (a writer whose qflux3d did not run wrote its dragco), so with
+	! qflux3d running here the file's windcd waits in windcd_file and is
+	! applied, or not, after the flag (#323); the log line comes then
 	if( bwind ) then
 	  call restart_read_value(iunit,bn,windcd)
 	  write(6,*) 'restart: windcd applied (itdrag = ',itdrag,')'
+	else if( bdrag4 .and. bheat ) then
+	  allocate(windcd_file(size(windcd)),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('rst_read_hydro_v20: allocation' &
+     &			//' of windcd_file failed')
+	  end if
+	  call restart_read_value(iunit,bn,windcd_file)
 	else
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'windcd (skip)')
-	  if( itdrag == itdrag_file .and. itdrag == 4 ) then
-	    write(6,*) 'restart: windcd not applied (itdrag = ',itdrag &
-     &			,', no heat flux)'
-	  else
+	  if( .not. bdrag4 ) then
 	    write(6,'(a,i0,a,i0,a)') ' restart: windcd not applied' &
      &			//' (file itdrag = ',itdrag_file &
      &			,', run itdrag = ',itdrag,')'
@@ -1646,6 +1664,27 @@
 
 	read(iunit,iostat=ios) iheat_rst
 	call rst_check_read(ios,'heat flag')
+
+	if( bdrag4 ) then
+	  if( bheat ) then
+	    if( iheat_rst > 0 ) then
+	      windcd = windcd_file
+	      write(6,*) 'restart: windcd applied (itdrag = ',itdrag,')'
+	    else
+	      write(6,'(a,i0,a)') ' restart: windcd not applied (itdrag = ' &
+     &			,itdrag,', file heat flag not set)'
+	    end if
+	  else
+	    if( iheat_rst > 0 ) then
+	      write(6,*) 'restart: windcd not applied (itdrag = ',itdrag &
+     &			,', no heat flux)'
+	    else
+	      write(6,'(a,i0,a)') ' restart: windcd not applied (itdrag = ' &
+     &			,itdrag,', no heat flux, file heat flag not set)'
+	    end if
+	  end if
+	end if
+
 	brst_heat = .false.
 	if( iheat_rst > 0 ) then
 	  if( bheat ) then
