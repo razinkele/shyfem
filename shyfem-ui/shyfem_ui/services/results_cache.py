@@ -118,7 +118,7 @@ async def netcdf_for(path: Path, user: dict | None, config: Config, wrapper) -> 
         out = tmp / "out.nc"
         # A killed or timed-out shyelab can leave a partial out.nc behind.
         if res.return_code != 0 or not out.is_file() or out.stat().st_size == 0:
-            reason = _reason(res.stdout, res.stderr)
+            reason = res.reason or _reason(res.stdout, res.stderr)
             if res.return_code != 0 and reason == "no output":
                 reason = f"shyelab exited with code {res.return_code}"
             raise ConversionError(f"Cannot convert {path.name}: {reason}")

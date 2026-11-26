@@ -35,6 +35,9 @@ CASES = {
     "model_exit33_np2": (33, "error stop convert_date_d: cannot parse itanf"),
     # mpirun turns the bare stop into exit 1; the line is on stderr, among the banner
     "model_exit1_stop_np2": (1, "STOP error stop date2j: day"),
+    # shympi_abort_internal with a message that has no "error stop" prefix (#338):
+    # rstinf on a truncated restart file; stderr is empty
+    "tool_exit33_noprefix": (33, "restart: truncated/failed read of date/time"),
 }
 
 
@@ -78,6 +81,23 @@ def test_a_specific_line_beats_a_usage_stop():
     )
 
 
+def test_no_prefix_abort_takes_the_last_stdout_line_when_stderr_is_only_the_banner():
+    _, stdout, _ = _case("tool_exit33_noprefix")
+    for banner in ("model_exit33_serial", "model_exit33_np2", "model_exit1_stop_np2"):
+        _, _, stderr = _case(banner)
+        stderr = stderr.replace("STOP error stop date2j: day\n", "")
+        assert failure_reason(stdout, stderr) == "restart: truncated/failed read of date/time"
+    host_only = "[laguna:551613] 1 more process has sent help message help-mpi-api.txt\n"
+    assert failure_reason(stdout, host_only) == "restart: truncated/failed read of date/time"
+
+
+def test_other_stderr_keeps_the_stderr_fallback():
+    _, stdout, _ = _case("tool_exit33_noprefix")
+    assert failure_reason(stdout, "Segmentation fault\n") is None
+    _, _, banner = _case("model_exit33_np2")
+    assert failure_reason(stdout, banner + "Backtrace for this error:\n") is None
+
+
 def test_no_line_means_no_reason():
     assert failure_reason("step 1\nstep 2\n", "Segmentation fault\n") is None
     assert failure_reason("", "") is None
@@ -90,6 +110,7 @@ def test_failure_text_falls_back_to_stderr_then_unknown():
     assert res("banner", "error stop a: b").failure_text() == "error stop a: b"
     assert res("Segmentation fault\n").failure_text() == "Segmentation fault"
     assert res("").failure_text() == "Unknown error"
+    assert res("", "error stop " + "x" * 50).failure_text(20) == "error stop xxxxxxxxx"
 
 
 # --- verdicts do not change ---------------------------------------------------
@@ -315,3 +336,151 @@ def test_result_fields_without_a_line_keep_the_stderr_tail(tmp_path):
     files.stderr.write_text("Segmentation fault\n")
     spec = {"tool_name": "shyfem", "cwd": str(tmp_path), "before_snapshot": {}}
     assert result_fields(spec, files, 139, False)["error_message"] == "Segmentation fault"
+
+
+# --- review round 1: every consumer, the two writers of the job row ------------------
+
+from tests._tool_replay import case as _real_case  # noqa: E402
+from tests._tool_replay import make_wrapper, replay  # noqa: E402
+
+WANT33 = "error stop convert_date_d: cannot parse itanf"
+WANT_NOPREFIX = "restart: truncated/failed read of date/time"
+
+
+def _job_files(tmp_path, name):
+    from shyfem_ui.services.job_detached import JobFiles
+
+    code, stdout, stderr = _real_case(name)
+    files = JobFiles.for_stdout(tmp_path / "j.stdout")
+    files.stdout.write_text(stdout)
+    files.stderr.write_text(stderr)
+    return code, files
+
+
+@pytest.mark.parametrize(
+    "name, want",
+    [("model_exit33_np2", WANT33), ("tool_exit33_noprefix", WANT_NOPREFIX)],
+)
+def test_result_fields_error_message_is_the_reason(tmp_path, name, want):
+    """The supervisor's own writer of the job row, with no race with the queue."""
+    from shyfem_ui.job_runner import result_fields
+
+    code, files = _job_files(tmp_path, name)
+    spec = {"tool_name": "shyfem", "cwd": str(tmp_path), "before_snapshot": {}}
+    fields = result_fields(spec, files, code, False)
+    assert fields["status"].value == "failed"
+    assert fields["error_message"] == want
+
+
+def test_an_exit_0_failure_keeps_stderr_in_every_writer(tmp_path):
+    """tool_failure's line is appended to stderr, not substituted for it."""
+    from shyfem_ui.job_runner import result_fields
+    from shyfem_ui.services.job_detached import JobFiles
+
+    files = JobFiles.for_stdout(tmp_path / "j.stdout")
+    files.stdout.write_text(" reading basin\n")
+    files.stderr.write_text("some warning\nSTOP error stop setup_time: dtend\n")
+    spec = {"tool_name": "shyfem", "cwd": str(tmp_path), "before_snapshot": {}}
+    error = result_fields(spec, files, 0, False)["error_message"]
+    assert "some warning" in error and error.endswith("setup_time: dtend")
+
+    result = CommandResult(False, 0, "", "some warning\nline", "x", ".")
+    assert result.reason == ""
+    assert result.failure_text().startswith("some warning")
+
+
+@pytest.mark.asyncio
+async def test_run_command_exit_0_stop_has_no_reason_but_keeps_stderr(tmp_path):
+    w = make_wrapper(tmp_path)
+    replay(w, "shypre", "tool_exit0_stop")
+    result = await w.run_command("shypre", ["missing.grd"], tmp_path / "w")
+    assert result.success is False and result.return_code == 0
+    assert result.reason == ""
+    assert "STOP error stop grd_internal_init: cannot open file" in result.failure_text()
+    assert result.stderr.startswith("STOP error stop grd_internal_init")
+
+
+def test_partitioning_shows_the_reason_in_its_log():
+    import shyfem_ui.pages.partitioning as part_mod
+    from tests._test_helpers import get_server_source
+
+    src = get_server_source(part_mod, "partitioning_server")
+    assert 'failed_run_text("shyparts", result)[0]' in src
+    assert "result.stderr" not in src
+
+
+@pytest.mark.asyncio
+async def test_partitioning_log_text_of_a_failed_shyparts(tmp_path):
+    w = make_wrapper(tmp_path)
+    replay(w, "shyparts", "model_exit33_np2")
+    result = await w.run_command("shyparts", ["-np", "2", "x.grd"], tmp_path / "w")
+    log = failed_run_text("shyparts", result)[0]
+    assert "*** shyparts failed (code 33) ***" in log
+    assert log.rstrip().endswith(WANT33)
+
+
+def test_celery_worker_records_the_reason_as_the_job_error(tmp_path):
+    import json
+    from unittest.mock import patch
+
+    from shyfem_ui.services.job_celery import _load_job_info, execute_shyfem_job
+    from shyfem_ui.services.job_queue import JobStatus
+    from tests.test_job_celery import _DictRedis, _make_job_info, _store_job_info
+
+    code, stdout, stderr = _real_case("model_exit33_np2")
+    store = _DictRedis()
+    _store_job_info(
+        store,
+        _make_job_info(
+            job_id="j", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+        ),
+    )
+    failed = CommandResult(
+        False,
+        code,
+        "",
+        stderr,
+        "shybas",
+        str(tmp_path),
+        reason=failure_reason(stdout, stderr) or "",
+    )
+    wrapper = MagicMock()
+    wrapper.run_command = AsyncMock(return_value=failed)
+    with (
+        patch("shyfem_ui.services.job_celery._get_redis_client", return_value=store),
+        patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+        patch("shyfem_ui.services.job_celery._persist_job_to_db"),
+    ):
+        execute_shyfem_job("j", "redis://x", str(tmp_path), hostname="celery@w7")
+    info = _load_job_info(store, "j")
+    assert info.status == JobStatus.FAILED
+    assert info.error_message == WANT33
+    assert json.dumps(info.error_message)  # plain text
+
+
+def test_results_cache_conversion_error_names_the_reason(tmp_path):
+    from shyfem_ui.services.results_cache import ConversionError
+    from tests.test_results_cache import _cfg, _go, _src
+
+    for name, want in [("model_exit33_np2", WANT33), ("tool_exit33_noprefix", WANT_NOPREFIX)]:
+        w = make_wrapper(tmp_path / name)
+        replay(w, "shyelab", name)
+        with pytest.raises(ConversionError) as e:
+            _go(_src(tmp_path), _cfg(tmp_path / name), w)
+        assert str(e.value).endswith(f": {want}"), str(e.value)
+
+
+@pytest.mark.asyncio
+async def test_mesh_builder_error_names_the_reason(tmp_path):
+    import numpy as np
+
+    from shyfem_ui.services.mesh_builder import interpolate_bathymetry_shybas
+    from tests.test_mesh_builder_nonfinite_depth import _square_mesh
+
+    for name, want in [("model_exit33_np2", WANT33), ("tool_exit33_noprefix", WANT_NOPREFIX)]:
+        w = make_wrapper(tmp_path / name)
+        replay(w, "shybas", name)
+        pts = np.array([[0, 0, 1.0], [10, 0, 2.0], [10, 10, 3.0], [0, 10, 4.0], [5, 5, 5.0]])
+        with pytest.raises(RuntimeError) as e:
+            await interpolate_bathymetry_shybas(_square_mesh(), pts, w)
+        assert str(e.value) == f"shybas did not interpolate the bathymetry: {want}"

@@ -38,7 +38,7 @@ class CommandResult:
         end of stderr, else "Unknown error". Since #331/#332 the tools and the
         model print their ``error stop`` line to stdout, so stderr alone is
         empty or only the MPI_ABORT banner (#335)."""
-        return self.reason or self.stderr.strip()[-limit:] or "Unknown error"
+        return self.reason[:limit] or self.stderr.strip()[-limit:] or "Unknown error"
 
 
 # gfortran's ``stop 'text'`` exits with status 0, so a SHYFEM run or tool that
@@ -88,14 +88,43 @@ def tool_failure(tool_name: str, return_code: int | None, stdout_tail: str, stde
     return None
 
 
+# Open MPI's MPI_ABORT banner and mpirun's "exiting improperly" text sit between
+# two dashed rules; its help-aggregation notes are ``[host:pid] ...`` lines.
+_RULE = re.compile(r"^\s*-{20,}\s*$")
+_HOST_LINE = re.compile(r"^\[[^\]\s]+:\d+\]")
+_BANNER_MARKERS = ("MPI_ABORT", "mpirun", "Open MPI", "orte_")
+
+
+def _strip_mpi_banner(text: str) -> str:
+    """``text`` without Open MPI's abort/mpirun banner blocks and ``[host:pid]`` lines."""
+    kept: list[str] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _RULE.match(line):
+            end = next((j for j in range(i + 1, len(lines)) if _RULE.match(lines[j])), None)
+            if end is not None and any(m in "\n".join(lines[i : end + 1]) for m in _BANNER_MARKERS):
+                i = end + 1
+                continue
+        elif not _HOST_LINE.match(line):
+            kept.append(line)
+        i += 1
+    return "\n".join(kept)
+
+
 def failure_reason(stdout_tail: str, stderr_tail: str) -> str | None:
     """The line that says why a run that exited non-zero failed, or None.
 
     The last matching line of stdout wins, even when stderr is not empty (the
     MPI_ABORT banner is noise); then the last one on stderr (mpirun's exit 1
     with ``STOP error stop ...`` among its banner); then the lines
-    ``tool_failure`` knows, a specific one before a usage stop. The caller
-    falls back to the end of stderr (:meth:`CommandResult.failure_text`).
+    ``tool_failure`` knows, a specific one before a usage stop. Last, when
+    stderr is empty or only the Open MPI / mpirun banner, the last non-blank
+    line of stdout: ``shympi_abort_internal`` prints its message there, and
+    about a third of its call sites have no ``error stop`` prefix (#338).
+    Otherwise None; the caller falls back to the end of stderr
+    (:meth:`CommandResult.failure_text`).
     """
     for text in (stdout_tail, stderr_tail):
         found = _REASON_LINE.findall(text or "")
@@ -107,7 +136,28 @@ def failure_reason(stdout_tail: str, stderr_tail: str) -> str | None:
         for m in _FATAL_LINE.finditer(text or "")
     ]
     specific = [line for line in lines if "clo_usage" not in line]
-    return (specific or lines or [None])[0]
+    if specific or lines:
+        return (specific or lines)[0]
+    if not _strip_mpi_banner(stderr_tail or "").strip():
+        out = [ln.strip() for ln in (stdout_tail or "").splitlines() if ln.strip()]
+        if out:
+            return out[-1]
+    return None
+
+
+def judge_run(
+    tool_name: str, return_code: int | None, stdout_tail: str, stderr_tail: str
+) -> tuple[str | None, str]:
+    """``(failure, reason)`` of a finished run.
+
+    ``failure`` is ``tool_failure``'s text for a run that exited 0 and still
+    failed (the callers append it to stderr, as they always did); ``reason``
+    is ``failure_reason``'s line for a non-zero exit. At most one is set.
+    """
+    failure = tool_failure(tool_name, return_code, stdout_tail, stderr_tail)
+    if failure or return_code == 0:
+        return failure, ""
+    return None, failure_reason(stdout_tail, stderr_tail) or ""
 
 
 def failed_run_text(tool: str, result: CommandResult) -> tuple[str, str]:
@@ -456,7 +506,7 @@ class ShyfemWrapper:
 
         stderr_text = "\n".join(stderr_lines)
         exit_ok = return_code in self.OK_EXIT_CODES.get(tool_name, (0,))
-        failure = tool_failure(
+        failure, reason = judge_run(
             tool_name,
             0 if exit_ok else return_code,
             "\n".join(stdout_tail)[-TAIL_CHARS:],
@@ -464,16 +514,12 @@ class ShyfemWrapper:
         )
         if failure:
             stderr_text = f"{stderr_text}\n{failure}".lstrip("\n")
-        elif not exit_ok:
-            failure = failure_reason(
-                "\n".join(stdout_tail)[-TAIL_CHARS:], stderr_text[-TAIL_CHARS:]
-            )
         return CommandResult(
-            success=exit_ok and not failure,
+            success=exit_ok and failure is None,
             return_code=return_code,
             stdout="\n".join(stdout_lines),
             stderr=stderr_text,
-            reason=failure or "",
+            reason=reason,
             command=cmd_str,
             working_dir=str(working_dir),
             duration=duration,
@@ -654,11 +700,12 @@ class ShyfemWrapper:
         return_code = exit_record.get("return_code")
         timed_out = bool(exit_record.get("timed_out"))
         failure = None
+        reason = ""
         if timed_out:
             stderr = f"Command timed out after {spec.get('timeout')}s and was terminated"
         else:
             stderr = read_tail(files.stderr, TAIL_CHARS)
-            failure = tool_failure(
+            failure, reason = judge_run(
                 spec.get("tool_name") or tool_name,
                 return_code,
                 read_tail(files.stdout, TAIL_CHARS),
@@ -666,15 +713,13 @@ class ShyfemWrapper:
             )
             if failure:
                 stderr = f"{stderr}\n{failure}".lstrip("\n")
-            if failure is None and return_code != 0:
-                failure = failure_reason(read_tail(files.stdout, TAIL_CHARS), stderr)
             stderr = stderr[-1000:]
         return CommandResult(
-            success=return_code == 0 and not timed_out and not failure,
+            success=return_code == 0 and not timed_out and failure is None,
             return_code=return_code if return_code is not None else -1,
             stdout="",
             stderr=stderr,
-            reason=failure or "",
+            reason=reason,
             command=" ".join(spec.get("cmd") or []),
             working_dir=str(cwd),
             duration=(datetime.now() - start).total_seconds(),
