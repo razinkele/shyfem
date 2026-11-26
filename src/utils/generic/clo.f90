@@ -55,6 +55,7 @@
 ! 25.11.2024	ggu	check length of string, use nlen to set max string len
 ! 18.03.2025	ggu	more documentation
 ! 26.11.2026	arb	errors exit 7 through mod_error_stop, --help (#332)
+! 26.11.2026	arb	a lone "-" and a too long value say what is wrong (#336)
 !
 ! notes :
 !
@@ -64,11 +65,12 @@
 !
 ! exit status: help, version and usage output (clo_fullusage, clo_version,
 ! clo_usage, also for too few files) exit 0; an error (an unknown option,
-! an option without its value, a number that cannot be read, clo_error
-! and the internal errors) exits 7 through error_stop of mod_error_stop
-! (#332). Every process of the model parses the same command line, so all
-! of them stop the same way; in the standalone model this is before MPI
-! is initialized (the NUOPC cap starts after ESMF has started MPI)
+! an option without its value, a lone "-", a value that is too long, a
+! number that cannot be read, clo_error and the internal errors) exits 7
+! through error_stop of mod_error_stop (#332, #336). Every process of the
+! model parses the same command line, so all of them stop the same way;
+! in the standalone model this is before MPI is initialized (the NUOPC
+! cap starts after ESMF has started MPI)
 ! 
 ! in clo_add/set/get_option numbers can be integer, real or double precision
 ! in clo_add_option give extra information for number or string (see example)
@@ -178,6 +180,8 @@
 	clo_get_id = 0
 
 	do id=1,idlast
+	  !separators and comments have a blank name, they are no option
+	  if( pentry(id)%itype == clo_itype_separator ) cycle	!(#336)
 	  if( pentry(id)%name == name ) then
 	    clo_get_id = id
 	    return
@@ -1024,6 +1028,14 @@
 	  case( '-h', '-help', '-hh', '-fullhelp', '-v', '-version' )
 	    option = option(2:)		!(they exited 0 as unknown options, #332)
 	  end select
+	  !a lone "-" matched a separator and gave "no value for option"
+	  !with a blank name, or "internal error (1)" before a file (#336)
+	  if( option == ' ' ) then
+	    write(6,*) '*** no option name after "-"'
+	    call clo_write_usage
+	    call error_stop('clo_parse_options' &
+     &			,'no option name after "-"')
+	  end if
 	  bnooption = .false.
 	  if( clo_has_option(option) .and. option(1:2) == 'no' ) then
 	    nooption = option(3:)
@@ -1064,12 +1076,13 @@
 	      call clo_set_option(option,value)
 	    else if( clo_is_string(option) ) then
 	      nl = len_trim(string)
-	      if( nl > nlen ) then
-		write(6,*) 'string is too long to be handled'
-		write(6,*) 'nstring,nmax: ',nl,nlen
+	      if( nl > nlen ) then	!a user error, not internal (#336)
+		write(6,*) '*** value too long for option ',trim(option)
+		write(6,*) 'length, maximum length: ',nl,nlen
 		write(6,*) trim(string)
-		write(6,*) 'please adjust nlen in clo.f90'
-	        call error_stop('clo_parse_options','internal error (2)')
+		write(6,*) '(the maximum length is nlen in clo.f90)'
+	        call error_stop('clo_parse_options' &
+     &			,'value too long for option: '//trim(option))
 	      end if
 	      call clo_set_option(option,string)
 	    else
