@@ -1,0 +1,31 @@
+
+ ----------------------------------------------
+
+ SHYFEM
+ System of HydrodYnamic Finite Element Modules     
+ Copyright (C) The Shyfem Team 1985-2026           
+
+ version: 8.6.0     
+ commit : 2026-11-24
+ routine: shyfem - 3D hydrodynamic SHYFEM routine
+
+ ----------------------------------------------
+
+ compiled with parallel support: MPI
+ matrix solver: sparsekit
+ compiler: gfortran (13.3.0)
+ compiler profile: normal
+ local commit: 2026-11-24
+
+ simulation start:   2026-11-26::23:34:02
+ reading basin: MM_coarse_smooth
+ preparing to read bas file: MM_coarse_smooth.bas
+ finished reading bas file: MM_coarse_smooth.bas
+ start of setup of parallel OMP threads
+ the program can run in OMP parallel mode
+ maximum available OMP threads:           28
+ for simulation used OMP threads:            1
+ end of setup of parallel OMP threads
+ 2D arrays allocated:         1402        2545           9
+ *** error in date: impossible day
+ year,month,day:       200913           1          99

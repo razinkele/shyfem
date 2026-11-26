@@ -32,7 +32,7 @@ from shyfem_ui.services.mesh_builder import (  # re-exported for backward compat
     compute_min_angles,
 )
 from shyfem_ui.services.parser_grd import GrdParser
-from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper, failed_run_text
 
 logger = logging.getLogger(__name__)
 
@@ -387,13 +387,10 @@ def grid_prep_server(
                     duration=5,
                 )
             else:
-                stderr_preview = (result.stderr or "Unknown error")[:200]
-                log_content.set(
-                    log_content.get() + f"\n*** shypre failed (code {result.return_code}) ***\n"
-                    f"{result.stderr}\n"
-                )
+                log_text, notice = failed_run_text("shypre", result)
+                log_content.set(log_content.get() + log_text)
                 ui.notification_show(
-                    f"shypre failed (exit code {result.return_code}): {stderr_preview}",
+                    notice,
                     type="error",
                     duration=8,
                 )
@@ -487,13 +484,10 @@ def grid_prep_server(
                     duration=5,
                 )
             else:
-                stderr_preview = (result.stderr or "Unknown error")[:200]
-                log_content.set(
-                    log_content.get() + f"\n*** shybas failed (code {result.return_code}) ***\n"
-                    f"{result.stderr}\n"
-                )
+                log_text, notice = failed_run_text("shybas", result)
+                log_content.set(log_content.get() + log_text)
                 ui.notification_show(
-                    f"shybas failed (exit code {result.return_code}): {stderr_preview}",
+                    notice,
                     type="error",
                     duration=8,
                 )

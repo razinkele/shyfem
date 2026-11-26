@@ -69,7 +69,9 @@ class LgrService:
                     "lgrelab executable not found — ensure SHYFEM bin directory is configured"
                 ) from e
             if not result.success:
-                raise RuntimeError(f"lgrelab failed (code {result.return_code}): {result.stderr}")
+                raise RuntimeError(
+                    f"lgrelab failed (code {result.return_code}): {result.failure_text()}"
+                )
 
             traj_files = sorted(tmp_path.glob("lagrange_mean_traj.*"))
             if not traj_files:

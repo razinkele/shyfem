@@ -29,6 +29,16 @@ class CommandResult:
     working_dir: str
     duration: float = 0.0
     output_files: list[str] = field(default_factory=list)
+    #: The line that says why the run failed (``failure_reason`` /
+    #: ``tool_failure``); empty when none was found or the run succeeded.
+    reason: str = ""
+
+    def failure_text(self, limit: int = 1000) -> str:
+        """What to show the user about a failed run: the reason line, else the
+        end of stderr, else "Unknown error". Since #331/#332 the tools and the
+        model print their ``error stop`` line to stdout, so stderr alone is
+        empty or only the MPI_ABORT banner (#335)."""
+        return self.reason[:limit] or self.stderr.strip()[-limit:] or "Unknown error"
 
 
 # gfortran's ``stop 'text'`` exits with status 0, so a SHYFEM run or tool that
@@ -39,6 +49,15 @@ _FATAL_LINE = re.compile(
     # shyelab -outformat nc on a build without NetCDF: prints this, writes
     # nothing, exits 0.
     r"|NETCDF support has not been enabled.*)$",
+    re.MULTILINE,
+)
+# The lines a run that exited non-zero leaves to say why (#335): the bare
+# ``error stop ROUTINE: TEXT`` that mod_error_stop and shympi_abort_internal
+# print to stdout, the option parser's complaint, and gfortran's stop forms
+# (mpirun turns a bare ``stop`` into exit 1 with the STOP line on stderr).
+# Only the non-zero helper uses this: an exit-0 verdict is _FATAL_LINE's.
+_REASON_LINE = re.compile(
+    r"^\s*(?:error stop\b.*|STOP\s+error stop\b.*|ERROR STOP\b.*|\*\*\* no such option.*)$",
     re.MULTILINE,
 )
 # A shyfem run that reached its end prints this in its last lines.
@@ -67,6 +86,93 @@ def tool_failure(tool_name: str, return_code: int | None, stdout_tail: str, stde
     if tool_name.startswith("shyfem") and not _SHYFEM_FOOTER.search(stdout_tail or ""):
         return "shyfem stopped before the end of the simulation (no 'simulation end' line)"
     return None
+
+
+# Open MPI's MPI_ABORT banner and mpirun's "exiting improperly" text sit between
+# two dashed rules; its help-aggregation notes are ``[host:pid] ...`` lines.
+_RULE = re.compile(r"^\s*-{20,}\s*$")
+_HOST_LINE = re.compile(r"^\[[^\]\s]+:\d+\]")
+_BANNER_MARKERS = ("MPI_ABORT", "mpirun", "Open MPI", "orte_")
+
+
+def _strip_mpi_banner(text: str) -> str:
+    """``text`` without Open MPI's abort/mpirun banner blocks and ``[host:pid]`` lines."""
+    kept: list[str] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _RULE.match(line):
+            end = next((j for j in range(i + 1, len(lines)) if _RULE.match(lines[j])), None)
+            if end is not None and any(m in "\n".join(lines[i : end + 1]) for m in _BANNER_MARKERS):
+                i = end + 1
+                continue
+        elif not _HOST_LINE.match(line):
+            kept.append(line)
+        i += 1
+    return "\n".join(kept)
+
+
+def failure_reason(stdout_tail: str, stderr_tail: str) -> str | None:
+    """The line that says why a run that exited non-zero failed, or None.
+
+    The last matching line of stdout wins, even when stderr is not empty (the
+    MPI_ABORT banner is noise); then the last one on stderr (mpirun's exit 1
+    with ``STOP error stop ...`` among its banner); then the lines
+    ``tool_failure`` knows, a specific one before a usage stop. Last, when
+    stderr is empty or only the Open MPI / mpirun banner, the last non-blank
+    line of stdout: ``shympi_abort_internal`` prints its message there, and
+    about a third of its call sites have no ``error stop`` prefix (#338).
+    Otherwise None; the caller falls back to the end of stderr
+    (:meth:`CommandResult.failure_text`).
+    """
+    for text in (stdout_tail, stderr_tail):
+        found = _REASON_LINE.findall(text or "")
+        if found:
+            return found[-1].strip()
+    lines = [
+        m.group(0).strip()
+        for text in (stderr_tail, stdout_tail)
+        for m in _FATAL_LINE.finditer(text or "")
+    ]
+    specific = [line for line in lines if "clo_usage" not in line]
+    if specific or lines:
+        return (specific or lines)[0]
+    if not _strip_mpi_banner(stderr_tail or "").strip():
+        out = [ln.strip() for ln in (stdout_tail or "").splitlines() if ln.strip()]
+        if out:
+            return out[-1]
+    return None
+
+
+def judge_run(
+    tool_name: str, return_code: int | None, stdout_tail: str, stderr_tail: str
+) -> tuple[str | None, str]:
+    """``(failure, reason)`` of a finished run.
+
+    ``failure`` is ``tool_failure``'s text for a run that exited 0 and still
+    failed (the callers append it to stderr, as they always did); ``reason``
+    is ``failure_reason``'s line for a non-zero exit. At most one is set.
+    """
+    failure = tool_failure(tool_name, return_code, stdout_tail, stderr_tail)
+    if failure or return_code == 0:
+        return failure, ""
+    return None, failure_reason(stdout_tail, stderr_tail) or ""
+
+
+def failed_run_text(tool: str, result: CommandResult) -> tuple[str, str]:
+    """(log text, notification text) for a run that failed (#335).
+
+    The log keeps all of stderr and adds the reason line when stderr lacks it
+    (the model and the tools print it to stdout); the notification is the
+    reason, not an empty string or "Unknown error".
+    """
+    log = f"\n*** {tool} failed (code {result.return_code}) ***\n"
+    log += f"{result.stderr}\n"
+    if result.reason and result.reason not in result.stderr:
+        log += f"{result.reason}\n"
+    notice = f"{tool} failed (exit code {result.return_code}): {result.failure_text(200)}"
+    return log, notice
 
 
 @dataclass
@@ -400,7 +506,7 @@ class ShyfemWrapper:
 
         stderr_text = "\n".join(stderr_lines)
         exit_ok = return_code in self.OK_EXIT_CODES.get(tool_name, (0,))
-        failure = tool_failure(
+        failure, reason = judge_run(
             tool_name,
             0 if exit_ok else return_code,
             "\n".join(stdout_tail)[-TAIL_CHARS:],
@@ -413,6 +519,7 @@ class ShyfemWrapper:
             return_code=return_code,
             stdout="\n".join(stdout_lines),
             stderr=stderr_text,
+            reason=reason,
             command=cmd_str,
             working_dir=str(working_dir),
             duration=duration,
@@ -593,11 +700,12 @@ class ShyfemWrapper:
         return_code = exit_record.get("return_code")
         timed_out = bool(exit_record.get("timed_out"))
         failure = None
+        reason = ""
         if timed_out:
             stderr = f"Command timed out after {spec.get('timeout')}s and was terminated"
         else:
             stderr = read_tail(files.stderr, TAIL_CHARS)
-            failure = tool_failure(
+            failure, reason = judge_run(
                 spec.get("tool_name") or tool_name,
                 return_code,
                 read_tail(files.stdout, TAIL_CHARS),
@@ -611,6 +719,7 @@ class ShyfemWrapper:
             return_code=return_code if return_code is not None else -1,
             stdout="",
             stderr=stderr,
+            reason=reason,
             command=" ".join(spec.get("cmd") or []),
             working_dir=str(cwd),
             duration=(datetime.now() - start).total_seconds(),

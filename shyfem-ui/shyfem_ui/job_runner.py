@@ -139,11 +139,11 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
     come from a trusted source (the launch record on stdin, or the DB row):
     its ``cwd`` is where output files are looked for.
     """
-    from shyfem_ui.services.shyfem_wrapper import TAIL_CHARS, ShyfemWrapper, tool_failure
+    from shyfem_ui.services.shyfem_wrapper import TAIL_CHARS, ShyfemWrapper, judge_run
 
-    failure = None
+    failure, reason = None, ""
     if not timed_out:
-        failure = tool_failure(
+        failure, reason = judge_run(
             spec["tool_name"],
             return_code,
             read_tail(files.stdout, TAIL_CHARS),
@@ -158,7 +158,10 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
     else:
         status = JobStatus.FAILED
         tail = read_tail(files.stderr)
-        error = (f"{tail}\n{failure}" if failure else tail).strip()[-1000:] or "Unknown error"
+        # A non-zero exit: the reason line from stdout (#335), else the end of
+        # stderr. An exit-0 failure: the end of stderr, then tool_failure's line.
+        error = (reason or (f"{tail}\n{failure}" if failure else tail)).strip()[-1000:]
+        error = error or "Unknown error"
     wrapper = ShyfemWrapper(spec.get("shyfem_dir") or ".")
     output_files = wrapper._find_output_files(
         spec["tool_name"], Path(spec["cwd"]), spec.get("before_snapshot") or {}

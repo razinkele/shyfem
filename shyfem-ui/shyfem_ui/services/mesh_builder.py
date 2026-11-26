@@ -1520,8 +1520,9 @@ async def interpolate_bathymetry_shybas(grd: GrdFile, points: np.ndarray, wrappe
                 for line in (result.stdout or "").splitlines() + (result.stderr or "").splitlines()
                 if line.strip()
             ]
+            why = result.reason or (said[-1] if said else "")
             raise RuntimeError(
-                "shybas did not interpolate the bathymetry" + (f": {said[-1]}" if said else "")
+                "shybas did not interpolate the bathymetry" + (f": {why}" if why else "")
             )
         interpolated = GrdParser.parse_file(out)
 

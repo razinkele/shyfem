@@ -1,0 +1,17 @@
+
+ ----------------------------------------------
+
+ SHYFEM
+ System of HydrodYnamic Finite Element Modules     
+ Copyright (C) The Shyfem Team 1985-2026           
+
+ version: 8.6.0     
+ commit : 2026-11-24
+ routine: rstinf - info on restart file
+
+ ----------------------------------------------
+
+ error reading restart file record: date/time
+ iostat =           -1
+ unexpected end of file - restart record is truncated
+ restart: truncated/failed read of date/time

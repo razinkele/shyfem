@@ -1,0 +1,17 @@
+
+ ----------------------------------------------
+
+ SHYFEM
+ System of HydrodYnamic Finite Element Modules     
+ Copyright (C) The Shyfem Team 1985-2026           
+
+ version: 8.6.0     
+ commit : 2026-11-24
+ routine: shypre - pre-processing of GRD grid
+
+ ----------------------------------------------
+
+ grdfile: missing.grd
+ file does not exist: missing.grd
+ error opening file
+ missing.grd                                                                                                                                                                                                                                                     

@@ -310,7 +310,7 @@ def execute_shyfem_job(
             job_info.status = JobStatus.COMPLETED
         else:
             job_info.status = JobStatus.FAILED
-            job_info.error_message = result.stderr[:1000] if result.stderr else "Unknown error"
+            job_info.error_message = result.failure_text()
 
         # Write output files
         if job_info.stdout_file:
