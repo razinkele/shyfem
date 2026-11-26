@@ -267,10 +267,12 @@
 
 	! setweg counts a new time step when the time differs from that of
 	! its last call (dtime_setweg_old, set by setweg(0) at the cold
-	! start time above). With iwetv restored (version 20) the clock must
-	! be the restart time, as in the run that wrote the record, or the
-	! first set_dry counts one step too many (#303). Older versions do
-	! not restore iwetv and keep the cold start's clock, as before.
+	! start time above). When a version 20 record with hydro restored
+	! iwetv, the clock must be the restart time, as in the run that wrote
+	! the record, or the first set_dry counts one step too many (#303).
+	! Any other record (an older version - also v18, which restores
+	! iwetv in its own branch - or hydro not wanted) keeps the cold
+	! start's clock, as before.
 	if( bsetweg_rst ) then
 	  dtime_setweg_old = atime - atime0
 	end if
@@ -301,7 +303,8 @@
 	  write(6,*) ' setweg clock reset to the restart time: ' &
      &			,dtime_setweg_old
 	else
-	  write(6,*) ' setweg clock not reset (iwetv not restored): ' &
+	  write(6,*) ' setweg clock not reset (not a version 20 record' &
+     &			//' with hydro): ' &
      &			,dtime_setweg_old
 	end if
 	write(6,*) '         id bwant bavail buse   description'
@@ -1450,14 +1453,20 @@
 ! reads the records that version 20 adds to the hydro block, after
 ! vtlnv (#303 #304), and applies them by these rules:
 !
-!   iwetv, evapv	always
-!   windcd		only if this run's itdrag is 4 or 3 (COARE or the
-!			waves set it each step); with any other itdrag
-!			windcd is the user's dragco (windcd_init) or is not
-!			used, and the file's values must not replace it
+!   iwetv		always
+!   evapv		only if qflux3d runs here (heat_flux_active): only
+!			qflux3d writes evapv, so else a restored value would
+!			be taken from the water column (ievap = 1) for the
+!			whole run, where a cold start keeps 0 (evap_init)
+!   windcd		with itdrag = 3 (the waves set it each step), and
+!			with itdrag = 4 if qflux3d runs here (COARE sets it
+!			each step); with any other itdrag, or itdrag = 4
+!			without qflux3d, windcd is the user's dragco
+!			(windcd_init) or is not used, and the file's values
+!			must not replace it
 !   tws, dtw		only if the writer's heat flag is set (qflux3d ran
-!			there); then brst_heat tells qflux3d to keep them
-!			instead of its start-up values
+!			there) and qflux3d runs here; then brst_heat tells
+!			qflux3d to keep them instead of its start-up values
 !
 ! with bwant false (flgrst without hydro) the six records are skipped
 ! and nothing is applied. bsetweg_rst = .true. tells rst_perform_restart
@@ -1473,12 +1482,15 @@
 	integer, intent(in) :: iunit	!unit of the restart file
 	logical, intent(in) :: bwant	!hydro is wanted (flgrst)
 
+	logical bheat		!qflux3d runs in this run
 	integer ios
 	integer itdrag
 	integer iheat_rst
 
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
+
+	logical heat_flux_active
 
 	if( .not. bwant ) then
 	  read(iunit,iostat=ios)
@@ -1498,14 +1510,34 @@
 	  return
 	end if
 
+	bheat = heat_flux_active()
+
 	call restart_read_value(iunit,be,iwetv)
-	call restart_read_value(iunit,bn,evapv)
 	bsetweg_rst = .true.
 
+	if( bheat ) then
+	  call restart_read_value(iunit,bn,evapv)
+	  write(6,*) 'restart: evapv applied'
+	else
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'evapv (skip)')
+	  write(6,*) 'restart: evapv not applied (no heat flux, evapv = 0)'
+	end if
+
 	itdrag = nint(getpar('itdrag'))
-	if( itdrag == 4 .or. itdrag == 3 ) then
+	if( itdrag == 3 ) then
 	  call restart_read_value(iunit,bn,windcd)
 	  write(6,*) 'restart: windcd applied (itdrag = ',itdrag,')'
+	else if( itdrag == 4 ) then
+	  if( bheat ) then
+	    call restart_read_value(iunit,bn,windcd)
+	    write(6,*) 'restart: windcd applied (itdrag = ',itdrag,')'
+	  else
+	    read(iunit,iostat=ios)
+	    call rst_check_read(ios,'windcd (skip)')
+	    write(6,*) 'restart: windcd not applied (itdrag = ',itdrag &
+     &			,', no heat flux)'
+	  end if
 	else
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'windcd (skip)')
@@ -1514,18 +1546,24 @@
 
 	read(iunit,iostat=ios) iheat_rst
 	call rst_check_read(ios,'heat flag')
+	brst_heat = .false.
 	if( iheat_rst > 0 ) then
-	  call restart_read_value(iunit,bn,tws_heat)
-	  call restart_read_value(iunit,bn,dtw_heat)
-	  brst_heat = .true.
-	  write(6,*) 'restart: tws, dtw applied (heat flag set)'
+	  if( bheat ) then
+	    call restart_read_value(iunit,bn,tws_heat)
+	    call restart_read_value(iunit,bn,dtw_heat)
+	    brst_heat = .true.
+	    write(6,*) 'restart: tws, dtw applied (heat flag set)'
+	  else
+	    write(6,*) 'restart: tws, dtw not applied (no heat flux)'
+	  end if
 	else
+	  write(6,*) 'restart: tws, dtw not applied (heat flag not set)'
+	end if
+	if( .not. brst_heat ) then
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'tws (skip)')
 	  read(iunit,iostat=ios)
 	  call rst_check_read(ios,'dtw (skip)')
-	  brst_heat = .false.
-	  write(6,*) 'restart: tws, dtw not applied (heat flag not set)'
 	end if
 
 	end subroutine rst_read_hydro_v20

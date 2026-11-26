@@ -100,6 +100,7 @@
 ! 21.09.2024    ggu     new handle_skin() for handling skin temperature output
 ! 08.02.2025    ggu     some new debug code
 ! 26.11.2026    arb     brun_heat: the heat flag of the restart (#304)
+! 26.11.2026    arb     heat_flux_active(): qflux3d and the restart (#304)
 !
 ! notes :
 !
@@ -136,6 +137,48 @@
 	byes = ( file /= ' ' )
 
 	end
+
+!*****************************************************************************
+
+	function heat_flux_active()
+
+! true if qflux3d computes the heat flux in this run, and with it evapv,
+! tws, dtw and (itdrag = 4) windcd:
+!   - the T/S module runs (ibarcl > 0; else barocl never calls qflux3d)
+!   - there is a heat flux file (qflux) or the atmosphere coupling (iatm)
+!   - there are heat fluxes (iheat > 0) or the ice model (icemod > 0)
+!
+! qflux3d decides with this function, and the restart reader decides
+! with it whether the restored evapv and windcd are used (#303 #304), so
+! the two cannot disagree. It reads parameters only; iatm is set by the
+! meteo forcing (sp111(1)), before the restart read and before qflux3d.
+! Not covered: T/S read from an offline file (idtoff), where barocl
+! returns before qflux3d; the offline module is set up after the read.
+
+	use meteo_forcing_module, only : iatm
+	use para
+
+	implicit none
+
+	logical heat_flux_active
+
+	logical bqflux		!heat flux file
+	logical batm		!ocean-atmosphere coupling
+	logical bheat		!heat flux routines
+	logical bice		!ice model (shyice_init: icemod > 0)
+
+	call qflux_compute(bqflux)
+	batm = iatm > 0
+	bheat = nint(getpar('iheat')) > 0
+	bice = nint(dgetpar('icemod')) > 0
+
+	heat_flux_active = .false.
+	if( nint(getpar('ibarcl')) <= 0 ) return
+	if( .not. bqflux .and. .not. batm ) return
+	if( .not. bheat .and. .not. bice ) return
+	heat_flux_active = .true.
+
+	end function heat_flux_active
 
 !*****************************************************************************
 
@@ -253,6 +296,7 @@
 	real depnode, areanode
 	integer ifemopa,ipext
 	logical is_dry_node
+	logical heat_flux_active
 ! save
 	integer, save :: icall = 0
 	integer, save :: n93 = 0
@@ -318,8 +362,9 @@
 	  batm = iatm > 0			!have ocean-atmosphere coupling
 	  call qflux_compute(bqflux)		!have qflux file
 
-	  if( .not. bqflux .and. .not. batm ) icall = -1
-	  if( .not. bheat .and. .not. bice ) icall = -1
+	  !no file and no coupling, or no heat flux and no ice model; the
+	  !restart reader asks the same function (#303 #304)
+	  if( .not. heat_flux_active() ) icall = -1
 
 	  !---------------------------------------------------------
 	  ! exit if no files, no atm-oce coupling, no heat fluxes, no ice model

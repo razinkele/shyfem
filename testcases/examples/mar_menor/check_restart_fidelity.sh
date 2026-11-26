@@ -43,7 +43,7 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and three cases of another kind, each with its own write run (serial):
+# and four cases of another kind, each with its own write run (serial):
 #   old_v19       a version 19 file (venlag_smoke, as ven_s), written by
 #                 the reference binary REF_BIN_DIR/shyfem (an origin/main
 #                 build, before version 20) and read by this binary (r)
@@ -69,6 +69,16 @@
 #                 cold start's clock (not the restart time); and T and S in
 #                 its .ext at the restart time must equal the write run's,
 #                 so the records after the skipped ones were read right
+#   evap_reads_noheat  the version 20 file of mm_h6d4's write run (evapv of
+#                 the heat flux, windcd set by COARE) read with ibarcl = 0,
+#                 so that qflux3d does not run (ievap = 1, iheat = 6,
+#                 itdrag = 4 kept), as written (r) and with its evapv record
+#                 set to 0 and its windcd record to dragco (p), the values a
+#                 cold start keeps for the whole run: r must not apply the
+#                 file's evapv and windcd, so r must equal p (max|d| = 0;
+#                 compared even if a log line is missing) and both logs must
+#                 say "evapv not applied" and "windcd not applied (itdrag =
+#                 4, no heat flux)"
 # Required for a case: the three runs end (exit code 0 and "simulation
 # end" in the log, timeout 1200 s each); the log of an NP-process run has
 # "shympi initialized: ID NP" once from each rank 0 to NP-1 (so that NP
@@ -100,7 +110,7 @@
 # with shypre from GRID/MM_coarse_smooth.grd and ../venice_lagoon/GRID/
 # venlag62.grd, INPUT is linked and the STR files are made there with sed
 # from mm_hyd_41.str and venlag_smoke.str, so nothing in the source
-# folders changes.  The cases run at the same time (35 processes at the
+# folders changes.  The cases run at the same time (36 processes at the
 # start); every mpirun has --bind-to none, so that the runs do not share
 # the two cores Open MPI binds a 2-process run to.  Takes about 2 minutes
 # on the development machine (the serial venlag cases are the longest).
@@ -110,12 +120,12 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
-ALL="$ALL old_v19 drag0_reads_cd4 flgrst_no_hydro"
+ALL="$ALL old_v19 drag0_reads_cd4 flgrst_no_hydro evap_reads_noheat"
 CASES="${*:-$ALL}"
 needmm=no; needven=no; needmpi=no
 for c in $CASES; do
   case " $ALL " in *" $c "*) ;; *) echo "usage: [REF_BIN_DIR=DIR] $0 [case ...], cases: $ALL"; exit 2 ;; esac
-  case "$c" in mm_*|drag0_reads_cd4|flgrst_no_hydro) needmm=yes ;; ven_*|old_v19) needven=yes ;; esac
+  case "$c" in mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat) needmm=yes ;; ven_*|old_v19) needven=yes ;; esac
   case "$c" in *_np*) needmpi=yes ;; esac
 done
 tools="shyfem shypre python3"
@@ -352,7 +362,8 @@ athour() {
     if (t + 0 == h + 0 && f[3] ~ /^max/) { v = f[3]; sub(/^max\|d\|=/, "", v); printf " %s %s", f[2], v } }' "$1"
 }
 
-#--- the cases of another kind (old_v19, drag0_reads_cd4, flgrst_no_hydro)
+#--- the cases of another kind (old_v19, drag0_reads_cd4, flgrst_no_hydro,
+#    evap_reads_noheat)
 # rundir DIR mm|ven: a run folder with its own copy of the basin and INPUT
 rundir() {
   mkdir "$1" && mkdir "$1/GRID" || return 1
@@ -438,14 +449,24 @@ case_old_v19() {
   return "$rc"
 }
 
-# rstpatch SRC DST DRAGCO: DST is the version 20 restart file SRC with
-# every value of its windcd record set to DRAGCO (as a 4-byte real);
-# walks the record markers and checks the sizes of the records of the
-# hydro block, so that a change of the layout fails here
+# rstpatch SRC DST NAME=VALUE ...: DST is the version 20 restart file SRC
+# with every value of its record NAME (evapv or windcd) set to VALUE (as
+# a 4-byte real); walks the record markers and checks the sizes of the
+# records of the hydro block, so that a change of the layout fails here;
+# fails if a record already holds VALUE everywhere (then the read of SRC
+# and of DST could not differ)
 rstpatch() {
-  python3 - "$1" "$2" "$3" << 'EOF'
+  python3 - "$@" << 'EOF'
 import struct, sys
-src, dst, val = sys.argv[1], sys.argv[2], float(sys.argv[3])
+src, dst = sys.argv[1], sys.argv[2]
+sets = []                       # (record name, value) to set
+for arg in sys.argv[3:]:
+    nm, _, val = arg.partition('=')
+    if nm not in ('evapv', 'windcd') or not val:
+        sys.exit(f"bad argument {arg}: evapv=VALUE or windcd=VALUE")
+    sets.append((nm, float(val)))
+if not sets:
+    sys.exit("nothing to set")
 data = bytearray(open(src, 'rb').read())
 recs = []                       # (offset of the data, length) of each record
 pos = 0
@@ -477,15 +498,16 @@ if len(recs) < i + len(names):
 for k, (nm, sz) in enumerate(zip(names, sizes)):
     if recs[i + k][1] != 4 * sz:
         sys.exit(f"record {nm} has {recs[i + k][1]} bytes, not {4 * sz}")
-o = recs[i + 7][0]
-cd = struct.unpack_from(f'<{nkn}f', data, o)
-v = struct.unpack('<f', struct.pack('<f', val))[0]
-ndiff = sum(1 for x in cd if x != v)
-print(f"windcd of the file: {nkn} values from {min(cd):.6g} to {max(cd):.6g}, {ndiff} differ from "
-      f"dragco {v:.6g}; heat flag {ints(i + 8)[0]}")
-if ndiff == 0:
-    sys.exit("the file's windcd is dragco everywhere: r and p could not differ")
-struct.pack_into(f'<{nkn}f', data, o, *([v] * nkn))
+for nm, val in sets:
+    o = recs[i + names.index(nm)][0]
+    x = struct.unpack_from(f'<{nkn}f', data, o)
+    v = struct.unpack('<f', struct.pack('<f', val))[0]
+    ndiff = sum(1 for y in x if y != v)
+    print(f"{nm} of the file: {nkn} values from {min(x):.6g} to {max(x):.6g}, {ndiff} differ from "
+          f"{v:.6g}; heat flag {ints(i + 8)[0]}")
+    if ndiff == 0:
+        sys.exit(f"the file's {nm} is {v:.6g} everywhere: r and p could not differ")
+    struct.pack_into(f'<{nkn}f', data, o, *([v] * nkn))
 with open(dst, 'wb') as fp:
     fp.write(data)
 EOF
@@ -519,7 +541,7 @@ case_drag0() {
     why="$(cat "$d/w.why"); "
   elif [ ! -s "$d/w/w.rst" ]; then
     why="w: no restart file $d/w/w.rst; "
-  elif ! rstpatch "$d/w/w.rst" "$d/p/w.rst" "$dc" > "$d/patch.txt" 2>&1; then
+  elif ! rstpatch "$d/w/w.rst" "$d/p/w.rst" "windcd=$dc" > "$d/patch.txt" 2>&1; then
     why="cannot set the windcd record of $d/w/w.rst: $(tail -1 "$d/patch.txt"); "
   else
     ln -s ../w/w.rst "$d/r/w.rst" || return 1
@@ -540,6 +562,75 @@ case_drag0() {
     case "$k" in 0) line="${line}$f equal, " ;; 1) line="${line}$f DIFFERS, " ;; *) line="${line}$f not compared, " ;; esac
   done
   line="case $cs: itdrag = 0 read of a file with COARE's windcd, against the same file with windcd = dragco $dc: ${line%, }"
+  if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
+  return "$rc"
+}
+
+# e0log LOG NAME: the log checks of evap_reads_noheat; prints "NAME:
+# reason; " for each one that fails
+e0log() {
+  local k
+  k="$(grep -c 'evapv not applied' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: 'evapv not applied' $k times in $1, not 1; "
+  k="$(grep -c 'windcd not applied (itdrag = *4 *, no heat flux)' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: 'windcd not applied (itdrag = 4, no heat flux)' $k times in $1, not 1; "
+}
+# case_evap: a read whose qflux3d does not run (ibarcl = 0) keeps the
+# cold evapv (0) and windcd (dragco), not the file's values
+case_evap() {
+  local cs=evap_reads_noheat d="$P/evap_reads_noheat" s t0 why="" lw="" w f k rc=0 pr pp line="" cmpl="" dc=""
+  t0=$(date +%s)
+  mkdir "$d" || return 1
+  for s in c w r p; do rundir "$d/$s" mm || return 1; done
+  RTIME=""
+  if mkmm "$cs" 0 06 12 "iheat = 6   itdrag = 4" && [ -n "$RTIME" ]; then
+    sed -i 's/^        ibarcl = 3$/        ibarcl = 0/' "$d/r/r.str"
+    dc="$(sed -n 's/.*dragco = \([^ ]*\).*/\1/p' "$d/r/r.str")"
+  fi
+  if [ -z "$RTIME" ] || [ "$(grep -c '^        ibarcl = 0$' "$d/r/r.str")" != 1 ] \
+     || [ "$(echo "$dc" | wc -w)" != 1 ] || ! cp "$d/r/r.str" "$d/p/r.str"; then
+    echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
+  fi
+  # w writes with the heat flux (evapv, COARE's windcd); r reads w.rst, p
+  # the same file with evapv = 0 and windcd = dragco, both with ibarcl = 0
+  # (ievap = 1, iheat = 6, itdrag = 4 as in w)
+  if ! run "$d/w" w 1 > "$d/w.why"; then
+    why="$(cat "$d/w.why"); "
+  elif [ ! -s "$d/w/w.rst" ]; then
+    why="w: no restart file $d/w/w.rst; "
+  elif ! rstpatch "$d/w/w.rst" "$d/p/w.rst" evapv=0 "windcd=$dc" > "$d/patch.txt" 2>&1; then
+    why="cannot set the evapv and windcd records of $d/w/w.rst: $(tail -1 "$d/patch.txt"); "
+  else
+    ln -s ../w/w.rst "$d/r/w.rst" || return 1
+    run "$d/r" r 1 > "$d/r.why" & pr=$!
+    run "$d/p" r 1 > "$d/p.why" & pp=$!
+    for s in r p; do
+      if [ "$s" = r ]; then wait "$pr"; k=$?; else wait "$pp"; k=$?; fi
+      if [ "$k" = 0 ]; then
+        w="$(readok "$d/$s/r.log")" || why="$why$s: $w; "
+        lw="$lw$(e0log "$d/$s/r.log" "$s")"
+      else
+        why="$why$s: $(cat "$d/$s.why"); "
+      fi
+    done
+  fi
+  donecase "$cs" "$t0" "$why" || return 1
+  sed 's/^/    /' "$d/patch.txt" > "$d.detail"
+  # compared even when a log line is missing, so that a wrong apply shows
+  # as a difference; the .ts.shy only if a run wrote one
+  for f in hydro.shy ts.shy ext; do
+    [ -e "$d/p/r.$f" ] || [ -e "$d/r/r.$f" ] || continue
+    python3 "$HERE/shy_maxdiff.py" "$d/p/r.$f" "$d/r/r.$f" > "$d/cmp.$f.txt" 2>&1
+    k=$?
+    [ "$k" = 0 ] || rc=1
+    s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
+    [ -n "$s" ] || s="$(head -1 "$d/cmp.$f.txt")"
+    echo "    $f (p against r): ${s#SUMMARY *: }" >> "$d.detail"
+    case "$k" in 0) cmpl="${cmpl}$f equal, " ;; 1) cmpl="${cmpl}$f DIFFERS, " ;; *) cmpl="${cmpl}$f not compared, " ;; esac
+  done
+  line="case $cs: ibarcl = 0 read (no qflux3d) of a file with evapv and COARE's windcd, against the same file"
+  line="$line with evapv = 0 and windcd = dragco $dc: ${cmpl%, }"
+  if [ -n "$lw" ]; then line="$line; log: ${lw%; }"; rc=1; fi
   if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
   return "$rc"
 }
@@ -603,6 +694,7 @@ for cs in $CASES; do
     old_v19)         case_old_v19 ;;
     drag0_reads_cd4) case_drag0 ;;
     flgrst_no_hydro) case_flgrst ;;
+    evap_reads_noheat) case_evap ;;
     *)               onecase "$cs" ;;
   esac & PIDS="$PIDS $!"
 done
