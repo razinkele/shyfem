@@ -74,6 +74,8 @@
 	use clo
 	use mod_rstinf
 
+	use mod_error_stop
+
 	implicit none
 
 	integer nc,ierr
@@ -92,7 +94,7 @@
           call rst_diff(ierr)
         else
           write(6,*) 'nc = ',nc
-          stop 'error stop rstinf: wrong number of files'
+          call error_stop('rstinf','wrong number of files')
         end if
 
         if( ierr > 0 ) then
@@ -112,6 +114,8 @@
 
 	use clo
 	use mod_rstinf
+
+	use mod_error_stop
 
 	implicit none
 
@@ -152,7 +156,7 @@
 
 	open(newunit=iunit,file=rstfile,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) stop 'error stop: cannot open rst file'
+	if( ierr /= 0 ) call error_stop('rst_info','cannot open rst file')
 
 !-------------------------------------------------------------------
 ! loop on records
@@ -180,8 +184,8 @@
 
 	end do
 
-	if( ierr > 0 ) stop 'error stop rstinf: error reading record'
-	if( nread == 0 ) stop 'error stop rstinf: no data in file'
+	if( ierr > 0 ) call error_stop('rstinf','error reading record')
+	if( nread == 0 ) call error_stop('rstinf','no data in file')
 
 !-------------------------------------------------------------------
 ! final message
@@ -260,6 +264,8 @@
 	use mod_ts
 	use mod_hydro_vel
 
+	use mod_error_stop
+
 	implicit none
 
 	character*(*) file
@@ -271,7 +277,7 @@
 
 	open(newunit=iunit,file=file,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) stop 'error stop: cannot open rst file'
+	if( ierr /= 0 ) call error_stop('open_for_read','cannot open rst file')
 	call rst_skip_record(iunit,atime,nvers,nrec &
      &					,nk,ne,nl,iflag,ierr)
 
@@ -294,6 +300,8 @@
 
         use clo
         use mod_rstinf
+
+	use mod_error_stop
 
 	implicit none
 
@@ -325,10 +333,10 @@
 
 	open(newunit=iu1,file=rstfile1,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) stop 'error stop: cannot open first rst file'
+	if( ierr /= 0 ) call error_stop('rst_diff','cannot open first rst file')
 	open(newunit=iu2,file=rstfile2,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) stop 'error stop: cannot open second rst file'
+	if( ierr /= 0 ) call error_stop('rst_diff','cannot open second rst file')
 
 !-------------------------------------------------------------------
 ! loop on records
@@ -350,7 +358,7 @@
 
 	if( ierr > 0 ) then
 	  write(6,*) 'read error while reading restart file'
-	  stop 'error stop: read error'
+	  call error_stop('rst_diff','read error')
 	end if
 
         write(6,*)
@@ -376,6 +384,8 @@
 !******************************************************************
 
 	subroutine check_record(iu1,iu2,atime,ierr)
+
+	use mod_error_stop
 
 	implicit none
 
@@ -460,17 +470,17 @@
 
 	call get_integer('ieco',iu1,iu2,ival)
 	if( ival > 0 ) then
-	  stop 'error stop: ieco not ready'
+	  call error_stop('check_record','ieco not ready')
 	end if
 
 	call get_integer('imerc',iu1,iu2,ival)
 	if( ival > 0 ) then
-	  stop 'error stop: imerc not ready'
+	  call error_stop('check_record','imerc not ready')
 	end if
 
 	call get_integer('ibfm',iu1,iu2,ival)
 	if( ival > 0 ) then
-	  stop 'error stop: ibfm not ready'
+	  call error_stop('check_record','ibfm not ready')
 	end if
 
 	if( nvers >= 19 ) then	!fork: ssedi bed mass
@@ -486,6 +496,8 @@
 
 	subroutine get_integer(text,iu1,iu2,ival)
 
+	use mod_error_stop
+
 	implicit none
 
 	character*(*) text
@@ -498,7 +510,7 @@
 
 	if( ival1 /= ival2 ) then
 	  write(6,*) 'values are different: ',trim(text)
-	  stop 'error stop'
+	  call error_stop('get_integer','values are different')
 	end if
 
 	ival = ival1
@@ -510,6 +522,8 @@
 	subroutine check_real(text,iu1,iu2,nv,nh)
 
 	use mod_rstinf
+
+	use mod_error_stop
 
 	implicit none
 
@@ -523,7 +537,7 @@
 
 	n = nv*nh
 	allocate(a1(n),a2(n),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('check_real','allocation failed')
 
 	read(iu1) a1
 	read(iu2) a2
@@ -542,6 +556,8 @@
 
 	use mod_rstinf
 
+	use mod_error_stop
+
 	implicit none
 
 	character*(*) text
@@ -554,7 +570,7 @@
 
 	n = nv*nh
 	allocate(a1(n),a2(n),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('check_double','allocation failed')
 
 	read(iu1) a1
 	read(iu2) a2
@@ -574,6 +590,8 @@
 
 	use mod_rstinf
 
+	use mod_error_stop
+
 	implicit none
 
 	character*(*) text
@@ -586,7 +604,7 @@
 
 	n = nv*nh
 	allocate(a1(n),a2(n),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('check_integer','allocation failed')
 
 	read(iu1) a1
 	read(iu2) a2
@@ -632,6 +650,8 @@
 
 	use mod_restart
 
+	use mod_error_stop
+
 	implicit none
 
 	integer, intent(in) :: iunit
@@ -647,13 +667,13 @@
         read(iunit) atime
         read(iunit) nkn,nel,nlv
 
-	if( id /= idfrst ) stop 'error stop: not a restart file'
-	if( ignore /= 1 ) stop 'error stop: ignore /= 1'
+	if( id /= idfrst ) call error_stop('read_header','not a restart file')
+	if( ignore /= 1 ) call error_stop('read_header','ignore /= 1')
 	!accept upstream v18 through our nvmax (mod_restart, 20); older
 	!versions are not handled by the positional reads of the diff mode
 	if( nvers < 18 .or. nvers > nvmax ) then
 	  write(6,*) 'nvers,nvmax: ',nvers,nvmax
-	  stop 'error stop: unsupported nvers for diff mode'
+	  call error_stop('read_header','unsupported nvers for diff mode')
 	end if
 
 	end
@@ -663,6 +683,8 @@
 	subroutine compare_header(iu1,iu2,nvers,atime,nkn,nel,nlv,ierr)
 
 	use mod_restart
+
+	use mod_error_stop
 
 	implicit none
 
@@ -702,7 +724,7 @@
 	write(6,*) 'date of record of file 1: ',aline
 	call dts_format_abs_time(atime2,aline)
 	write(6,*) 'date of record of file 2: ',aline
-	stop 'error stop: error comparing header'
+	call error_stop('compare_header','error comparing header')
 	end
 
 !******************************************************************

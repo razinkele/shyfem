@@ -9,12 +9,14 @@
 #   write : 3d baroclinic run, writes strip_rst.rst (last record)
 #   skip  : rstinf reads every record through rst_skip_record
 #   conv  : rst2shy (restart + basin file) converts the restart file to
-#           .hydro.shy and .ts.shy. rst2shy ends with a bare "stop", so its
-#           exit status is 0 even on an error: the gate therefore removes any
-#           old strip_rst.*.shy first (the write run makes strip_rst.hydro.shy
+#           .hydro.shy and .ts.shy. rst2shy exits non-zero on an error
+#           (#327; it exited 0 before). The gate removes any old
+#           strip_rst.*.shy first (the write run makes strip_rst.hydro.shy
 #           under the same name), then requires both files to exist and be
 #           non-empty, no "error stop" in the log, and the same number of
 #           records read as rstinf
+#   err   : rst2shy given only the restart file (no basin file) must exit
+#           7 with "rst_init: missing files" (it exited 0 before #327)
 #   warm  : a second run restarts from the file
 #
 # The overrun only faults reliably in a bounds-checked build:
@@ -49,6 +51,11 @@ n_inf=$(nrec rstinf.log); n_shy=$(nrec rst2shy.log)
 { [ -n "$n_shy" ] && [ "$n_shy" -ge 1 ] && [ "$n_shy" = "$n_inf" ]; } \
   || { echo "FAIL rst2shy: records read ${n_shy:-none}, rstinf read ${n_inf:-none}"; exit 1; }
 echo "ok   rst2shy converted $n_shy record(s) to .hydro.shy and .ts.shy"
+rm -f rst2shy_err.log
+timeout 300 rst2shy strip_rst.rst > rst2shy_err.log 2>&1; rc=$?
+{ [ "$rc" -eq 7 ] && grep -q "rst_init: missing files" rst2shy_err.log; } \
+  || { echo "FAIL rst2shy without a basin file: exit $rc (want 7 + rst_init: missing files)"; exit 1; }
+echo "ok   rst2shy without a basin file exits $rc"
 step warm    warm.log    shyfem strip_warm.str
 grep -q "A restart has been performed" warm.log \
   || { echo "FAIL warm: no restart performed"; exit 1; }
