@@ -66,8 +66,9 @@
 ! clo_usage, also for too few files) exit 0; an error (an unknown option,
 ! an option without its value, a number that cannot be read, clo_error
 ! and the internal errors) exits 7 through error_stop of mod_error_stop
-! (#332). Every process of the model parses the same command line, before
-! MPI is initialized, so all of them stop the same way
+! (#332). Every process of the model parses the same command line, so all
+! of them stop the same way; in the standalone model this is before MPI
+! is initialized (the NUOPC cap starts after ESMF has started MPI)
 ! 
 ! in clo_add/set/get_option numbers can be integer, real or double precision
 ! in clo_add_option give extra information for number or string (see example)

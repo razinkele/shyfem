@@ -84,9 +84,19 @@
 ! every error ends through error_stop of mod_error_stop (exit 7, the
 ! message "error stop ROUTINE: TEXT" on stdout), not a bare stop (exit 0,
 ! #332). Not shympi_abort_internal (exit 33): shyadj links basin.o
-! without the shympi library. The model reads the basin before MPI is
-! initialized (cstfile), every process the same file, so every process
-! stops the same way there
+! without the shympi library. In the standalone model (not the NUOPC
+! cap, which starts after ESMF has started MPI) the errors come before
+! MPI is initialized, on the whole basin and on every process alike:
+!   - cstfile reads the basin (basin_read: basin_get_par, basin_init,
+!     basin_read_internal, bas_check_spherical), every process the same
+!     file
+!   - set_spherical (initialize.f90) checks the isphe of the STR file
+!     with bas_check_spherical, so the later check in prilog (bas_info,
+!     after MPI started, on the nodes of the master's domain) cannot fail
+!     (#332)
+! After MPI started only basin_init for the domain of a process
+! (mpi_basin.f90) can stop, on an allocation failure of that process;
+! mpirun then ends the job (an exit 7 without MPI_Finalize)
 !***********************************************************
 !***********************************************************
 !***********************************************************

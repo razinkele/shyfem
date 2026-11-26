@@ -134,6 +134,8 @@
 ! 28.04.2023	ggu	possible nkn=nel bug flagged with GGU_NKN_NEL
 ! 03.03.2024	ggu	bug fix in init_file_uv() - reset np
 ! 10.05.2024	ggu	set spherical in bas file
+! 26.11.2026	arb	set_spherical checks the coordinates of the whole basin
+!			on every process before MPI starts (#332)
 !
 ! notes :
 !
@@ -1669,6 +1671,11 @@
 	if( isphe == -1 ) return	!no info given
 
 	call bas_set_spherical(isphe)
+	!check isphe against the coordinates now, on the whole basin and on
+	!every process alike (before shympi_init in the standalone model);
+	!it was first checked in prilog, after MPI started, on the nodes of
+	!the master's domain alone (bas_info, #332)
+	call bas_check_spherical
 	call set_coords_ev(isphe)
 
 	end
