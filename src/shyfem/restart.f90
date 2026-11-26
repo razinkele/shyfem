@@ -1545,8 +1545,9 @@
 ! -2, -3 or -4 and below) never runs qflux3d: barocl returns before it
 ! at every step. heat_flux_active cannot see this (the offline module is
 ! set up after the restart read), so the reader asks offline_reads_ts,
-! which decodes the STR's idtoff, and then treats the heat flux as not
-! running: evapv, windcd (itdrag = 4), tws and dtw are not applied.
+! which decodes the STR's idtoff as handle_offline does (a number or a
+! time span string, idtoff = '-2s', #323), and then treats the heat flux
+! as not running: evapv, windcd (itdrag = 4), tws and dtw are not applied.
 !
 ! with bwant false (flgrst without hydro) the seven records are skipped
 ! and nothing is applied; so too when a tool reads the file (btool_rst:

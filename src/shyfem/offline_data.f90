@@ -58,6 +58,8 @@
 ! 15.03.2024	ggu	time to iitime; prepared for turbulence (bturb)
 ! 10.04.2024	ggu	finished offline
 ! 26.11.2026	arb	offline_reads_ts() for the restart reader (#303 #304)
+! 26.11.2026	arb	offline_reads_ts() decodes idtoff as handle_offline
+!			(convert_time_d, a time span string too) (#323)
 !
 ! notes :
 !
@@ -298,20 +300,25 @@
 ! is the bit 2. Then barocl returns at every step before qflux3d.
 !
 ! It reads only the parameter, so the restart reader can ask before
-! handle_offline sets the offline module up (#303 #304). A time span
-! given as a string (idtoff = '1h') is a write step, never a read; its
-! value stays 0 until handle_offline converts it (convert_time_d).
+! handle_offline sets the offline module up (#303 #304). It decodes it
+! with convert_time_d, as handle_offline does, so that a time span given
+! as a string selects as there: idtoff = '-2s' is -2, T/S from the file
+! (#323; dgetpar alone gives 0 for a string, "not offline"). An early
+! call changes nothing for handle_offline: convert_time_d writes the
+! decoded value back (dputpar) but keeps the string, which handle_offline
+! decodes again to the same value; a number is only read (dgetpar).
 
 	use mod_offline, only : ioff_max
-	use para
 
 	implicit none
 
 	logical offline_reads_ts
 
 	integer ioff
+	double precision dtoff
 
-	ioff = -nint(dgetpar('idtoff'))
+	call convert_time_d('idtoff',dtoff)
+	ioff = -nint(dtoff)
 	if( ioff >= 4 ) ioff = ioff_max		!as handle_offline
 
 	offline_reads_ts = .false.
