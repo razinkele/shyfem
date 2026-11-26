@@ -551,9 +551,13 @@
 !
 ! stops on an error, with the lines it wrote before #294 (xy2xi_ierr,
 ! which does the work, returns the error instead: the particle tracker
-! calls that one inside its OpenMP loop, where nothing may write or stop)
-
-	use basin
+! calls that one inside its OpenMP loop, where nothing may write or stop;
+! xy2xi_write_error writes the lines). A bare stop (exit code 0): for
+! the tools; the model calls xy2xi_ierr and stops through
+! shympi_abort_internal (#305), with one known exception: femintp_xi
+! (below), the upwind value of TVD (itvd = 2, also on several
+! processes), calls this routine inside the OpenMP tasks of conz3d_omp,
+! where no abort may come from a worker either (issue #317)
 
 	implicit none
 
@@ -561,20 +565,44 @@
 	double precision, intent(in) :: x,y
 	double precision, intent(out) :: xi(3)
 
-	integer ii
 	integer ierr
+
+	call xy2xi_ierr(ie,x,y,xi,ierr)
+	if( ierr == 0 ) return
+
+	call xy2xi_write_error(ie,x,y,ierr)
+	if( ierr < 0 ) stop 'error stop xy2xi: ie<=0'
+	stop 'error stop xy2xi: wrong xi'
+
+	end
+
+!***********************************************************
+
+	subroutine xy2xi_write_error(ie,x,y,ierr)
+
+! writes the lines of an error ierr /= 0 of xy2xi_ierr for the point x/y
+! in element ie, those xy2xi wrote before its stop (until #305 in xy2xi):
+! an element out of range (ierr < 0), or the xi that adjust_xi could not
+! adjust (ierr 1 or 3), recomputed, and whether the point is in the element
+
+	use basin
+
+	implicit none
+
+	integer, intent(in) :: ie
+	double precision, intent(in) :: x,y
+	integer, intent(in) :: ierr
+
+	integer ii
 	double precision a(3),b(3),c(3)
 	double precision xiorig(3)
 	real xp,yp
 
 	logical in_element
 
-	call xy2xi_ierr(ie,x,y,xi,ierr)
-	if( ierr == 0 ) return
-
 	if( ierr < 0 ) then
 	  write(6,*) 'element number is out of range: ',ie,nel
-	  stop 'error stop xy2xi: ie<=0'
+	  return
 	end if
 
 	call xi_abc(ie,a,b,c)		!the xi that adjust_xi could not adjust
@@ -593,7 +621,6 @@
 	if( .not. in_element(ie,xp,yp) ) then
 	  write(6,*) 'point is not in element...'
 	end if
-	stop 'error stop xy2xi: wrong xi'
 
 	end
 
@@ -734,7 +761,10 @@
 !
 ! stops on an error (xi2xy_ierr, which does the work, returns it
 ! instead: the particle tracker calls that one inside its OpenMP loop,
-! where nothing may write or stop, #294)
+! where nothing may write or stop, #294; xi2xy_write_error writes the
+! lines). A bare stop (exit code 0): for the tools; the model calls
+! xi2xy_ierr and stops through shympi_abort_internal (#305; the one
+! known model caller of an old name is femintp_xi, of xy2xi, issue #317)
 
 	implicit none
 
@@ -743,19 +773,37 @@
 	double precision, intent(in) :: xi(3)
 
 	integer ierr
-	double precision a(3),b(3),c(3)
 
 	call xi2xy_ierr(ie,x,y,xi,ierr)
 
         if( ierr /= 0 ) then
-	  call xi_abc(ie,a,b,c)
-	  write(6,*) 'det too small: ',ie
-	  write(6,*) xi
-	  write(6,*) a
-	  write(6,*) b
-	  write(6,*) c
+	  call xi2xy_write_error(ie,xi)
 	  stop 'error stop xi2xy: det == 0'
 	end if
+
+	end
+
+!***********************************************************
+
+	subroutine xi2xy_write_error(ie,xi)
+
+! writes the lines of an error of xi2xy_ierr (the determinant too small)
+! for xi in element ie, those xi2xy wrote before its stop (until #305 in
+! xi2xy): the element, xi and the coefficients a, b, c of xi_abc
+
+	implicit none
+
+	integer, intent(in) :: ie
+	double precision, intent(in) :: xi(3)
+
+	double precision a(3),b(3),c(3)
+
+	call xi_abc(ie,a,b,c)
+	write(6,*) 'det too small: ',ie
+	write(6,*) xi
+	write(6,*) a
+	write(6,*) b
+	write(6,*) c
 
 	end
 

@@ -33,6 +33,7 @@
 ! lgr_mpi_list_fail		record a failure of the lists found in the particle loop
 ! lgr_mpi_list_check		abort on a recorded failure (main thread, after the loop)
 ! lgr_mpi_test_internal		test hook of the internal-error guards (#256)
+! lgr_mpi_test_event		test hook of the events of the tracker (#305)
 ! lgr_mpi_search_key		place of an element in find_elem_from_old's search
 ! lgr_mpi_selftest_key		self-test of the key against that search
 ! lgr_mpi_clear_of_sides	point clear of an element's sides by the margin
@@ -239,7 +240,7 @@
 	! lgr_internal_error (kind 5 above, and lgr_internal_flag = 1, written
 	! and read with OMP ATOMIC: lgr_internal_failed) and the run stops in
 	! lgr_mpi_list_check after the loop; anywhere else the guard aborts at
-	! once, as before
+	! once, as before, after writing the events of the pass (#305)
 	integer, save :: lgr_internal_flag = 0
 
 	! test hook of the internal-error guards (read once by lgr_mpi_init,
@@ -283,6 +284,20 @@
 	! skips track_advect); the steps after the advection (vertical walk,
 	! horizontal diffusion, Stokes drift, beaching) run as before
 	logical, save :: lgr_test_noadv = .false.
+
+	! test hook of the events of the tracker (#305; read once by
+	! lgr_mpi_init, also in a serial run; never written after that):
+	! LGR_TEST_EVENT=K (K = 1 ... lgr_nev) records an event of kind K for
+	! the particle in slot 1 in the first pass (lgr_step = 1) on each
+	! process, with fixed values, and for a kind that stops the run then
+	! calls lgr_internal_error (lgr_mpi_test_event, called by track_single
+	! at its start); for kind 23 the error of xy2xi_ierr in diff_body is
+	! forced instead (error 1), so that the path after an error recorded
+	! there runs (track_finish returns). 0: off. This reaches every kind
+	! and the three ways the run stops after one (at once on one thread,
+	! through lgr_mpi_list_check on several threads, each process with its
+	! rank), which no normal run reaches (check_lgr_fixes.sh events)
+	integer, save :: lgr_test_event = 0
 
 	! limit nbdymax on several processes: insert_particle does not stop
 	! there, it only records that this process passed the limit by itself;
@@ -490,6 +505,11 @@
 ! master writes a line for each hook that is on (check_lgr_wellmixed.sh
 ! looks for these lines, #286, #287)
 !
+! test hook LGR_TEST_EVENT=K (K = 1 ... lgr_nev), read here once, in a
+! serial run too: an event of kind K for the particle in slot 1 in the
+! first pass (lgr_test_event, lgr_mpi_test_event, #305); the master
+! writes a line when it is on
+!
 ! test hooks of lgr_mpi_check_consistency, read here once (several
 ! processes only): LGR_TEST_DROP=R and LGR_TEST_DUP=R arm the fault on
 ! the process whose rank is R (lgr_test_drop, lgr_test_dup; see
@@ -550,6 +570,19 @@
 	if( lgr_test_noadv .and. shympi_is_master() ) then
 	  write(6,'(a)') ' test hook LGR_TEST_NOADV: particles are not'	&
      &		//' advected'
+	end if
+
+	call get_environment_variable('LGR_TEST_EVENT',sval,status=ist)
+	if( ist == 0 ) then
+	  read(sval,*,iostat=ios) ir
+	  if( ios == 0 ) then
+	    if( ir >= 1 .and. ir <= lgr_nev ) lgr_test_event = ir
+	  end if
+	end if
+	if( lgr_test_event > 0 .and. shympi_is_master() ) then
+	  write(6,'(a,i0,a)') ' test hook LGR_TEST_EVENT: an event of kind '	&
+     &		,lgr_test_event,' for the particle in slot 1 in the first'	&
+     &		//' pass'
 	end if
 
 	if( .not. bmpi_lagr ) return
@@ -2195,6 +2228,66 @@
 	end if
 
 	end subroutine lgr_mpi_test_internal
+
+!*******************************************************************
+
+	subroutine lgr_mpi_test_event(i)
+
+! test hook LGR_TEST_EVENT=K (lgr_test_event, read once by lgr_mpi_init;
+! never written after that), #305: called by track_single at its start,
+! inside the particle loop of drogue, before the particle's own early
+! returns. In the first pass (lgr_step = 1) the particle in slot 1 of
+! this process records an event of kind K (lgr_event) with fixed values:
+! key 0 (kept before any event of a particle), the integer values 1 ...
+! lgr_ev_ni, the real values 0.5, 1.5, ... (lgr_ev_nd of them) and, for
+! kind 18 (lgr_ev_xi_check, whose sites name themselves), the text
+! LGR_TEST_EVENT; lgr_events writes what the kind's descriptor takes of
+! them (lgr_event_desc). For a kind that stops the run it then calls
+! lgr_internal_error with the message "error stop lgr_mpi_test_event:
+! kind K", which aborts at once outside an active parallel region and
+! records the error inside one (the caller returns after it). Kind 23 is
+! not recorded here: diff_body forces the error of its xy2xi_ierr for
+! that particle instead. The slot and the pass are read-only state, so
+! the same particle fires on any number of threads, and nothing saved is
+! written here. A run without the hook returns at once
+
+	implicit none
+
+	integer, intent(in) :: i		!particle (slot)
+
+	integer :: j,ni,nd
+	logical :: brun,bfix
+	integer :: ival(lgr_ev_ni)
+	double precision :: dval(lgr_ev_nd)
+	character(len=32) :: chead
+	character(len=80) :: ctext
+	character(len=20) :: cname(lgr_ev_ni+lgr_ev_nd)
+	character(len=40) :: cmsg
+
+	if( lgr_test_event <= 0 ) return
+	if( lgr_test_event == lgr_ev_xy2xi ) return	!forced in diff_body
+	if( i /= 1 ) return
+	if( lgr_step /= 1 ) return
+
+	do j=1,lgr_ev_ni
+	  ival(j) = j
+	end do
+	do j=1,lgr_ev_nd
+	  dval(j) = j - 0.5d0
+	end do
+	if( lgr_test_event == lgr_ev_xi_check ) then
+	  call lgr_event(lgr_test_event,0,ival,dval,'LGR_TEST_EVENT')
+	else
+	  call lgr_event(lgr_test_event,0,ival,dval)
+	end if
+
+	call lgr_event_desc(lgr_test_event,chead,ctext,brun,ni,nd,cname,bfix)
+	if( brun ) return			!the run goes on
+	write(cmsg,'(a,i0)') 'error stop lgr_mpi_test_event: kind '	&
+     &		,lgr_test_event
+	call lgr_internal_error(trim(cmsg))
+
+	end subroutine lgr_mpi_test_event
 
 !*******************************************************************
 
@@ -6402,7 +6495,7 @@
 	integer, save :: iunode = 0		!unit of lgrdbg.node.NN.txt
 	logical, save :: bflux = .false.	!flux and node files written
 
-	integer :: i,ie,ii,k,ieg,ng
+	integer :: i,ie,ii,k,ieg,ng,ierr
 	double precision :: x,y,xi(3)
 	character(len=1) :: what
 
@@ -6438,7 +6531,12 @@
 	  ie = lgr_ar(i)%actual%ie
 	  if( ie > 0 ) then
 	    xi = lgr_ar(i)%actual%xi
-	    call xi2xy(ie,x,y,xi)
+	    call xi2xy_ierr(ie,x,y,xi,ierr)
+	    if( ierr /= 0 ) then	!a bare stop in xi2xy until #305
+	      call xi2xy_write_error(ie,xi)
+	      call shympi_abort_internal('error stop lgr_mpi_debug_dump:'	&
+     &		//' error of xi2xy')
+	    end if
 	    ieg = ip_int_elem(ie)
 	    ng = lgr_mpi_ghost_nodes(ie)
 	    if( ng == 0 ) then
@@ -6590,8 +6688,15 @@
 ! lgr_mpi_list_check after the loop, before any collective call.
 ! Anywhere else (a loop on one thread, the hand-over, the release) it
 ! aborts at once through shympi_abort_internal, as the guard did before
-! (#256). Must not be called inside the critical section lgr_export
+! (#256), after writing the events of the tracker recorded in the pass
+! (lgr_events, #305: among them the values of the error, for a guard
+! with an event kind; until #305 lgr_event wrote them only for such a
+! kind, so that a guard with none, "error stop drogue: internal error",
+! "lagr_connect_count: (1)" or "lagr_count: (1)", dropped the other
+! events of the pass on one thread, which lgr_mpi_list_check writes on
+! several). Must not be called inside the critical section lgr_export
 
+	use mod_lagrange, only : lgr_events
 	use mod_lagrange_mpi, only : lgr_omp_loop, lgr_internal_flag
 	use mod_lagrange_mpi, only : lgr_mpi_list_fail
 
@@ -6602,8 +6707,10 @@
 	logical :: openmp_in_parallel
 
 	if( .not. lgr_omp_loop ) then
+	  call lgr_events			!the events of the pass (#305)
 	  call shympi_abort_internal(message)
 	else if( .not. openmp_in_parallel() ) then
+	  call lgr_events			!the events of the pass (#305)
 	  call shympi_abort_internal(message)
 	end if
 

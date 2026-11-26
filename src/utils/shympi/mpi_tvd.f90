@@ -667,7 +667,12 @@
 	  yd = my_array_list(ind_y,na)
 	  ie = my_array_list(ind_ie_found,na)
 	  iee = my_array_list(ind_iee_found,na)
-	  call xy2xi(ie,xd,yd,xi)
+	  call xy2xi_ierr(ie,xd,yd,xi,ierr)
+	  if( ierr /= 0 ) then		!a bare stop in xy2xi until #305
+	    call xy2xi_write_error(ie,xd,yd,ierr)
+	    call shympi_abort_internal('error stop tvd_mpi_init:'	&
+     &		//' error of xy2xi')
+	  end if
 	  my_xi_list(:,i) = xi(:)
 	  if( bdebug ) write(iudb,'(i6,2e14.6,3e14.6)') iee,xd,yd,xi
 	end do

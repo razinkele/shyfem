@@ -217,6 +217,7 @@
 	double precision xi(3)
 
 	double precision xx,yy
+	integer ierr
 
 	if( ie < 1 ) then
 	  write(6,*) 'ie = ',ie
@@ -225,7 +226,12 @@
 
 	xx = x
 	yy = y
-	call xy2xi(ie,xx,yy,xi)
+	call xy2xi_ierr(ie,xx,yy,xi,ierr)
+	if( ierr /= 0 ) then		!a bare stop in xy2xi until #305
+	  call xy2xi_write_error(ie,xx,yy,ierr)
+	  call shympi_abort_internal('error stop xi_init_particle:'	&
+     &		//' error of xy2xi')
+	end if
 	call xi_move_inside(ie,xi)
 
 	end
@@ -1119,8 +1125,14 @@
 	integer :: ieg,ii
 	real :: x,y,hl,ht,hr
 	double precision :: xx,yy
+	integer :: ierr
 
-	call xi2xy(abs(ie),xx,yy,xi)
+	call xi2xy_ierr(abs(ie),xx,yy,xi,ierr)
+	if( ierr /= 0 ) then		!a bare stop in xi2xy until #305
+	  call xi2xy_write_error(abs(ie),xi)
+	  call shympi_abort_internal('error stop lgr_output_fill:'	&
+     &		//' error of xi2xy')
+	end if
 	x = xx
 	y = yy
 	call lgr_compute_depths(ie,lb,z,hl,ht,hr)
