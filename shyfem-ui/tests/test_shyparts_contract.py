@@ -11,6 +11,7 @@ which the page reported as a failure.
 
 import asyncio
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -31,8 +32,51 @@ SHYPARTS = _BIN if _BIN.exists() else Path(shutil.which("shyparts") or _BIN)
 def test_stats_and_map_come_from_the_real_elem_grd():
     stats, pmap = analyze_partitions(MM / "MM_coarse.4.elem.grd")
     assert stats["num_partitions"] == 4
-    assert stats["elements_per_partition"] == [478, 549, 594, 924]
+    counts = stats["elements_per_partition"]
+    # The METIS element partition of MM_coarse on 4 domains (#302). The old
+    # snapshot, made while check_connections damaged iarv (#290), read
+    # [478, 549, 594, 924]: one domain with twice the elements of another.
+    assert counts == [637, 638, 638, 632]
+    assert max(counts) < 1.1 * min(counts), "an element partition METIS made is balanced"
     assert len(pmap) == 2545 and set(pmap.values()) == {0, 1, 2, 3}
+
+
+@pytest.mark.parametrize(
+    "grd, np_val, total",
+    [
+        ("mar_menor/GRID/MM_coarse.grd", 2, 2545),
+        ("mar_menor/GRID/MM_coarse.grd", 4, 2545),
+        ("venice_lagoon/GRID/venlag62.grd", 2, 7842),
+        ("venice_lagoon/GRID/venlag62.grd", 4, 7842),
+        ("venice_lagoon/GRID/venlag62.grd", 8, 7842),
+    ],
+)
+def test_committed_elem_snapshots_are_balanced(grd, np_val, total):
+    """Every committed *.N.elem.grd is a balanced METIS partition, not the damaged one
+    shyparts wrote before #290 (venlag62 on 2: 6559 against 1283)."""
+    path = REPO / "testcases" / "examples" / grd
+    snap = path.with_name(f"{path.stem}.{np_val}.elem.grd")
+    counts = analyze_partitions(snap)[0]["elements_per_partition"]
+    assert len(counts) == np_val and sum(counts) == total
+    assert max(counts) < 1.2 * min(counts), counts  # venlag62 on 8: 1029 against 902
+
+
+@pytest.mark.skipif(not SHYPARTS.exists(), reason="needs the built shyparts")
+def test_a_fresh_shyparts_run_gives_a_balanced_partition(tmp_path):
+    """A fresh run keeps the properties the snapshot is held to (#302). Exact
+    counts are not compared: METIS output depends on the libmetis version."""
+    shutil.copy(MM / "MM_coarse.grd", tmp_path / "MM_coarse.grd")
+    r = subprocess.run(
+        [str(SHYPARTS), "-np", "4", "MM_coarse.grd"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert r.returncode in (0, 9), r.stdout[-400:] + r.stderr[-400:]  # 9: warnings to ignore
+    counts = analyze_partitions(tmp_path / "MM_coarse.4.elem.grd")[0]["elements_per_partition"]
+    assert len(counts) == 4 and sum(counts) == 2545
+    assert max(counts) < 1.1 * min(counts), counts
 
 
 def test_a_missing_elem_grd_gives_empty_stats(tmp_path):
