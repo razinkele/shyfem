@@ -552,9 +552,12 @@
 ! stops on an error, with the lines it wrote before #294 (xy2xi_ierr,
 ! which does the work, returns the error instead: the particle tracker
 ! calls that one inside its OpenMP loop, where nothing may write or stop;
-! xy2xi_write_error writes the lines). A bare stop (exit code 0): only
-! for the tools; the model calls xy2xi_ierr and stops through
-! shympi_abort_internal (#305)
+! xy2xi_write_error writes the lines). A bare stop (exit code 0): for
+! the tools; the model calls xy2xi_ierr and stops through
+! shympi_abort_internal (#305), with one known exception: femintp_xi
+! (below), the upwind value of TVD (itvd = 2, also on several
+! processes), calls this routine inside the OpenMP tasks of conz3d_omp,
+! where no abort may come from a worker either (issue #317)
 
 	implicit none
 
@@ -759,8 +762,9 @@
 ! stops on an error (xi2xy_ierr, which does the work, returns it
 ! instead: the particle tracker calls that one inside its OpenMP loop,
 ! where nothing may write or stop, #294; xi2xy_write_error writes the
-! lines). A bare stop (exit code 0): only for the tools; the model calls
-! xi2xy_ierr and stops through shympi_abort_internal (#305)
+! lines). A bare stop (exit code 0): for the tools; the model calls
+! xi2xy_ierr and stops through shympi_abort_internal (#305; the one
+! known model caller of an old name is femintp_xi, of xy2xi, issue #317)
 
 	implicit none
 

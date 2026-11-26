@@ -466,9 +466,10 @@
 #             "lgr_mpi_list_check:"; on 4 threads through the check of the
 #             main thread after the particle loop ("lgr_mpi_list_check: ...
 #             an internal error found in the particle loop by OpenMP thread
-#             N"); on 4 processes with the line naming the rank, and the
-#             rank of Open MPI's "MPI_ABORT was invoked on rank R" among the
-#             ranks of the lines.  No run may write a SIGSEGV, SIGFPE or
+#             N"); on 4 processes with the line naming the rank, and Open
+#             MPI's line "MPI_ABORT was invoked on rank R" (required: the
+#             build is Open MPI) with R among the ranks of the lines.  No
+#             run may write a SIGSEGV, SIGFPE or
 #             "Fortran runtime" line or an event line of another kind.
 #             Then, on 1 thread, LGR_TEST_EVENT=8 with LGR_TEST_INTERNAL_FAIL
 #             =1 (a non-stop event and, in the same pass, the guard "error
@@ -478,16 +479,19 @@
 #             the pass, written only for a kind that stops the run).  And
 #             the source: no call of the routines of the old name xi2xy,
 #             xy2xi, xi_dist, xit_start_end (a bare stop, exit code 0, on
-#             an error) in src/shyfem and src/utils (until #305 the release,
-#             the particle output, the larvae, the debug dump and the TVD
-#             set-up called them on several processes; they now call the
-#             _ierr form and stop through shympi_abort_internal, exit code
-#             33; no run reaches these errors), except inside the OpenMP
-#             tasks of conz3d_omp (the upwind value of TVD,
-#             tvd_get_upwind_c: femintp_xi, and a debug line under bdebug =
-#             .false.), where an abort through MPI_ABORT may not come from
-#             a worker either; those are listed.  The code before #305 does
-#             not know the hook.
+#             an error) in the Fortran files under src (.f, .F, .f90, .F90;
+#             src/tools excepted: the tools run on one process; until #305
+#             the release, the particle output, the larvae, the debug dump
+#             and the TVD set-up called them, all but the larvae also on
+#             several processes; they now call the _ierr form and stop
+#             through shympi_abort_internal, exit code 33; no run reaches
+#             these errors), except exactly two known calls inside the
+#             OpenMP tasks of conz3d_omp (the upwind value of TVD,
+#             tvd_get_upwind_c: femintp_xi, issue #317, and a debug line
+#             under bdebug = .false.), where an abort through MPI_ABORT may
+#             not come from a worker either; each must be found once, by
+#             file, routine and line.  The code before #305 does not know
+#             the hook.
 #   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
 #             (its list of parked particles grows) on 4 MPI processes with
 #             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
@@ -621,7 +625,7 @@
 # modes vdiff-dt, walk-fold and bed-w also gfortran on PATH and the source
 # tree three levels up (../../../src/shyfem/lagrange_dif.f90, for bed-w
 # lagrange_vertical.f90, as in a checkout); mode events that source tree
-# too (../../../src/shyfem and ../../../src/utils).
+# too (all of ../../../src).
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
@@ -2342,9 +2346,12 @@ for k in range(1, 26):
                 if len(hits) != nwith:
                     bad("%s: %d lines of kind %d, expected one per process with particles (%d)" % (tag, len(hits), k, nwith))
             else:
+                # Open MPI (the build requires it) names the rank that aborted
                 ab = [re.search(r"MPI_ABORT was invoked on rank (\d+)", l) for l in log]
                 ab = [int(m.group(1)) for m in ab if m]
-                if ab and ab[0] not in rk:
+                if not ab:
+                    bad("%s: no line 'MPI_ABORT was invoked on rank R' (Open MPI) for a kind that stops the run" % tag)
+                elif ab[0] not in rk:
                     bad("%s: MPI_ABORT on rank %d, not one of the ranks of the lines %r" % (tag, ab[0], rk))
         if not brun and flow == "t1":
             if hits and msg and hits[0][0] > msg[0]:
@@ -2386,38 +2393,67 @@ if any(CHECK in l for l in log):
 sys.exit(0 if ok else 1)
 EOF
   # the routines of the old name stop with a bare stop (exit code 0): none
-  # may be called in the model, where they run on several processes; kept
-  # only inside the OpenMP tasks of conz3d_omp (the upwind value of TVD,
-  # tvd_get_upwind_c: femintp_xi and a debug line under bdebug = .false.),
-  # where an abort through MPI_ABORT may not come from a worker either
+  # may be called in the model (every Fortran file under src, src/tools
+  # excepted: the tools run on one process), where they run on several
+  # processes; kept are exactly two known calls inside the OpenMP tasks
+  # of conz3d_omp (the upwind value of TVD, tvd_get_upwind_c: femintp_xi,
+  # issue #317, and a debug line under bdebug = .false.), where an abort
+  # through MPI_ABORT may not come from a worker either
   PYTHONDONTWRITEBYTECODE=1 python3 - "$SRC" <<'EOF' || fail "calls of xi2xy, xy2xi, xi_dist or xit_start_end (bare stop) in the model, see above"
-import glob, os, re, sys
+import os, re, sys
 src = sys.argv[1]
-KEEP = {("evgeom.f90", "femintp_xi"), ("tvd_admin.f90", "tvd_get_upwind_c")}
+# the calls kept: (file under src, routine, the stripped line), each once
+KEEP = [("utils/shyutil/evgeom.f90", "femintp_xi", "call  xy2xi(ie,x,y,xi)"),
+        ("shyfem/tvd_admin.f90", "tvd_get_upwind_c", "call xy2xi(ienew,xd,yd,xi)")]
+EXT = (".f", ".F", ".f90", ".F90")
 unit = re.compile(r"^\s*(?:[a-z ()*0-9,=]*\s)?(?:subroutine|function)\s+(\w+)", re.I)
 call = re.compile(r"^[^!]*\bcall\s+(xi2xy|xy2xi|xi_dist|xit_start_end)\s*\(", re.I)
-bad, kept = [], []
-files = sorted(glob.glob(os.path.join(src, "shyfem", "*.f90")) + glob.glob(os.path.join(src, "utils", "*", "*.f90")))
+bad, kept, seen = [], [], dict((k, 0) for k in KEEP)
+files = []
+for top, dirs, names in os.walk(src):
+    dirs.sort()
+    if os.path.relpath(top, src).split(os.sep)[0] == "tools":
+        dirs[:] = []
+        continue
+    files += [os.path.join(top, f) for f in sorted(names) if f.endswith(EXT)]
 for path in files:
+    rel = os.path.relpath(path, src).replace(os.sep, "/")
+    fixed = path.endswith((".f", ".F"))	# fixed form: a comment in column 1
     name = None
     with open(path, errors="replace") as fh:
         for n, line in enumerate(fh, 1):
+            if fixed and line[:1] in "cC*!":
+                continue
             m = unit.match(line)
             if m and not line.lstrip().lower().startswith("end"):
                 name = m.group(1).lower()
             if call.match(line):
-                rel = os.path.relpath(path, src)
+                key = (rel, name, line.strip())
                 what = "    src/%s:%d (%s): %s" % (rel, n, name, line.strip())
-                (kept if (os.path.basename(path), name) in KEEP else bad).append(what)
-print("  files scanned: %d; calls kept inside the OpenMP tasks of conz3d_omp: %d" % (len(files), len(kept)))
+                if key in seen and seen[key] == 0:
+                    seen[key] = 1
+                    kept.append(what)
+                else:
+                    bad.append(what)
+print("  Fortran files scanned under src (src/tools excepted): %d; calls kept inside the OpenMP tasks"
+      " of conz3d_omp: %d (expected %d)" % (len(files), len(kept), len(KEEP)))
 for l in kept:
     print(l)
+ok = True
+for k, v in seen.items():
+    if v != 1:
+        print("  FAIL: the kept call src/%s (%s) %r is not found: update the list" % k)
+        ok = False
+if len(kept) != len(KEEP):
+    ok = False
 if bad:
     print("  FAIL: calls of the old name (bare stop) on the paths of the model:")
     for l in bad:
         print(l)
+    ok = False
+if not ok:
     sys.exit(1)
-print("  no other call of xi2xy, xy2xi, xi_dist or xit_start_end (bare stop) in src/shyfem and src/utils")
+print("  no other call of xi2xy, xy2xi, xi_dist or xit_start_end (bare stop) in the model")
 EOF
   finish
 fi
