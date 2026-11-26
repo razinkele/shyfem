@@ -91,11 +91,11 @@
 
 	open(newunit=iunit,file=rstfile,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) stop 'error stop rst2shy: cannot open rst file'
+	if( ierr /= 0 ) call error_stop('rst2shy','cannot open rst file')
 	call rst_skip_record(iunit,atime,nvers,nrec &
      &					,nknr,nelr,nlvr,iflag,ierr)
 	if( ierr .ne. 0 ) then
-	  stop 'error stop rst2shy: reading parameters'
+	  call error_stop('rst2shy','reading parameters')
 	end if
 	close(iunit)
 	ic = iconz_rst		!tracer count, exported by rst_skip_record
@@ -136,13 +136,13 @@
 	! the real structure; older 3d files carry no vertical info and
 	! cannot be converted faithfully)
 	if( .not. allocated(hlvrst) ) then
-	  stop 'error stop rst2shy: no vertical structure in file'
+	  call error_stop('rst2shy','no vertical structure in file')
 	end if
 	hlv(1:nlv) = hlvrst(1:nlv)
 	ilhv(:) = ilhrst(:)
 	ilhkv(:) = ilhkrst(:)
 	if( nlv > 1 .and. all(hlvrst == 0.) ) then
-	  stop 'error stop rst2shy: 3d file older than version 10'
+	  call error_stop('rst2shy','3d file older than version 10')
 	end if
 	call shympi_set_hlv(nlv,hlv)
 
@@ -172,7 +172,7 @@
 
 	open(newunit=iunit,file=rstfile,status='old' &
      &		,form='unformatted',iostat=ierr)
-	if( ierr /= 0 ) stop 'error stop rst2shy: cannot reopen rst file'
+	if( ierr /= 0 ) call error_stop('rst2shy','cannot reopen rst file')
 
 	do
 	  call rst_read_record(iunit,atime,iflag,ierr)
@@ -188,7 +188,7 @@
 	  if( bhydro ) call hydro_write_output(id_hydro,dtime)
 	end do
 
-	if( ierr > 0 ) stop 'error stop rst2shy: error reading record'
+	if( ierr > 0 ) call error_stop('rst2shy','error reading record')
 
 !-------------------------------------------------------------------
 ! final message
@@ -269,6 +269,8 @@
         use basin
 	!use mod_restart
 
+	use mod_error_stop
+
         implicit none
 
         character*(*) rstfile,basfile
@@ -288,7 +290,7 @@
 	ifiles = clo_number_of_files()
 	if( ifiles /= 2 ) then
 	  write(6,*) 'need two files, one rst and one bas file'
-	  stop 'error stop rst_init: missing files'
+	  call error_stop('rst_init','missing files')
 	end if
         call clo_check_files(2)
 
@@ -328,7 +330,7 @@
 
 	return
    99	continue
-	stop 'error stop rst_init: error reading file'
+	call error_stop('rst_init','error reading file')
         end
 
 !******************************************************************
@@ -339,6 +341,8 @@
 
 	use shyfile
 	use iso8601
+
+	use mod_error_stop
 
 	implicit none
 
@@ -362,7 +366,7 @@
 
 	call dts_format_abs_time(atime,aline)
 	call string2date_and_time(aline,date,time,ierr)
-	if( ierr /= 0 ) stop 'error stop ts_init_output: ierr'
+	if( ierr /= 0 ) call error_stop('ts_init_output','ierr')
 
         call shy_open_output_file(file,npr,nl,nvar,ftype,id)
         call shy_set_date(id,date,time)
@@ -397,6 +401,8 @@
 	use shyfile
 	use iso8601
 
+	use mod_error_stop
+
 	implicit none
 
 	integer id
@@ -420,7 +426,7 @@
 
 	call dts_format_abs_time(atime,aline)
 	call string2date_and_time(aline,date,time,ierr)
-	if( ierr /= 0 ) stop 'error stop conz_init_output: ierr'
+	if( ierr /= 0 ) call error_stop('conz_init_output','ierr')
 
         call shy_open_output_file(file,npr,nl,nvar,ftype,id)
         call shy_set_date(id,date,time)
@@ -465,6 +471,8 @@
 	use shyfile
 	use iso8601
 
+	use mod_error_stop
+
 	implicit none
 
 	integer id
@@ -487,7 +495,7 @@
 
 	call dts_format_abs_time(atime,aline)
 	call string2date_and_time(aline,date,time,ierr)
-	if( ierr /= 0 ) stop 'error stop hydro_init_output: ierr'
+	if( ierr /= 0 ) call error_stop('hydro_init_output','ierr')
 
         call shy_open_output_file(file,npr,nl,nvar,ftype,id)
         call shy_set_date(id,date,time)
