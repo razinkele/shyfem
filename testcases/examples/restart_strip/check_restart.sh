@@ -7,7 +7,14 @@
 # records (saltv/tempv/rhov, wlnv) overran them on such a mesh.
 #
 #   write : 3d baroclinic run, writes strip_rst.rst (last record)
-#   skip  : rstinf + rst2shy read every record through rst_skip_record
+#   skip  : rstinf reads every record through rst_skip_record
+#   conv  : rst2shy (restart + basin file) converts the restart file to
+#           .hydro.shy and .ts.shy. rst2shy ends with a bare "stop", so its
+#           exit status is 0 even on an error: the gate therefore removes any
+#           old strip_rst.*.shy first (the write run makes strip_rst.hydro.shy
+#           under the same name), then requires both files to exist and be
+#           non-empty, no "error stop" in the log, and the same number of
+#           records read as rstinf
 #   warm  : a second run restarts from the file
 #
 # The overrun only faults reliably in a bounds-checked build:
@@ -30,8 +37,19 @@ step() {  # name, log, command...
 step shypre  shypre.log  shypre strip.grd
 step write   write.log   shyfem strip_rst.str
 step rstinf  rstinf.log  rstinf strip_rst.rst
-step rst2shy rst2shy.log rst2shy strip_rst.rst
+rm -f strip_rst.hydro.shy strip_rst.ts.shy
+step rst2shy rst2shy.log rst2shy strip_rst.rst strip.bas
+nrec() { sed -n 's/.*Number of records read: *\([0-9][0-9]*\).*/\1/p' "$1" | tail -1; }
+! grep -qi "error stop" rst2shy.log \
+  || { echo "FAIL rst2shy: $(grep -i -m1 'error stop' rst2shy.log)"; exit 1; }
+for f in strip_rst.hydro.shy strip_rst.ts.shy; do
+  [ -s "$f" ] || { echo "FAIL rst2shy: $f missing or empty (see rst2shy.log)"; exit 1; }
+done
+n_inf=$(nrec rstinf.log); n_shy=$(nrec rst2shy.log)
+{ [ -n "$n_shy" ] && [ "$n_shy" -ge 1 ] && [ "$n_shy" = "$n_inf" ]; } \
+  || { echo "FAIL rst2shy: records read ${n_shy:-none}, rstinf read ${n_inf:-none}"; exit 1; }
+echo "ok   rst2shy converted $n_shy record(s) to .hydro.shy and .ts.shy"
 step warm    warm.log    shyfem strip_warm.str
 grep -q "A restart has been performed" warm.log \
   || { echo "FAIL warm: no restart performed"; exit 1; }
-echo "PASS: restart written, skipped and re-read on an nkn > nel mesh"
+echo "PASS: restart written, skipped, converted and re-read on an nkn > nel mesh"
