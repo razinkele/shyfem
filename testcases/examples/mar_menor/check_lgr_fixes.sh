@@ -434,8 +434,9 @@
 #             check line.  The 1-thread run must stop in the guard itself,
 #             as before #256 (no check line: a loop on one thread runs on
 #             the main thread).
-#   events    (#305) every kind of event of the tracker (lgr_event, the 25
-#             kinds of lgr_event_desc) and the three ways the run stops
+#   events    (#305) every kind of event of the tracker (lgr_event, the 26
+#             kinds of lgr_event_desc; 26, the node sink, since #310, see
+#             mode node-sink-run) and the three ways the run stops
 #             after an internal error, which no normal run reaches, with
 #             the test hook LGR_TEST_EVENT=K (read once at start-up,
 #             lgr_mpi_init: the particle in slot 1 records an event of kind
@@ -445,14 +446,14 @@
 #             lgr_internal_error, "error stop lgr_mpi_test_event: kind K";
 #             for kind 23 the error 1 of xy2xi_ierr in diff_body is forced
 #             instead, "error stop diff_body: error of xy2xi").  Case
-#             mm_lgr_a for 30 minutes, for each K = 1 ... 25 with nomp = 1
+#             mm_lgr_a for 30 minutes, for each K = 1 ... 26 with nomp = 1
 #             and nomp = 4 serially and with nomp = 1 on 4 MPI processes
 #             (timeout 120 s each).  Each run must acknowledge the hook and
 #             write the line of kind K as lgr_event_desc documents it (the
 #             expected head, text, names, the values with three decimals or
 #             in full precision, written out in this script, not taken from
 #             the code): for the kinds that do not stop the run (1, 2, 5 to
-#             10) "1 in the step to T, 1 in the run (P % of the I
+#             10, 26) "1 in the step to T, 1 in the run (P % of the I
 #             particles released)" for 1 and 2 (the lines of #288) and "(P
 #             events per 100 of the I particles released)" for the others
 #             (an event count, which can pass 100 per 100 particles; #305),
@@ -491,7 +492,65 @@
 #             under bdebug = .false.), where an abort through MPI_ABORT may
 #             not come from a worker either; each must be found once, by
 #             file, routine and line.  The code before #305 does not know
-#             the hook.
+#             the hook; the code before #310 has no kind 26 (LGR_TEST_EVENT
+#             =26 is out of range there: no hook, no line).
+#   node-sink (#310) the classifier of a node sink, track_xi_node_sink (a
+#             particle that used up its 100 element crossings with time left
+#             converging onto a node of the mesh: the flux reconstruction of
+#             a layer makes it spiral into an interior node where the layer
+#             flow converges, the time to each side shrinking
+#             geometrically), cut out of src/shyfem/lagrange_vertical.f90
+#             and compiled on its own with a small test program (gfortran,
+#             -fcheck=bounds, -ffpe-trap=zero,invalid,overflow).  With d the
+#             sum of the two smallest internal coordinates (the distance
+#             from the nearest vertex), at the start of the step and at the
+#             end of the crossings, a sink is d_end < 1e-3 and d_end <=
+#             d_start, or d_end < 1e-15.  The cases, the numbers of the
+#             investigation of #310: a sink (3.5e-3 to 2.7e-14, the trace of
+#             part 1 of check_lgr_bed.sh), a weak sink (4e-4 to 1.2e-6, about
+#             x0.75 per turn: two coordinates below 1e-6, the rule of the
+#             first prototype, misses it), a sink entered from far in the
+#             step (0.6 to 1e-10), a sink reached exactly (5e-4 to 5e-4),
+#             the floating-point floor (1e-16 to 5e-16), true; a source
+#             (the restart point of the Venice particle of #310 and #315,
+#             (0, 0.99999999999999289, 7.105e-15), to 2.9e-14 and to 2.5e-5),
+#             above the floor (1e-16 to 2e-15), far from a vertex (d 0.5,
+#             and 1.5e-3 although converging), near a side but not a vertex
+#             (one coordinate 1e-12, d 0.4), false; each with the node at
+#             each of the three vertices at the start and at the end (9
+#             orders).  Before #310 the routine does not exist.
+#   node-sink-run [REF_BIN_DIR] (#310) a node sink is its own event kind:
+#             the closed forced mm_hyd_41 of check_lgr_bed.sh part 1 (no
+#             tilt, one day, both ibtyp = 0) with ilagr = 1, rwhpar = 0 and
+#             100 particles released at 16:30 in a 400 m square around the
+#             interior node 702 (lgrlin, node702.txt written here), where
+#             the layer-1 flow converges (the "nt1" case of the
+#             investigation; 13 s serially): serially with 1 OpenMP thread
+#             and with 4 (nomp = 4), and on 4 MPI processes.  Each run must
+#             end and write no line "lgr advection: element crossings used
+#             up with time left" and at least one line "lgr advection:
+#             stopped at a node the layer flow converges on (node sink) with
+#             time left: N in the step to T, M in the run (P events per 100
+#             of the I particles released); first: id, element, layer L,
+#             time left [s] S" with L >= 1 and S > 0, M the sum of the N so
+#             far; the 4-thread run the same lines and a byte-identical
+#             particle file (cmp) as 1 thread; on 4 processes the N of each
+#             step summed over the ranks must be the serial N.  With
+#             REF_BIN_DIR (a build of the code before the change, e.g.
+#             origin/main) the same case runs serially and on 4 processes
+#             with REF_BIN_DIR/shyfem: its lines "element crossings used up
+#             with time left" (at least one) must be the node-sink lines of
+#             this binary step by step (N, M, and the first id, element and
+#             time left), on 4 processes per rank, and the particle
+#             files, the .hydro.shy and the .inf files must be byte-identical
+#             (cmp), serially and on 4 processes: the change is a log text
+#             only.  Measured (2026-11-26): origin/main 9187cdf1 writes 32
+#             lines "element crossings used up", 546 in the run (on 4
+#             processes all on rank 3); with #310 32 node-sink lines, 546
+#             in the run, and none of the other.  Without REF_BIN_DIR the
+#             comparison is skipped (said in the PASS line).  The code
+#             before #310 fails this mode on its lines "element crossings
+#             used up".
 #   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
 #             (its list of parked particles grows) on 4 MPI processes with
 #             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
@@ -622,10 +681,11 @@
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
 # and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here;
-# modes vdiff-dt, walk-fold and bed-w also gfortran on PATH and the source
-# tree three levels up (../../../src/shyfem/lagrange_dif.f90, for bed-w
-# lagrange_vertical.f90, as in a checkout); mode events that source tree
-# too (all of ../../../src).
+# modes vdiff-dt, walk-fold, bed-w and node-sink also gfortran on PATH and
+# the source tree three levels up (../../../src/shyfem/lagrange_dif.f90,
+# for bed-w and node-sink lagrange_vertical.f90, as in a checkout); mode
+# events that source tree too (all of ../../../src).  Mode node-sink-run
+# takes an optional second argument, REF_BIN_DIR.
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
@@ -635,13 +695,20 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | bed-w | grow-fail | int-fail | events | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | bed-w | node-sink | node-sink-run [REF_BIN_DIR] | grow-fail | int-fail | events | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|bed-w|grow-fail|int-fail|events|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|bed-w|node-sink|node-sink-run|grow-fail|int-fail|events|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
+# the reference binary of node-sink-run (optional; no other mode reads one)
+REF=""
+if [ "$MODE" = node-sink-run ] && [ $# -gt 1 ]; then
+  [ $# = 2 ] || usage
+  [ -x "$2/shyfem" ] || { echo "$MODE: FAIL (no executable shyfem in the reference directory '$2')"; exit 1; }
+  REF="$(cd "$2" && pwd)" || exit 1
+fi
 
 for t in shyfem mpirun python3; do
   command -v "$t" > /dev/null 2>&1 || { echo "$MODE: FAIL ($t is not on PATH)"; exit 1; }
@@ -2059,6 +2126,265 @@ EOF
   finish
 fi
 
+#=============================== node-sink (#310) ==========================
+if [ "$MODE" = node-sink ]; then
+  echo "=== track_xi_node_sink on its own: a sink is d_end < 1e-3 and d_end <= d_start, or d_end < 1e-15"
+  SRCF="$HERE/../../../src/shyfem/lagrange_vertical.f90"
+  if ! command -v gfortran > /dev/null 2>&1; then
+    fail "gfortran is not on PATH"
+  elif [ ! -f "$SRCF" ]; then
+    fail "no $SRCF"
+  else
+    awk '/^[ \t]*logical function track_xi_node_sink[(]/,/^[ \t]*end function track_xi_node_sink[ \t]*$/' "$SRCF" > "$W/sink.f90"
+    if ! grep -q "end function track_xi_node_sink" "$W/sink.f90"; then
+      fail "track_xi_node_sink not found in $SRCF"
+    else
+    cat > "$W/sink_test.f90" <<'EOF'
+	program sink_test
+! track_xi_node_sink (#310): d = the sum of the two smallest internal
+! coordinates (the distance from the nearest vertex) at the start of the
+! step (xis) and at the end of the crossings (xie); a sink is d_end <
+! 1e-3 and d_end <= d_start, or d_end < 1e-15. Each case with the node at
+! each of the three vertices at the start and at the end (9 orders)
+	implicit none
+	integer :: nfail,ncase
+	nfail = 0
+	ncase = 0
+	! a sink: the trace of part 1 of check_lgr_bed.sh (id 17673)
+	call c((/1.d0-3.5d-3,2.0d-3,1.5d-3/),(/1.d0-2.7d-14,1.5d-14,1.2d-14/)	&
+     &		,.true.,'sink, 3.5e-3 to 2.7e-14')
+	! a weak sink (about x0.75 per turn, still 1.2e-6 away after 100
+	! crossings: two coordinates below 1e-6, the first prototype, miss it)
+	call c((/1.d0-4.d-4,2.5d-4,1.5d-4/),(/1.d0-1.2d-6,1.1d-6,0.1d-6/)	&
+     &		,.true.,'weak sink, 4e-4 to 1.2e-6')
+	! a sink entered from far in the step
+	call c((/0.3d0,0.3d0,0.4d0/),(/1.d0-1.d-10,0.6d-10,0.4d-10/)		&
+     &		,.true.,'sink from far, 0.6 to 1e-10')
+	! no larger than at the start: a sink
+	call c((/1.d0-5.d-4,3.d-4,2.d-4/),(/1.d0-5.d-4,2.d-4,3.d-4/)		&
+     &		,.true.,'sink reached exactly, 5e-4 to 5e-4')
+	! the floating-point floor, where the spiral stops shrinking
+	call c((/0.d0,1.d0-1.d-16,1.d-16/),(/0.d0,1.d0-5.d-16,5.d-16/)	&
+     &		,.true.,'the floor, 1e-16 to 5e-16')
+	! sources: the restart point of the Venice particle (vl1, id 1356),
+	! which spirals out
+	call c((/0.d0,0.99999999999999289d0,7.105d-15/)			&
+     &		,(/1.d0-2.9d-14,2.0d-14,0.9d-14/)				&
+     &		,.false.,'source, 7.105e-15 to 2.9e-14')
+	call c((/0.d0,0.99999999999999289d0,7.105d-15/)			&
+     &		,(/1.d0-2.5d-5,1.5d-5,1.0d-5/)				&
+     &		,.false.,'source, 7.105e-15 to 2.5e-5')
+	call c((/0.d0,1.d0-1.d-16,1.d-16/),(/0.d0,1.d0-2.d-15,2.d-15/)	&
+     &		,.false.,'above the floor, 1e-16 to 2e-15')
+	! far from a vertex, also when converging
+	call c((/0.4d0,0.3d0,0.3d0/),(/0.2d0,0.3d0,0.5d0/)			&
+     &		,.false.,'far, 0.6 to 0.5')
+	call c((/0.3d0,0.4d0,0.3d0/),(/1.d0-1.5d-3,1.d-3,0.5d-3/)		&
+     &		,.false.,'far, 0.6 to 1.5e-3')
+	! near a side, not a vertex: one coordinate small
+	call c((/0.3d0,0.3d0,0.4d0/),(/1.d-12,0.4d0,0.6d0-1.d-12/)		&
+     &		,.false.,'near a side, 0.6 to 0.4')
+	write(6,'(2x,a,i0,a,i0)') 'cases ',ncase,', failed checks: ',nfail
+	if( nfail > 0 ) stop 1
+	contains
+	subroutine c(xis,xie,bwant,text)
+	! the 9 orders of the coordinates of xis and xie
+	double precision, intent(in) :: xis(3),xie(3)
+	logical, intent(in) :: bwant
+	character(len=*), intent(in) :: text
+	logical, external :: track_xi_node_sink
+	double precision :: as(3),ae(3),ds,de
+	integer :: is,ie,nbad
+	! d at the start and at the end, shown (the sum of the two smallest)
+	ds = min(xis(1)+xis(2),xis(2)+xis(3),xis(1)+xis(3))
+	de = min(xie(1)+xie(2),xie(2)+xie(3),xie(1)+xie(3))
+	nbad = 0
+	do is = 0,2
+	  as = cshift(xis,is)
+	  do ie = 0,2
+	    ae = cshift(xie,ie)
+	    if( track_xi_node_sink(as,ae) .neqv. bwant ) nbad = nbad + 1
+	  end do
+	end do
+	ncase = ncase + 1
+	nfail = nfail + nbad
+	write(6,'(2x,a,a,es9.2,a,es9.2,a,l2,a,l2,a,i0,a)') text		&
+     &		,': d',ds,' to',de,', sink',bwant .neqv. nbad > 0		&
+     &		,' (expected',bwant,'; ',9-nbad,' of 9 orders)'
+	end subroutine c
+	end program sink_test
+EOF
+    if ( cd "$W" && gfortran -fcheck=bounds -ffpe-trap=zero,invalid,overflow -o sink_test sink_test.f90 sink.f90 > sink_build.log 2>&1 ); then
+      ( cd "$W" && ./sink_test ) || fail "track_xi_node_sink: a sink or a source told wrongly"
+    else
+      fail "the test of track_xi_node_sink does not compile"; sed 's/^/    /' "$W/sink_build.log" | head -5
+    fi
+    fi
+  fi
+  finish
+fi
+
+#=============================== node-sink-run (#310) ======================
+if [ "$MODE" = node-sink-run ]; then
+  # the closed forced mm_hyd_41 of check_lgr_bed.sh part 1 with 100
+  # surface particles released at 16:30 around node 702
+  sed -e '/^[[:space:]]*ztilt[[:space:]]*=/d' -e '/^[[:space:]]*ktilt[[:space:]]*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-02'/" \
+      -e "s/^\([[:space:]]*\)mm_hyd_41[[:space:]]*\$/\1ns_t1/" \
+      -e 's/^\([[:space:]]*\)ibtyp = [13][[:space:]]*$/\1ibtyp = 0/' "$W/mm_hyd_41.str" > "$W/ns_t1.str"
+  printf '\n$lagrg\n        ilagr = 1   nbdymax = 5000\n        nbdy = 100  idtl = 0  idtlgr = %s\n        itlanf = %s\n        lgrlin = %s\n        rwhpar = 0  ipvert = 5\n        lgrseed = 1\n$end\n' \
+      "'1h'" "'2009-01-01::16:30:00'" "'node702.txt'" >> "$W/ns_t1.str"
+  printf '695355.0 4185998.0 1\n695755.0 4185998.0 0\n695755.0 4186398.0 0\n695355.0 4186398.0 0\n695355.0 4185998.0 0\n' > "$W/node702.txt"
+  with_para ns_t1 ns_t4 "nomp = 4"
+  sed "s/^\([[:space:]]*\)ns_t1[[:space:]]*\$/\1ns_np/" "$W/ns_t1.str" > "$W/ns_np.str"
+  grep -q "^[[:space:]]*ns_np[[:space:]]*\$" "$W/ns_np.str" || fail "ns_np.str: run name not set"
+  for o in "itend = '2009-01-02'" 'ilagr = 1' "itlanf = '2009-01-01::16:30:00'" "lgrlin = 'node702.txt'" \
+           'rwhpar = 0' "wind='INPUT/wind09.txt'" "gotmpa = 'INPUT/gotmturb.nml'"; do
+    grep -qF -- "$o" "$W/ns_t1.str" || fail "no '$o' in ns_t1.str"
+  done
+  [ "$(grep -c 'ibtyp = 0' "$W/ns_t1.str")" = 2 ] || fail "ns_t1.str: the boundaries are not both closed (ibtyp = 0)"
+  grep -q 'tilt' "$W/ns_t1.str" && fail "tilt lines left in ns_t1.str"
+  grep -q "^[[:space:]]*ns_t1[[:space:]]*\$" "$W/ns_t1.str" || fail "ns_t1.str: run name not set"
+  grep -q "nomp = 4" "$W/ns_t4.str" || fail "ns_t4.str: no 'nomp = 4'"
+  [ "$rc" = 0 ] || finish
+  echo "=== the closed forced mm_hyd_41, ilagr = 1, 100 particles around node 702 at 16:30: 1 and 4 threads serially, on $NP processes"
+  run ns_t1 ns_t1.log shyfem || fail "ns_t1: the run did not end"
+  run ns_t4 ns_t4.log shyfem || fail "ns_t4: the run did not end"
+  run ns_np ns_np.log mpirun --oversubscribe -np $NP shyfem || fail "ns_np: the run did not end"
+  threads ns_t1.log 1
+  threads ns_t4.log 4
+  tags="ns_t1 ns_t4 ns_np"
+  if [ -n "$REF" ]; then
+    # the same STR files, in a folder of their own (ref)
+    mkdir "$W/ref" && ln -s "$W/GRID" "$W/ref/GRID" && ln -s "$W/INPUT" "$W/ref/INPUT" \
+      && cp "$W/ns_t1.str" "$W/ns_np.str" "$W/node702.txt" "$W/ref/" || { fail "cannot make the folder of the reference runs"; finish; }
+    echo "=== the same with the reference binary $REF/shyfem: serially and on $NP processes (in $W/ref)"
+    W0="$W"; W="$W0/ref"
+    run ns_t1 ns_t1.log "$REF/shyfem" || fail "ref/ns_t1: the run did not end"
+    run ns_np ns_np.log mpirun --oversubscribe -np $NP "$REF/shyfem" || fail "ref/ns_np: the run did not end"
+    W="$W0"
+    tags="$tags ref/ns_t1 ref/ns_np"
+    for v in t1 np; do
+      for f in lgr.shy hydro.shy inf; do
+        a="$W/ref/ns_$v.$f"; b="$W/ns_$v.$f"
+        if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$v: .$f missing"
+        elif cmp -s "$a" "$b"; then echo "  $v: .$f identical to the reference binary's ($(stat -c %s "$b") bytes)"
+        else fail "$v: .$f differs from the reference binary's"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+        fi
+      done
+    done
+  else
+    echo "  (no REF_BIN_DIR: the comparison with a reference binary is skipped)"
+  fi
+  a="$W/ns_t1.lgr.shy"; b="$W/ns_t4.lgr.shy"
+  if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "particle file of 1 or 4 threads missing"
+  elif cmp -s "$a" "$b"; then echo "  particle file of 4 threads identical to 1 thread ($(stat -c %s "$a") bytes)"
+  else fail "particle file of 4 threads differs from 1 thread"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+  fi
+  [ "$rc" = 0 ] || finish
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$W" $tags <<'EOF' || fail "see above"
+import os, re, sys
+
+w, tags = sys.argv[1], sys.argv[2:]
+ok = True
+def bad(msg):
+    global ok
+    print("  FAIL: " + msg)
+    ok = False
+
+CROSS = "element crossings used up with time left"
+SINK = "stopped at a node the layer flow converges on (node sink) with time left"
+HEAD = r"^ lgr advection:(?: rank (?P<rank>\d+):)? "
+TAIL = (r": (?P<n>\d+) in the step to (?P<t>\S+?), (?P<ntot>\d+) in the run \([\d.]+ events per 100"
+        r" of the \d+ particles released\); first: id (?P<id>\d+), element (?P<el>-?\d+), %s (?P<v3>-?\d+),"
+        r" time left \[s\] (?P<tl>\S+)$")
+RX = {CROSS: re.compile(HEAD + re.escape(CROSS) + TAIL % "crossings left"),
+      SINK: re.compile(HEAD + re.escape(SINK) + TAIL % "layer")}
+
+def lines(tag, text):
+    """the lines of the kind text in TAG.log: (rank, time) -> match"""
+    with open(os.path.join(w, tag + ".log"), errors="replace") as fh:
+        log = fh.read().split("\n")
+    out, nbad = {}, 0
+    for l in log:
+        if text not in l:
+            continue
+        m = RX[text].match(l)
+        if not m:
+            nbad += 1
+            if nbad <= 2:
+                bad("%s: a line of '%s' not as documented: %r" % (tag, text, l))
+            continue
+        key = (m.group("rank"), m.group("t"))
+        if key in out:
+            bad("%s: two lines of '%s' for rank %s in the step to %s" % (tag, text, key[0], key[1]))
+        out[key] = m
+    # the count in the run is the sum of the counts so far, per rank
+    tot = {}
+    for (r, t), m in out.items():		# in the order of the log
+        tot[r] = tot.get(r, 0) + int(m.group("n"))
+        if int(m.group("ntot")) != tot[r]:
+            bad("%s: '%s' rank %s at %s: %s in the run, the counts so far sum to %d"
+                % (tag, text, r, t, m.group("ntot"), tot[r]))
+    return out
+
+def per_step(d):
+    """events of each step summed over the ranks"""
+    s = {}
+    for (_, t), m in d.items():
+        s[t] = s.get(t, 0) + int(m.group("n"))
+    return s
+
+L = {tag: (lines(tag, CROSS), lines(tag, SINK)) for tag in tags}
+for tag in tags:
+    c, s = L[tag]
+    print("  %s: lines '%s' %d (%d in the run), node-sink lines %d (%d in the run)"
+          % (tag, CROSS, len(c), sum(per_step(c).values()), len(s), sum(per_step(s).values())))
+for tag in ("ns_t1", "ns_t4", "ns_np"):
+    c, s = L[tag]
+    if c:
+        bad("%s: %d lines '%s', expected none (the particles of this case converge onto node 702)" % (tag, len(c), CROSS))
+    if not s:
+        bad("%s: no node-sink line" % tag)
+    for (r, t), m in s.items():
+        if int(m.group("v3")) < 1 or not float(m.group("tl")) > 0.0 or int(m.group("id")) < 1 or int(m.group("el")) < 1:
+            bad("%s: node-sink line at %s: id %s, element %s, layer %s, time left %s; expected id, element and"
+                " layer >= 1 and time left > 0" % (tag, t, m.group("id"), m.group("el"), m.group("v3"), m.group("tl")))
+        if tag != "ns_np" and r is not None:
+            bad("%s: a serial line with rank %s" % (tag, r))
+s1 = L["ns_t1"][1]
+if [m.group(0) for m in L["ns_t4"][1].values()] != [m.group(0) for m in s1.values()]:
+    bad("the node-sink lines of 4 threads differ from those of 1 thread")
+if per_step(L["ns_np"][1]) != per_step(s1):
+    bad("ns_np: the node-sink events of a step summed over the ranks differ from the serial ones")
+if "ref/ns_t1" in L:
+    for mine, ref in (("ns_t1", "ref/ns_t1"), ("ns_np", "ref/ns_np")):
+        rc_, rs = L[ref]
+        if not rc_:
+            bad("%s: no line '%s': the case no longer reaches the trap" % (ref, CROSS))
+        if rs:
+            bad("%s: node-sink lines in the reference run (a binary with #310?)" % ref)
+        ms = L[mine][1]
+        if sorted(ms) != sorted(rc_):
+            bad("%s: node-sink lines at (rank, step) %s, the reference's '%s' at %s"
+                % (mine, sorted(ms)[:4], CROSS, sorted(rc_)[:4]))
+            continue
+        nd = 0
+        for k in rc_:
+            a, b = rc_[k], ms[k]
+            if [a.group(g) for g in ("n", "ntot", "id", "el", "tl")] != [b.group(g) for g in ("n", "ntot", "id", "el", "tl")]:
+                nd += 1
+                if nd <= 2:
+                    bad("%s at %s: %r, the reference: %r" % (mine, k, b.group(0), a.group(0)))
+        if nd == 0:
+            print("  %s: the node-sink lines are the reference's lines '%s', step by step (%d lines)"
+                  % (mine, CROSS, len(ms)))
+sys.exit(0 if ok else 1)
+EOF
+  [ "$rc" = 0 ] && [ -z "$REF" ] && echo "  (PASS without the comparison with a reference binary: give REF_BIN_DIR for it)"
+  finish
+fi
+
 #=============================== grow-fail (#242) ==========================
 if [ "$MODE" = grow-fail ]; then
   for L in export park; do
@@ -2153,15 +2479,15 @@ if [ "$MODE" = events ]; then
     echo $? > "$W/$tag.rc"
   }
   t0=$(date +%s)
-  echo "=== mm_lgr_a, 30 minutes, LGR_TEST_EVENT=K for K = 1 ... 25: 1 and 4 threads serially, 1 thread on $NP processes"
-  for k in $(seq 1 25); do
+  echo "=== mm_lgr_a, 30 minutes, LGR_TEST_EVENT=K for K = 1 ... 26: 1 and 4 threads serially, 1 thread on $NP processes"
+  for k in $(seq 1 26); do
     evrun ev_k${k}_t1 ev_t1 env LGR_TEST_EVENT=$k shyfem
     evrun ev_k${k}_t4 ev_t4 env LGR_TEST_EVENT=$k shyfem
     evrun ev_k${k}_np ev_t1 env LGR_TEST_EVENT=$k mpirun --oversubscribe -np $NP -x LGR_TEST_EVENT shyfem
   done
   echo "=== the same, 1 thread, LGR_TEST_EVENT=8 and LGR_TEST_INTERNAL_FAIL=1 (an event and a guard with no kind in the same pass)"
   evrun ev_if ev_t1 env LGR_TEST_EVENT=8 LGR_TEST_INTERNAL_FAIL=1 shyfem
-  echo "  76 runs in $(( $(date +%s) - t0 )) s"
+  echo "  79 runs in $(( $(date +%s) - t0 )) s"
   PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$NP" <<'EOF' || fail "see above"
 import os, re, sys
 
@@ -2212,6 +2538,8 @@ KIND = {
     24: (CADV, "internal error of xit_start_end in track_xi", None, ["id", "element", "iflux", "error", "alpha"] + XI, 4, False),
     25: (CADV, "error of xi_dist in track_xi (1: a point not on a side, 2: impossible)", None,
          ["id", "element", "error", "xis 1", "xis 2", "xis 3", "xie 1", "xie 2", "xie 3"], 3, False),
+    26: (CADV, "stopped at a node the layer flow converges on (node sink) with time left", "per100",
+         ["id", "element", "layer", "time left [s]"], 3, True),
 }
 SITE = {18: "LGR_TEST_EVENT"}
 ANYEV = re.compile(r"^ lgr (vertical diffusion|advection|layers|connectivity|element search):")
@@ -2312,7 +2640,7 @@ def common(k, tag, log, rc, nthreads):
         values_ok(k, m, tag)
     return hits
 
-for k in range(1, 26):
+for k in range(1, 27):
     brun = KIND[k][2] is not None
     res = {}
     for flow, nth in (("t1", 1), ("t4", 4), ("np", None)):

@@ -981,7 +981,11 @@
 ! lgr_event (lgr_ev_adv_cross, lgr_ev_adv_lost, lgr_ev_adv_unknown:
 ! counted, the first kept), written at the end of the pass by lgr_events
 ! (#294: until then each wrote a line "warning particle adv", "loosing
-! particle adv" or "unknown error adv" from inside the loop). The debug
+! particle adv" or "unknown error adv" from inside the loop). A particle
+! that used up its crossings converging onto a node of the mesh (a node
+! sink, track_xi_node_sink) is counted as its own kind, lgr_ev_adv_node
+! (#310; until then as lgr_ev_adv_cross); its step ends as before, the
+! particle unchanged. The debug
 ! lines for a particle with id 0, which no release gives (ids start at
 ! 1), are off at compile time (bdebug, #294)
 
@@ -1011,6 +1015,7 @@
 	double precision xx,yy,zz
 	integer ierr
 	logical lgr_internal_failed
+	logical track_xi_node_sink
 	logical, parameter :: bdebug = .false.	!debug lines (#294)
 
         if(iel <= 0 .or. ty < 0) return	!particle out of domain or beached
@@ -1081,7 +1086,14 @@
 
 	if( ttime > 0. ) then 		!not finished advecting: counted (#294)
 	  if( n == 0 ) then		!crossings used up
-	    call lgr_event(lgr_ev_adv_cross,id,(/id,iel,n/),(/dble(ttime)/))
+	    !converging onto a node (#310): its own kind, the step the same
+	    if( track_xi_node_sink(lgr_ar(i)%actual%xi,xi) ) then
+	      call lgr_event(lgr_ev_adv_node,id,(/id,iel,lb/)		&
+     &			,(/dble(ttime)/))
+	    else
+	      call lgr_event(lgr_ev_adv_cross,id,(/id,iel,n/)		&
+     &			,(/dble(ttime)/))
+	    end if
 	    !iel = -iel
 	  else if( iel < 1 ) then	!out of the domain
 	    call lgr_event(lgr_ev_adv_lost,id,(/id,iel,n/),(/dble(ttime)/))

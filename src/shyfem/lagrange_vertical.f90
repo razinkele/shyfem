@@ -837,6 +837,49 @@
 
 !************************************************************
 
+	logical function track_xi_node_sink(xis,xie)
+
+! true if a particle that used up its element crossings with time left
+! did so converging onto a node of the mesh, a node sink (#310; called by
+! track_body_xi only for such a particle). The flux reconstruction of a
+! layer (track_xi_get_flux, xit_start_end) maps the distance from a node
+! on the side a particle enters to the side it leaves by a fixed factor
+! per element, so where the layer flow converges around an interior node
+! the particle spirals into it, the time to each side shrinking
+! geometrically, until its 100 crossings are used up (Zeno). With d the
+! distance from the nearest vertex in internal coordinates, the sum of
+! the two smallest of the three, it is a sink if at the end (xie, after
+! the crossings) d < 1e-3 and d is no larger than at the start of the
+! step (xis: lgr_ar%actual%xi, which the step does not write; on the
+! process that continues a particle handed over on several processes,
+! its arrival point), or d < 1e-15 (the floating-point floor, where the
+! spiral stops shrinking). A particle that circles a node outward (a
+! source, or one held at a node by the single-precision position kept
+! between steps, #315) or that is far from a vertex is not one: its step
+! keeps the kind "element crossings used up" (lgr_ev_adv_cross).
+! The particle is not changed: only the kind of its event.
+! Self-contained (no use): check_lgr_fixes.sh node-sink cuts it out and
+! tests it on its own (it needs this end line)
+
+	implicit none
+
+	double precision, intent(in) :: xis(3)	!start of the step
+	double precision, intent(in) :: xie(3)	!end of the crossings
+
+	double precision ds,de
+
+	ds = min(xis(1)+xis(2),xis(2)+xis(3),xis(1)+xis(3))
+	de = min(xie(1)+xie(2),xie(2)+xie(3),xie(1)+xie(3))
+
+	track_xi_node_sink = .false.
+	if( de < 1.d-3 ) then
+	  if( de <= ds .or. de < 1.d-15 ) track_xi_node_sink = .true.
+	end if
+
+	end function track_xi_node_sink
+
+!************************************************************
+
 	subroutine track_xi_next_element(ie,xi,id,ncross,iside)
 
 ! copies internal coordinates to new element - avoid falling on vertex

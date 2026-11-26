@@ -252,6 +252,12 @@
 	!      range, xi that cannot be adjusted), stops
 	! 24   track_xi: the error of xit_start_end_ierr, stops
 	! 25   track_xi: the error of xi_dist_ierr, stops
+	! 26   track_body_xi: the element crossings used up with time left
+	!      while converging onto a node of the mesh (a node sink: the
+	!      flux reconstruction of the layer makes the particle spiral into
+	!      the node, the time to each side shrinking geometrically; #310,
+	!      track_xi_node_sink tells it from the other steps of kind 5,
+	!      which it counted as until then); the step ends as for kind 5
 	!(22 to 25 stopped with a bare stop in the utilities until #294)
 	!For the kinds that do not stop the run the counts and the events
 	!kept are the same on any number of threads (the key orders them; the
@@ -286,7 +292,8 @@
 	integer, parameter :: lgr_ev_xy2xi = 23
 	integer, parameter :: lgr_ev_xit = 24
 	integer, parameter :: lgr_ev_xidist = 25
-	integer, parameter :: lgr_nev = 25		!kinds
+	integer, parameter :: lgr_ev_adv_node = 26
+	integer, parameter :: lgr_nev = 26		!kinds
 	integer, parameter :: lgr_ev_ni = 9		!integer values of a kind
 	integer, parameter :: lgr_ev_nd = 6		!real values of a kind
         integer, save :: lgr_ev_n(lgr_nev) = 0
@@ -626,8 +633,8 @@
 ! the particles released, idbdy) only for a kind that does not stop the
 ! run (brun). One particle can give several events of a kind in the run
 ! (both walls, repeated crossings, one event in every step), so P can pass
-! 100: for the kinds 5 to 10 the part reads "P events per 100 of the I
-! particles released" (#305; until then "%"); the kinds 1 and 2 keep
+! 100: for the kinds 5 to 10 and 26 the part reads "P events per 100 of
+! the I particles released" (#305; until then "%"); the kinds 1 and 2 keep
 ! "% of the", the lines of #288 unchanged. The values are the ni
 ! integer values, then the nd real values
 ! (with three decimals if bfix, else in full precision, g0), named by
@@ -657,7 +664,7 @@
 
         select case( kind )
         case( lgr_ev_vd_lost, lgr_ev_vd_unknown, lgr_ev_adv_cross	&
-     &		, lgr_ev_adv_lost, lgr_ev_adv_unknown )
+     &		, lgr_ev_adv_lost, lgr_ev_adv_unknown, lgr_ev_adv_node )
           brun = .true.
           ni = 3
           nd = 1
@@ -675,10 +682,14 @@
             ctext = 'element crossings used up with time left'
           case( lgr_ev_adv_lost )
             ctext = 'lost with time left'
+          case( lgr_ev_adv_node )		!#310
+            ctext = 'stopped at a node the layer flow converges on'	&
+     &		//' (node sink) with time left'
           case default
             ctext = 'advection ended with time left, cause unknown'
           end select
           if( kind >= lgr_ev_adv_cross ) cname(3) = 'crossings left'
+          if( kind == lgr_ev_adv_node ) cname(3) = 'layer'
         case( lgr_ev_vd_depth, lgr_ev_xi_depth )
           ni = 4
           nd = 6
