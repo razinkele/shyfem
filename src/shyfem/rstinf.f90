@@ -50,6 +50,7 @@
 !                       19 = fork ssedi bed mass)
 ! 26.11.2026    arb     version 20: the list shows its records, the diff
 !                       mode compares them (#303 #304)
+! 26.11.2026    arb     version 20: the writer's itdrag (#303 #304, R4)
 
 !******************************************************************
 
@@ -219,7 +220,7 @@
 ! the writer's iturb of the last record read (rst_skip_record exports
 ! them); prints nothing for an older version
 
-	use mod_restart, only : iheatflag_rst,iturb_rst
+	use mod_restart, only : iheatflag_rst,iturb_rst,itdrag_rst
 
 	implicit none
 
@@ -229,8 +230,10 @@
 
 	write(6,'(a,i0,a)') ' records of version ',nvers &
      &		,' (#303 #304), in the last record read:'
-	write(6,'(a)') '   hydro block, after vtlnv: iwetv, evapv, windcd' &
-     &		// ', heat flag, tws, dtw'
+	write(6,'(a)') '   hydro block, after vtlnv: iwetv, evapv, itdrag' &
+     &		// ', windcd, heat flag, tws, dtw'
+	write(6,'(a,i0,a)') '   itdrag of the writer: ',itdrag_rst &
+     &		,'  (the windcd record is applied only with the same itdrag)'
 	write(6,'(a,i0,a)') '   heat flag: ',iheatflag_rst &
      &		,'  (1: qflux3d ran in the writer; tws and dtw hold its state)'
 	if( iturb_rst == 2 ) then
@@ -409,6 +412,7 @@
 	if( nvers >= 20 ) then	!fork: what the next step needs (#303 #304)
 	  call check_integer('iwetv',iu1,iu2,1,nel)
 	  call check_real('evapv',iu1,iu2,1,nkn)
+	  call check_integer('itdrag',iu1,iu2,1,1)	!the writer's itdrag
 	  call check_real('windcd',iu1,iu2,1,nkn)
 	  call check_integer('heat flag',iu1,iu2,1,1)	!no layout change
 	  call check_real('tws',iu1,iu2,1,nkn)

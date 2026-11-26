@@ -43,7 +43,7 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and seven cases of another kind, each with its own write runs (serial):
+# and eight cases of another kind, each with its own write runs (serial):
 #   old_v19       a version 19 file (venlag_smoke, as ven_s), written by
 #                 the reference binary REF_BIN_DIR/shyfem (an origin/main
 #                 build, before version 20) and read by this binary (r)
@@ -57,14 +57,25 @@
 #                 set by COARE, itdrag = 4) read with itdrag = 0, as written
 #                 (r) and with its windcd record set to the STR's dragco
 #                 (p): with itdrag = 0 windcd is the user's dragco and must
-#                 not come from the file, so r's log must say "windcd not
-#                 applied" and r must equal p (max|d| = 0); the patch walks
-#                 the record markers and checks the sizes of the hydro
-#                 block's records, and fails if the file's windcd is dragco
-#                 everywhere (then r and p could not differ)
+#                 not come from the file, so both logs must say "windcd not
+#                 applied (file itdrag = 4, run itdrag = 0)" and r must equal
+#                 p (max|d| = 0; compared even if a log line is missing);
+#                 the patch walks the record markers and checks the sizes
+#                 of the hydro block's records, and fails if the file's
+#                 windcd is dragco everywhere (then r and p could not differ)
+#   drag4_reads_cd0  the reverse: mm_h6d4's write run with itdrag = 0 (its
+#                 windcd is its dragco, 2.5e-3) read with itdrag = 4 and
+#                 dragco = 2.0e-3 (the heat flux runs), as written (r) and
+#                 with its windcd record set to 2.0e-3 (p): windcd is applied
+#                 only when the writer's itdrag (a record of its own) equals
+#                 the reader's, so the reader keeps its own dragco until
+#                 COARE sets windcd (at the first step meteo_force uses it
+#                 before qflux3d, and on the nodes that stay dry); both
+#                 logs must say "windcd not applied (file itdrag = 0, run
+#                 itdrag = 4)" and r must equal p
 #   flgrst_no_hydro  mm_h6d4's write run read with flgrst = 110 (depth and
 #                 T/S, no hydro): the read must end, its log must show id 1
-#                 not wanted and ids 2 and 3 wanted, the six version 20
+#                 not wanted and ids 2 and 3 wanted, the seven version 20
 #                 records skipped, and "setweg clock not reset" with the
 #                 cold start's clock (not the restart time); and T and S in
 #                 its .ext at the restart time must equal the write run's,
@@ -179,7 +190,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
-ALL="$ALL old_v19 drag0_reads_cd4 flgrst_no_hydro evap_reads_noheat keps_to_gotm"
+ALL="$ALL old_v19 drag0_reads_cd4 drag4_reads_cd0 flgrst_no_hydro evap_reads_noheat keps_to_gotm"
 ALL="$ALL offline_ts_noheat tools"
 OPT="mm_e0"     # cases kept out of the default list
 CASES="${*:-$ALL}"
@@ -187,7 +198,7 @@ needmm=no; needven=no; needmpi=no; needtools=no
 for c in $CASES; do
   case " $ALL $OPT " in *" $c "*) ;; *) echo "usage: [REF_BIN_DIR=DIR] $0 [case ...], cases: $ALL (and $OPT)"; exit 2 ;; esac
   case "$c" in
-    mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat|offline_ts_noheat) needmm=yes ;;
+    mm_*|drag0_reads_cd4|drag4_reads_cd0|flgrst_no_hydro|evap_reads_noheat|offline_ts_noheat) needmm=yes ;;
     ven_*|old_v19|keps_to_gotm) needven=yes ;;
     tools) needmm=yes; needven=yes; needtools=yes ;;
   esac
@@ -437,7 +448,7 @@ athour() {
     if (t + 0 == h + 0 && f[3] ~ /^max/) { v = f[3]; sub(/^max\|d\|=/, "", v); printf " %s %s", f[2], v } }' "$1"
 }
 
-#--- the cases of another kind (old_v19, drag0_reads_cd4, flgrst_no_hydro,
+#--- the cases of another kind (old_v19, drag0_reads_cd4, drag4_reads_cd0, flgrst_no_hydro,
 #    evap_reads_noheat, keps_to_gotm)
 # rundir DIR mm|ven: a run folder with its own copy of the basin and INPUT
 rundir() {
@@ -569,9 +580,9 @@ if nvers != 20:
     sys.exit(f"the file is version {nvers}, not 20")
 nkn, nel, nlv = ints(3)
 i = 4 + (3 if nlv > 1 else 0)   # hlv, ilhv, ilhkv
-names = ['iwegv', 'znv', 'zenv', 'utlnv', 'vtlnv', 'iwetv', 'evapv', 'windcd',
+names = ['iwegv', 'znv', 'zenv', 'utlnv', 'vtlnv', 'iwetv', 'evapv', 'itdrag', 'windcd',
          'heat flag', 'tws', 'dtw', 'hm3v']
-sizes = [nel, nkn, 3 * nel, nlv * nel, nlv * nel, nel, nkn, nkn, 1, nkn, nkn, 3 * nel]
+sizes = [nel, nkn, 3 * nel, nlv * nel, nlv * nel, nel, nkn, 1, nkn, 1, nkn, nkn, 3 * nel]
 if len(recs) < i + len(names):
     sys.exit(f"the file has {len(recs)} records, too few for the hydro block")
 for k, (nm, sz) in enumerate(zip(names, sizes)):
@@ -605,7 +616,8 @@ for nm, val in sets:
     v = struct.unpack('<f', struct.pack('<f', val))[0]
     ndiff = sum(1 for y in x if y != v)
     print(f"{nm} of the file: {n} values from {min(x):.6g} to {max(x):.6g}, {ndiff} differ from "
-          f"{v:.6g}; heat flag {ints(i + 8)[0]}")
+          f"{v:.6g}; heat flag {ints(i + names.index('heat flag'))[0]}, "
+          f"itdrag {ints(i + names.index('itdrag'))[0]}")
     if ndiff == 0:
         sys.exit(f"the file's {nm} is {v:.6g} everywhere: r and p could not differ")
     struct.pack_into(f'<{n}f', data, o, *([v] * n))
@@ -613,31 +625,40 @@ with open(dst, 'wb') as fp:
     fp.write(data)
 EOF
 }
-# d0log LOG NAME: the checks of a read log of drag0_reads_cd4; prints
+# dlog LOG NAME PATTERN: the checks of a read log of drag0_reads_cd4 or
+# drag4_reads_cd0 (PATTERN: the windcd line, a fixed string); prints
 # "NAME: reason; " for each one that fails
-d0log() {
+dlog() {
   local w k
   w="$(readok "$1")" || echo -n "$2: $w; "
-  k="$(grep -c 'windcd not applied (itdrag = *0 *)' "$1")"
-  [ "$k" = 1 ] || echo -n "$2: 'windcd not applied (itdrag = 0)' $k times in $1, not 1; "
+  k="$(grep -c -F -- "$3" "$1")"
+  [ "$k" = 1 ] || echo -n "$2: '$3' $k times in $1, not 1; "
 }
-# case_drag0: itdrag = 0 keeps the user's dragco, not the file's windcd
-case_drag0() {
-  local cs=drag0_reads_cd4 d="$P/drag0_reads_cd4" s t0 why="" f k rc=0 pr pp line="" dc=""
+# case_drag CASE WITD RITD [RDC]: a file written with itdrag = WITD (mm_h6d4's
+# write run with that itdrag) read with itdrag = RITD (and dragco = RDC, if
+# given): the reader keeps its own dragco, not the file's windcd, so the
+# read r must equal the read p of the same file with windcd set to the
+# reader's dragco (compared even if a log line is missing), and both logs
+# say "windcd not applied (file itdrag = WITD, run itdrag = RITD)"
+case_drag() {
+  local cs="$1" witd="$2" ritd="$3" rdc="${4:-}" d="$P/$1" s t0 why="" lw="" f k rc=0 pr pp line="" cmpl="" dc="" pat
+  pat="windcd not applied (file itdrag = $witd, run itdrag = $ritd)"
   t0=$(date +%s)
   mkdir "$d" || return 1
   for s in c w r p; do rundir "$d/$s" mm || return 1; done
   RTIME=""
-  if mkmm "$cs" 0 06 12 "iheat = 6   itdrag = 4" && [ -n "$RTIME" ]; then
-    sed -i 's/^        iheat = 6   itdrag = 4$/        iheat = 6   itdrag = 0/' "$d/r/r.str"
+  if mkmm "$cs" 0 06 12 "iheat = 6   itdrag = $witd" && [ -n "$RTIME" ]; then
+    sed -i "s/^        iheat = 6   itdrag = $witd\$/        iheat = 6   itdrag = $ritd/" "$d/r/r.str"
+    [ -n "$rdc" ] && sed -i "s/dragco = [^ ]*/dragco = $rdc/" "$d/r/r.str"
     dc="$(sed -n 's/.*dragco = \([^ ]*\).*/\1/p' "$d/r/r.str")"
   fi
-  if [ -z "$RTIME" ] || [ "$(grep -c '^        iheat = 6   itdrag = 0$' "$d/r/r.str")" != 1 ] \
-     || [ "$(echo "$dc" | wc -w)" != 1 ] || ! cp "$d/r/r.str" "$d/p/r.str"; then
+  if [ -z "$RTIME" ] || [ "$(grep -c "^        iheat = 6   itdrag = $ritd\$" "$d/r/r.str")" != 1 ] \
+     || [ "$(echo "$dc" | wc -w)" != 1 ] || { [ -n "$rdc" ] && [ "$dc" != "$rdc" ]; } \
+     || ! cp "$d/r/r.str" "$d/p/r.str"; then
     echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
   fi
-  # w writes with itdrag = 4; r reads w.rst, p the same file with windcd
-  # set to dragco, both with itdrag = 0
+  # w writes with itdrag = WITD; r reads w.rst, p the same file with windcd
+  # set to the reader's dragco, both with itdrag = RITD
   if ! run "$d/w" w 1 > "$d/w.why"; then
     why="$(cat "$d/w.why"); "
   elif [ ! -s "$d/w/w.rst" ]; then
@@ -648,8 +669,8 @@ case_drag0() {
     ln -s ../w/w.rst "$d/r/w.rst" || return 1
     run "$d/r" r 1 > "$d/r.why" & pr=$!
     run "$d/p" r 1 > "$d/p.why" & pp=$!
-    if wait "$pr"; then why="$why$(d0log "$d/r/r.log" r)"; else why="$why$(cat "$d/r.why"); "; fi
-    if wait "$pp"; then why="$why$(d0log "$d/p/r.log" p)"; else why="${why}p: $(cat "$d/p.why"); "; fi
+    if wait "$pr"; then lw="$lw$(dlog "$d/r/r.log" r "$pat")"; else why="${why}r: $(cat "$d/r.why"); "; fi
+    if wait "$pp"; then lw="$lw$(dlog "$d/p/r.log" p "$pat")"; else why="${why}p: $(cat "$d/p.why"); "; fi
   fi
   donecase "$cs" "$t0" "$why" || return 1
   echo "    $(head -1 "$d/patch.txt")" > "$d.detail"
@@ -660,9 +681,11 @@ case_drag0() {
     s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
     [ -n "$s" ] || s="$(head -1 "$d/cmp.$f.txt")"
     echo "    $f (p against r): ${s#SUMMARY *: }" >> "$d.detail"
-    case "$k" in 0) line="${line}$f equal, " ;; 1) line="${line}$f DIFFERS, " ;; *) line="${line}$f not compared, " ;; esac
+    case "$k" in 0) cmpl="${cmpl}$f equal, " ;; 1) cmpl="${cmpl}$f DIFFERS, " ;; *) cmpl="${cmpl}$f not compared, " ;; esac
   done
-  line="case $cs: itdrag = 0 read of a file with COARE's windcd, against the same file with windcd = dragco $dc: ${line%, }"
+  line="case $cs: itdrag = $ritd read (dragco $dc) of a file written with itdrag = $witd, against the same file"
+  line="$line with windcd = $dc: ${cmpl%, }"
+  if [ -n "$lw" ]; then line="$line; log: ${lw%; }"; rc=1; fi
   if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
   return "$rc"
 }
@@ -1029,7 +1052,7 @@ tshy() {
 }
 # case_tools: rstinf and rst2shy on version 20 and version 19 files
 case_tools() {
-  local cs=tools d="$P/tools" ref="${REF_BIN_DIR:-}" s x t0 why="" bad="" k bin bas nrec pargs nm np i
+  local cs=tools d="$P/tools" ref="${REF_BIN_DIR:-}" s x t0 why="" bad="" k bin bas nrec pargs nm np i itd
   local -a pl
   t0=$(date +%s)
   if [ -z "$ref" ] || [ ! -x "$ref/shyfem" ] || [ ! -x "$ref/rstinf" ] || [ ! -x "$ref/rst2shy" ]; then
@@ -1073,15 +1096,16 @@ case_tools() {
   # the first record of the patched copy
   for x in m k g; do
     case "$x" in
-      m) nrec=2; bas=MM_coarse_smooth.bas; k=0; pargs="evapv=99 windcd=99 tws=99 dtw=99" ;;
-      k) nrec=3; bas=venlag62.bas;         k=2; pargs="evapv=99 tken=99 difv=99" ;;
-      g) nrec=3; bas=venlag62.bas;         k=1; pargs="tws=99" ;;
+      m) nrec=2; bas=MM_coarse_smooth.bas; k=0; itd=4; pargs="evapv=99 windcd=99 tws=99 dtw=99" ;;
+      k) nrec=3; bas=venlag62.bas;         k=2; itd=0; pargs="evapv=99 tken=99 difv=99" ;;
+      g) nrec=3; bas=venlag62.bas;         k=1; itd=0; pargs="tws=99" ;;
     esac
     # the version 20 file
     s="$d/${x}20"
     tooldo "$s" info.txt rstinf w.rst
     bad="$bad$(tinfo "$s/info.txt" 20 "$nrec" "${x}20 rstinf")"
-    bad="$bad$(tcount "$s/info.txt" '^   hydro block, after vtlnv: iwetv, evapv, windcd, heat flag, tws, dtw$' 1 "${x}20 rstinf")"
+    bad="$bad$(tcount "$s/info.txt" '^   hydro block, after vtlnv: iwetv, evapv, itdrag, windcd, heat flag, tws, dtw$' 1 "${x}20 rstinf")"
+    bad="$bad$(tcount "$s/info.txt" "^   itdrag of the writer: $itd " 1 "${x}20 rstinf")"
     bad="$bad$(tcount "$s/info.txt" '^   heat flag: 1 ' 1 "${x}20 rstinf")"
     if [ "$k" = 2 ]; then
       bad="$bad$(tcount "$s/info.txt" '^   turbulence block, after iturb = 2: tken, eps, visv, difv (k-epsilon)$' 1 "${x}20 rstinf")"
@@ -1145,7 +1169,8 @@ case_tools() {
 for cs in $CASES; do
   case "$cs" in
     old_v19)         case_old_v19 ;;
-    drag0_reads_cd4) case_drag0 ;;
+    drag0_reads_cd4) case_drag drag0_reads_cd4 4 0 ;;
+    drag4_reads_cd0) case_drag drag4_reads_cd0 0 4 2.0e-3 ;;
     flgrst_no_hydro) case_flgrst ;;
     evap_reads_noheat) case_evap ;;
     keps_to_gotm)    case_keps_to_gotm ;;

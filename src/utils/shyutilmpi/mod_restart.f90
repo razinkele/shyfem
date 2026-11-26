@@ -33,6 +33,7 @@
 ! 24.11.2026    arb     gathered arrays labelled for the ghost check (#268)
 ! 26.11.2026    arb     version 20 (#303 #304)
 ! 26.11.2026    arb     btool_rst, iheatflag_rst: the tools on version 20
+! 26.11.2026    arb     itdrag_rst: the writer's itdrag (version 20, R4)
 !
 ! notes :
 !
@@ -66,8 +67,9 @@
 ! 17	write bfm restart
 ! 18	read only: upstream shyfemcm layout (iwetv, zov, zeov after vtlnv)
 ! 19	write simple-sediment bed mass (conza) (N25)
-! 20	write iwetv, evapv, windcd, heat flag, tws, dtw after vtlnv; with
-!	iturb = 2, write tken, eps, visv, difv after iturb
+! 20	write iwetv, evapv, the writer's itdrag, windcd, heat flag, tws,
+!	dtw after vtlnv; with iturb = 2, write tken, eps, visv, difv
+!	after iturb
 !
 !*********************************************************************
 
@@ -89,7 +91,7 @@
 	! iwetv, zov, zeov) - never written by this fork (the fork briefly
 	! wrote 18 with the ssedi layout 2026-07-21/22 only; such files
 	! fail to read and must be regenerated); 19 = ssedi bed-mass block;
-	! 20 = the hydro block also holds iwetv, evapv, windcd, a heat flag
+	! 20 = the hydro block also holds iwetv, evapv, itdrag, windcd, a heat flag
 	! and tws/dtw, and the turbulence block of a k-epsilon run (iturb =
 	! 2) tken, eps, visv and difv (this fork, what we write, #303 #304)
 	integer, save :: nvmax = 20		!last version of file
@@ -115,6 +117,9 @@
 						!the turbulence block holds
 						!GOTM's arrays only if 1 (#304);
 						!also set by rst_skip_record
+	integer, save :: itdrag_rst = 0		!the writer's itdrag (v20), set
+						!by rst_skip_record (rstinf),
+						!0 before version 20
 	integer, save :: iheatflag_rst = 0	!the writer's heat flag (v20:
 						!1 if qflux3d ran), set by
 						!rst_skip_record (rstinf), 0
