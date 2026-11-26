@@ -287,7 +287,7 @@ so the Charnock and wave branches were not exercised.
 
 ```
 cd testcases/examples/channel_turb
-./run_all.sh            # builds the grid and STRs, runs 8 cases, prints the table
+./run_all.sh            # builds the grid and STRs in run/, runs 8 cases, prints the table
 # diagnostic variants: apply keps_diag.patch to a scratch tree, rebuild, set
 # SHYFEM_KEPS_DIAG (1 = momentum u*, 2 = wall distance dh/2+z0, 4 = GOTM z0 from czdef)
 ```
