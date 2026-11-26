@@ -211,7 +211,7 @@ zip:	cleanall
 ../../../lib/mod/simul.mod: simul.o
 ../../../lib/mod/zadapt.mod: zadaptutil.o
 basin.o: ../../../lib/mod/mod_error_stop.mod
-evgeom.o: ../../../lib/mod/basin.mod
+evgeom.o: ../../../lib/mod/basin.mod ../../../lib/mod/mod_error_stop.mod
 fast_find.o: ../../../lib/mod/basin.mod ../../../lib/mod/stack.mod
 fem_util.o: ../../../lib/mod/basin.mod
 find.o: ../../../lib/mod/basin.mod ../../../lib/mod/evgeom.mod \

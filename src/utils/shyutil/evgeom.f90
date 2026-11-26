@@ -100,6 +100,21 @@
 ! 10.05.2024	ggu	no check of spherical here, no need for ev_init()
 ! 17.09.2024	ggu	better error check in xy2xi()
 ! 24.09.2024	ggu	new routine femintp_xi()
+! 26.11.2026	arb	set-up errors exit 7 through mod_error_stop (#333)
+!
+! notes :
+!
+! the errors of the set-up routines (ev_init, set_ev, check_ev) end
+! through error_stop of mod_error_stop (exit 7, the message "error stop
+! ROUTINE: TEXT" on stdout), not a bare stop (exit 0, #333). Not
+! shympi_abort_internal (exit 33): shyproj links evgeom.o without the
+! shympi library (its link line lists libshympi.a before libshyutil.a
+! once, so the reference would not resolve). The model calls set_ev
+! after MPI is initialized, on every process for its own elements; an
+! exit 7 of one process or of all ends the job through mpirun with exit
+! 7 (no MPI_Finalize). The per-element routines (xy2xi, xi2xy, xi_dist,
+! adjust_bc, area_elem, aomega_elem) keep their bare stops: they can run
+! inside OpenMP workers, where nothing may write or stop
 !
 !***********************************************************
 
@@ -132,6 +147,8 @@
 
 	subroutine ev_init(nel)
 
+	use mod_error_stop, only : error_stop
+
 	integer, intent(in) :: nel
 	integer ierr
 
@@ -145,7 +162,7 @@
 
 	if( nel > 0 ) then
 	  allocate(ev(evdim,nel),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('ev_init','allocation of ev failed')
 	end if
 
 	ev = 0.
@@ -174,6 +191,7 @@
 
 	use basin
 	use evgeom
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -197,7 +215,7 @@
 
 	if( .not. basin_has_basin() ) then
           write(6,*) 'no basin has been read'
-	  stop 'error stop set_ev: no basin'
+	  call error_stop('set_ev','no basin')
 	end if
 
 	call ev_init(nel)	!initializes ev array
@@ -264,7 +282,7 @@
         if( aj <= 0 ) then
           write(6,*) ie,aj
           write(6,*) x1,x2,x3,y1,y2,y3
-          stop 'error stop set_ev: internal error (3)'
+          call error_stop('set_ev','internal error (3)')
         end if
 	aji=one/aj
 	b1=(y2-y3)*aji
@@ -303,7 +321,7 @@
           write(6,*) kn1,x1,y1
           write(6,*) kn2,x2,y2
           write(6,*) kn3,x3,y3
-	  stop 'error stop set_ev: clockwise'
+	  call error_stop('set_ev','clockwise')
 	end if
 
 	ss1=(x3-x2)*(x3-x2)+(y3-y2)*(y3-y2)
@@ -524,6 +542,8 @@
 
 	subroutine check_ev_error(ip,ie,ev,evdim,alpha,bmax,cmax,bs,cs)
 
+	use mod_error_stop, only : error_stop
+
 	implicit none
 	integer, intent(in) :: ip,ie,evdim
 	double precision, intent(in) :: ev(evdim,*)
@@ -534,7 +554,7 @@
 	write(6,*) 'ie,area,alpha: ',ie,ev(10,ie),alpha
 	write(6,*) 'bmax,cmax,bs,cs: ',bmax,cmax,bs,cs
 	write(6,*) 'ev: ',(ev(i,ie),i=1,evdim)
-	stop 'error stop check_ev: errors in array ev'
+	call error_stop('check_ev','errors in array ev')
 	end subroutine check_ev_error
 
 !***********************************************************
