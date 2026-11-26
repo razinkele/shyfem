@@ -244,9 +244,12 @@
 #             a line "material boundary:" for each such call, from the
 #             worker threads; now they are counted and written once per
 #             pass, "lgr advection: lost with time left: N in the step to
-#             TIME, M in the run (...); first: id, element, crossings left,
-#             time left [s]" and "lgr advection: flux over a wall side set
-#             to 0: N ...; first: id, element, layer, side, flux".  Case
+#             TIME, M in the run (P events per 100 of the I particles
+#             released); first: id, element, crossings left, time left [s]"
+#             and "lgr advection: flux over a wall side set to 0: N ...;
+#             first: id, element, layer, side, flux" (the part in the run
+#             read "P % of the I particles released" until #305; the line
+#             must have the new form).  Case
 #             mm_lgr_b as it is (two days, ilagr = 1, about 1000 particles
 #             released at the start, rwhpar = 0, an open boundary: a
 #             particle leaves the domain only by advection, at the open
@@ -1418,7 +1421,7 @@ OLD = ("loosing particle adv", "warning particle adv", "unknown error adv",
        "material boundary:", "vel < 0", "warning: wrong layer")
 LOST, WALL = "lost with time left", "flux over a wall side set to 0"
 pat = re.compile(r"^ lgr advection:(?: rank (\d+):)? (.+?): (\d+) in the step to (\S+?)"
-                 r"(?:, (\d+) in the run \([\d.]+ % of the \d+ particles released\))?; first: (.*)$")
+                 r"(?:, (\d+) in the run \([\d.]+ events per 100 of the \d+ particles released\))?; first: (.*)$")
 
 def read_log(name):
     """the summary lines of a log: {(rank, kind): [(step, n, ntot, first)]}"""

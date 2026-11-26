@@ -622,9 +622,14 @@
 !   to TIME[, M in the run (P % of the I particles released)]; first:
 !   <name> <value>, <name> <value>, ..."
 ! with N the events of the pass and the values of the first event kept;
-! the part in the run (the events of the run, their percentage in the
-! particles released, idbdy) only for a kind that does not stop the run
-! (brun). The values are the ni integer values, then the nd real values
+! the part in the run (the events of the run, and P = 100 M/I with I
+! the particles released, idbdy) only for a kind that does not stop the
+! run (brun). One particle can give several events of a kind in the run
+! (both walls, repeated crossings, one event in every step), so P can pass
+! 100: for the kinds 5 to 10 the part reads "P events per 100 of the I
+! particles released" (#305; until then "%"); the kinds 1 and 2 keep
+! "% of the", the lines of #288 unchanged. The values are the ni
+! integer values, then the nd real values
 ! (with three decimals if bfix, else in full precision, g0), named by
 ! cname(1:ni+nd); a value named "of" follows the one before with no comma
 ! (layer L of N). The lines of the kinds 1 to 4 are those of #288
@@ -854,7 +859,12 @@
             write(cnum,'(i0)') lgr_ev_ntot(k)
             line = trim(line)//', '//trim(cnum)//' in the run ('
             write(cnum,'(f16.2)') perc
-            line = trim(line)//trim(adjustl(cnum))//' % of the '
+            if( k == lgr_ev_vd_lost .or. k == lgr_ev_vd_unknown ) then
+              line = trim(line)//trim(adjustl(cnum))//' % of the '
+            else		!a count of events, can pass 100 (#305)
+              line = trim(line)//trim(adjustl(cnum))			&
+     &			//' events per 100 of the'
+            end if
             write(cnum,'(i0)') idbdy
             line = trim(line)//' '//trim(cnum)//' particles released)'
           end if
