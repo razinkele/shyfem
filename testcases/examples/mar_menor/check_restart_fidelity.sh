@@ -43,16 +43,17 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and eight cases of another kind, each with its own write runs (serial):
-#   old_v19       a version 19 file (venlag_smoke, as ven_s), written by
-#                 the reference binary REF_BIN_DIR/shyfem (an origin/main
-#                 build, before version 20) and read by this binary (r)
-#                 and by the reference binary (m): r must read it as main
-#                 does, so r's .hydro.shy, .ts.shy and .ext must be the
+# and nine cases of another kind, each with its own write runs (serial):
+#   old_v19       (a merge-time check, needs REF_BIN_DIR, see below) a
+#                 version 19 file (venlag_smoke, as ven_s), written by the
+#                 reference binary REF_BIN_DIR/shyfem (a build of the last
+#                 main commit before version 20) and read by this binary
+#                 (r) and by the reference binary (m): r must read it as
+#                 main did, so r's .hydro.shy, .ts.shy and .ext must be the
 #                 same bytes as m's (cmp); r's log must show "nvers = 19"
 #                 and "setweg clock not reset" (only a version 20 record
 #                 restores iwetv, so only then is setweg's clock reset);
-#                 without REF_BIN_DIR the case fails
+#                 without REF_BIN_DIR the case is skipped
 #   drag0_reads_cd4  the version 20 file of mm_h6d4's write run (windcd
 #                 set by COARE, itdrag = 4) read with itdrag = 0, as written
 #                 (r) and with its windcd record set to the STR's dragco
@@ -124,27 +125,29 @@
 #                 idtoff = -2 only, idtoff = -3 and <= -4 (also T/S from the
 #                 file) are covered by reading the code (offline_reads_ts)
 #   tools         rstinf and rst2shy (this build's, on PATH) on version 20
-#                 files, and on version 19 files as main's (REF_BIN_DIR's)
-#                 rstinf and rst2shy; six write runs, serial, with a record
-#                 every 3 h (m: mm_h6d4's write run, 03:00 and 06:00) or
-#                 every hour (k: ven_keps_s's, with k-epsilon; g: ven_s's,
-#                 with GOTM; 01:00 to 03:00), each by this binary (m20, k20,
-#                 g20: version 20) and by REF_BIN_DIR (m19, k19, g19: version
-#                 19).  On each version 20 file: rstinf lists version 20, the
-#                 number of records, the version 20 records of the hydro
-#                 block, the heat flag (1: qflux3d ran) and whether the
-#                 turbulence block holds the k-epsilon state; rstinf of the
-#                 file and of a copy finds no difference in any record;
-#                 rstinf of the file and of the file with some version 20
-#                 records of its first record changed (m: evapv, windcd, tws,
-#                 dtw; k: evapv, tken, difv; g: tws) names exactly those
-#                 records; rst2shy converts every record, and its .shy files
-#                 are the same bytes as REF_BIN_DIR's rst2shy makes from the
-#                 version 19 file of the same run.  On each version 19 file:
-#                 rstinf (list, and file against copy) and rst2shy print what
-#                 REF_BIN_DIR's print (but the commit line of the banner),
-#                 and rst2shy's .shy files are the same bytes as REF_BIN_DIR's;
-#                 without REF_BIN_DIR the case fails
+#                 files; three write runs of this binary, serial, with a
+#                 record every 3 h (m20: mm_h6d4's write run, 03:00 and
+#                 06:00) or every hour (k20: ven_keps_s's, with k-epsilon;
+#                 g20: ven_s's, with GOTM; 01:00 to 03:00).  On each file:
+#                 rstinf lists version 20, the number of records, the
+#                 version 20 records of the hydro block, the writer's itdrag
+#                 (m 4, k and g 0), the heat flag (1: qflux3d ran) and
+#                 whether the turbulence block holds the k-epsilon state;
+#                 rstinf of the file and of a copy finds no difference in
+#                 any record; rstinf of the file and of the file with some
+#                 version 20 records of its first record changed (m: evapv,
+#                 windcd, tws, dtw; k: evapv, tken, difv; g: tws) names
+#                 exactly those records; rst2shy converts every record, and
+#                 each record it writes is the write run's own output record
+#                 at the same time (.hydro.shy, and .ts.shy but rho, which
+#                 the model does not write), byte for byte
+#   tools_v19     (a merge-time check, needs REF_BIN_DIR, see below)
+#                 rstinf and rst2shy on version 19 files as REF_BIN_DIR's:
+#                 the same three write runs by REF_BIN_DIR (m19, k19, g19);
+#                 rstinf (list, and file against copy) and rst2shy print
+#                 what REF_BIN_DIR's print (but the commit line of the
+#                 banner), and rst2shy's .shy files are the same bytes as
+#                 REF_BIN_DIR's; without REF_BIN_DIR the case is skipped
 # and a case kept out of the default list, a canary for the comparator:
 #   mm_e0         mm_i0 with ievap = 0: no evaporation, no wet/dry, no
 #                 closure, so it passes also with main before version 20
@@ -167,21 +170,37 @@
 # "case NAME: did not run (reason) -> FAIL", each followed by the summary
 # lines of shy_maxdiff.py (for the .shy files with the differences in the
 # first hour after the restart and at the end); then the time of each case
-# and the total, and "RESTART FIDELITY: PASS" or "RESTART FIDELITY: FAIL",
-# and exits 0 or 1.
+# and the total, and "RESTART FIDELITY: PASS" (with "(N cases skipped:
+# they need REF_BIN_DIR)" when old_v19 or tools_v19 is skipped) or
+# "RESTART FIDELITY: FAIL", and exits 0 or 1.  A skipped case prints
+# "case NAME: skipped (needs REF_BIN_DIR: ...) -> SKIPPED" and does not
+# fail the run.
 #
 # Usage:  [REF_BIN_DIR=DIR] ./check_restart_fidelity.sh [case ...]
-#         (no case: every case but mm_e0; old_v19 and tools need
-#         REF_BIN_DIR, the bin folder of an origin/main build)
+#         (no case: every case but mm_e0)
+# REF_BIN_DIR, for the merge-time checks old_v19 and tools_v19: the bin
+# folder of a build of the last main commit before version 20, that is
+# 9187cdf1 or, once version 20 is merged, the first parent of its merge
+# commit (git rev-parse MERGE^1).  Not origin/main after the merge, which
+# writes version 20 too, and not v8.6.0: #248 and #283 changed the results
+# of iturb = 0 3D runs and of iturb = 2 runs after it.  Build it in a
+# throwaway work tree, from the repository:
+#   git worktree add --detach /tmp/ref19 9187cdf1
+#   (cd /tmp/ref19 && PATH=/usr/bin:$PATH make fem NETCDF=true NETCDFDIR=/usr NETCDFFDIR=/usr/local)
+#   REF_BIN_DIR=/tmp/ref19/bin ./check_restart_fidelity.sh
+#   git worktree remove --force /tmp/ref19
+# Without REF_BIN_DIR the two cases are skipped; with a REF_BIN_DIR that
+# lacks shyfem (or, for tools_v19, rstinf or rst2shy) they fail.  The
+# other cases need this build alone.
 # Needs shyfem, shypre and python3 with numpy on PATH, rstinf and rst2shy
-# for the case tools, and mpirun (an OpenMPI build) for the cases on
-# several processes.  Works in a folder
+# for the cases tools and tools_v19, and mpirun (an OpenMPI build) for the
+# cases on several processes.  Works in a folder
 # made with mktemp -d under ${TMPDIR:-/tmp}: the basins are built there
 # with shypre from GRID/MM_coarse_smooth.grd and ../venice_lagoon/GRID/
 # venlag62.grd, INPUT is linked and the STR files are made there with sed
 # from mm_hyd_41.str and venlag_smoke.str, so nothing in the source
-# folders changes.  The cases run at the same time (45 processes at the
-# start); every mpirun has --bind-to none, so that the runs do not share
+# folders changes.  The cases run at the same time (46 processes at the
+# start with REF_BIN_DIR, 42 without); every mpirun has --bind-to none, so that the runs do not share
 # the two cores Open MPI binds a 2-process run to.  Takes about 2 minutes
 # on the development machine (the serial venlag cases are the longest).
 # The folder is removed when every case passes and kept otherwise (its
@@ -191,7 +210,7 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
 ALL="$ALL old_v19 drag0_reads_cd4 drag4_reads_cd0 flgrst_no_hydro evap_reads_noheat keps_to_gotm"
-ALL="$ALL offline_ts_noheat tools"
+ALL="$ALL offline_ts_noheat tools tools_v19"
 OPT="mm_e0"     # cases kept out of the default list
 CASES="${*:-$ALL}"
 needmm=no; needven=no; needmpi=no; needtools=no
@@ -200,7 +219,7 @@ for c in $CASES; do
   case "$c" in
     mm_*|drag0_reads_cd4|drag4_reads_cd0|flgrst_no_hydro|evap_reads_noheat|offline_ts_noheat) needmm=yes ;;
     ven_*|old_v19|keps_to_gotm) needven=yes ;;
-    tools) needmm=yes; needven=yes; needtools=yes ;;
+    tools|tools_v19) needmm=yes; needven=yes; needtools=yes ;;
   esac
   case "$c" in *_np*) needmpi=yes ;; esac
 done
@@ -481,9 +500,13 @@ case_old_v19() {
   local cs=old_v19 d="$P/old_v19" s t0 why="" f k w rc=0 ref pr pm line=""
   t0=$(date +%s)
   ref="${REF_BIN_DIR:-}/shyfem"
-  if [ -z "${REF_BIN_DIR:-}" ] || [ ! -x "$ref" ]; then
-    echo "case $cs: did not run (REF_BIN_DIR='${REF_BIN_DIR:-}' is not the bin folder of an origin/main build) -> FAIL" \
-      > "$d.line"
+  if [ -z "${REF_BIN_DIR:-}" ]; then
+    echo "case $cs: skipped (needs REF_BIN_DIR: a build of the last main commit before version 20) -> SKIPPED" > "$d.line"
+    return 0
+  fi
+  if [ ! -x "$ref" ]; then
+    echo "case $cs: did not run (REF_BIN_DIR='${REF_BIN_DIR:-}' has no shyfem; it must be the bin folder of a build" \
+         "of the last main commit before version 20) -> FAIL" > "$d.line"
     return 1
   fi
   mkdir "$d" || return 1
@@ -1050,57 +1073,102 @@ tshy() {
   done
   echo "$n" > "$1/nshy.txt"
 }
-# case_tools: rstinf and rst2shy on version 20 and version 19 files
-case_tools() {
-  local cs=tools d="$P/tools" ref="${REF_BIN_DIR:-}" s x t0 why="" bad="" k bin bas nrec pargs nm np i itd
-  local -a pl
-  t0=$(date +%s)
-  if [ -z "$ref" ] || [ ! -x "$ref/shyfem" ] || [ ! -x "$ref/rstinf" ] || [ ! -x "$ref/rst2shy" ]; then
-    echo "case $cs: did not run (REF_BIN_DIR='$ref' is not the bin folder of an origin/main build" \
-         "with shyfem, rstinf and rst2shy) -> FAIL" > "$d.line"
-    return 1
-  fi
-  mkdir "$d" || return 1
-  # the write runs: mkmm and mkven make the STR files of a case in
-  # $P/tools/{m,k,g}/{c,w,r}; w.str gets a record every 3 h (m) or 1 h
+# shyat MODEL CONV: every record of rst2shy's file CONV whose variable the
+# model's file MODEL also holds is MODEL's record at the same absolute
+# time, byte for byte (the variables MODEL does not hold may only be rho,
+# 13); prints "N records equal" or the reasons, exit 1 on a difference
+shyat() {
+  python3 - "$HERE" "$1" "$2" << 'PY'
+import datetime, sys
+sys.path.insert(0, sys.argv[1])
+import shy_maxdiff
+def start(st):
+    d, t = st
+    return datetime.datetime(d // 10000, d // 100 % 100, d % 100, t // 10000, t // 100 % 100, t % 100)
+try:
+    _, sa, _, ka = shy_maxdiff.load(sys.argv[2])
+    _, sb, _, kb = shy_maxdiff.load(sys.argv[3])
+except Exception as e:      # OSError, FormatError, struct.error
+    print(f"cannot read: {e}")
+    sys.exit(1)
+off = (start(sb) - start(sa)).total_seconds()
+va = {k[1] for k in ka}
+neq, bad, other = 0, [], set()
+for (t, ivar, size, j), v in kb.items():
+    if ivar not in va:
+        other.add(ivar)
+        continue
+    w = ka.get((t + off, ivar, size, j))
+    if w is None:
+        bad.append(f"no record of variable {ivar} at {t + off:g} s in the model's file")
+    elif w != v:
+        bad.append(f"variable {ivar} at {t + off:g} s differs")
+    else:
+        neq += 1
+if other - {13}:
+    bad.append(f"variables {sorted(other - {13})} not in the model's file")
+if neq == 0:
+    bad.append("no record compared")
+if bad:
+    print("; ".join(bad[:3]))
+    sys.exit(1)
+print(f"{neq} records equal" + (" (rho not in the model's file)" if other else ""))
+PY
+}
+# tstr D: the STR files of the write runs of tools and tools_v19 in D
+# (D/m.str: mm_h6d4's write run with a record every 3 h; D/k.str and
+# D/g.str: ven_keps_s's and ven_s's with a record every hour); mkmm and
+# mkven make them in D/{m,k,g}/{c,w,r}
+tstr() {
+  local d="$1" s rel="${1#$P/}"
   for s in m k g; do mkdir "$d/$s" "$d/$s/c" "$d/$s/w" "$d/$s/r" || return 1; done
   RTIME=""
-  if mkmm tools/m 0 06 12 "iheat = 6   itdrag = 4" && mkven tools/k 2 && mkven tools/g 1 && [ -n "$RTIME" ]; then
-    sed -e "s/^        idtrst = -1\$/        idtrst = '3h'/" "$d/m/w/w.str" > "$d/m.str"
-    sed -e "s/^        idtrst = -1\$/        idtrst = '1h'/" "$d/k/w/w.str" > "$d/k.str"
-    sed -e "s/^        idtrst = -1\$/        idtrst = '1h'/" "$d/g/w/w.str" > "$d/g.str"
-  fi
-  if [ -z "$RTIME" ] || [ "$(grep -c "^        idtrst = '3h'\$" "$d/m.str" 2> /dev/null)" != 1 ] \
-     || [ "$(cat "$d/k.str" "$d/g.str" 2> /dev/null | grep -c "^        idtrst = '1h'\$")" != 2 ]; then
-    echo "case $cs: did not run (cannot make its STR files, see $d/*.str) -> FAIL" > "$d.line"; return 1
-  fi
-  pl=()
-  for x in m20 m19 k20 k19 g20 g19; do
-    case "$x" in m*) rundir "$d/$x" mm ;; *) rundir "$d/$x" ven ;; esac || return 1
+  mkmm "$rel/m" 0 06 12 "iheat = 6   itdrag = 4" && mkven "$rel/k" 2 && mkven "$rel/g" 1 && [ -n "$RTIME" ] || return 1
+  sed -e "s/^        idtrst = -1\$/        idtrst = '3h'/" "$d/m/w/w.str" > "$d/m.str"
+  sed -e "s/^        idtrst = -1\$/        idtrst = '1h'/" "$d/k/w/w.str" > "$d/k.str"
+  sed -e "s/^        idtrst = -1\$/        idtrst = '1h'/" "$d/g/w/w.str" > "$d/g.str"
+  [ "$(grep -c "^        idtrst = '3h'\$" "$d/m.str")" = 1 ] || return 1
+  [ "$(cat "$d/k.str" "$d/g.str" | grep -c "^        idtrst = '1h'\$")" = 2 ] || return 1
+}
+# twrite D BIN X...: the write runs D/X (X = m.., k.. or g..: the STR file
+# D/${X%??}.str) with BIN, at the same time; prints why one failed
+twrite() {
+  local d="$1" bin="$2" x i=0
+  local -a pl=()
+  shift 2
+  for x in "$@"; do
+    case "$x" in m*) rundir "$d/$x" mm ;; *) rundir "$d/$x" ven ;; esac || { echo "$x: no run folder; "; return 1; }
     cp "$d/${x%??}.str" "$d/$x/w.str" || return 1
-    case "$x" in *20) bin=shyfem ;; *) bin="$ref/shyfem" ;; esac
     run "$d/$x" w 1 "$bin" > "$d/$x.why" & pl+=($!)
   done
-  i=0
-  for x in m20 m19 k20 k19 g20 g19; do
+  for x in "$@"; do
     if ! wait "${pl[$i]}"; then
-      why="$why$x: $(cat "$d/$x.why"); "
+      echo -n "$x: $(cat "$d/$x.why"); "
     elif [ ! -s "$d/$x/w.rst" ]; then
-      why="$why$x: no restart file $d/$x/w.rst; "
+      echo -n "$x: no restart file $d/$x/w.rst; "
     fi
     i=$(( i + 1 ))
   done
+}
+# case_tools: rstinf and rst2shy on version 20 files (this build alone)
+case_tools() {
+  local cs=tools d="$P/tools" s x t0 why="" bad="" k bas nrec pargs nm np itd w
+  t0=$(date +%s)
+  mkdir "$d" || return 1
+  if ! tstr "$d"; then
+    echo "case $cs: did not run (cannot make its STR files, see $d/*.str) -> FAIL" > "$d.line"; return 1
+  fi
+  why="$(twrite "$d" shyfem m20 k20 g20)"
   donecase "$cs" "$t0" "$why" || return 1
   : > "$d.detail"
-  # x NREC (records), heat flag, writer's iturb, the records changed in
-  # the first record of the patched copy
+  # x NREC (records), writer's iturb, writer's itdrag, the records changed
+  # in the first record of the patched copy
   for x in m k g; do
     case "$x" in
       m) nrec=2; bas=MM_coarse_smooth.bas; k=0; itd=4; pargs="evapv=99 windcd=99 tws=99 dtw=99" ;;
       k) nrec=3; bas=venlag62.bas;         k=2; itd=0; pargs="evapv=99 tken=99 difv=99" ;;
       g) nrec=3; bas=venlag62.bas;         k=1; itd=0; pargs="tws=99" ;;
     esac
-    # the version 20 file
     s="$d/${x}20"
     tooldo "$s" info.txt rstinf w.rst
     bad="$bad$(tinfo "$s/info.txt" 20 "$nrec" "${x}20 rstinf")"
@@ -1131,9 +1199,51 @@ case_tools() {
     else
       bad="$bad${x}20: cannot change $pargs of $s/w.rst: $(tail -1 "$s/patch.txt"); "
     fi
+    # rst2shy: every record, each the model's own output record at its time
     t2shy "$s" rst2shy "$bas" || return 1
     bad="$bad$(tcount "$s/t/rst2shy.txt" "Number of records read: *$nrec\$" 1 "${x}20 rst2shy")"
-    # the version 19 file: this build's tools as REF_BIN_DIR's
+    for nm in hydro ts; do
+      if w="$(shyat "$s/w.$nm.shy" "$s/t/x.$nm.shy" 2>&1)"; then
+        echo "    ${x}20 rst2shy x.$nm.shy against the write run's w.$nm.shy: $w" >> "$d.detail"
+      else
+        bad="$bad${x}20 rst2shy: x.$nm.shy against the write run's w.$nm.shy: $w; "
+      fi
+    done
+    echo "    $x: version 20 file of $nrec records; rstinf diff of the patched copy: $(grep -c 'records are different' \
+      "$s/patched.txt" 2> /dev/null) records differ" >> "$d.detail"
+  done
+  if [ -n "$bad" ]; then
+    echo "case $cs: ${bad%; } -> FAIL" > "$d.line"; return 1
+  fi
+  echo "case $cs: rstinf (list, diff, diff of a patched copy) and rst2shy read the version 20 files (mm COARE," \
+       "venlag k-epsilon, venlag GOTM); rst2shy's records are the write run's own output records -> PASS" > "$d.line"
+  return 0
+}
+# case_tools_v19: rstinf and rst2shy on version 19 files, as REF_BIN_DIR's
+# (a merge-time check: skipped without REF_BIN_DIR)
+case_tools_v19() {
+  local cs=tools_v19 d="$P/tools_v19" ref="${REF_BIN_DIR:-}" s x t0 why="" bad="" bas nrec
+  t0=$(date +%s)
+  if [ -z "$ref" ]; then
+    echo "case $cs: skipped (needs REF_BIN_DIR: a build of the last main commit before version 20) -> SKIPPED" > "$d.line"
+    return 0
+  fi
+  if [ ! -x "$ref/shyfem" ] || [ ! -x "$ref/rstinf" ] || [ ! -x "$ref/rst2shy" ]; then
+    echo "case $cs: did not run (REF_BIN_DIR='$ref' has no shyfem, rstinf and rst2shy) -> FAIL" > "$d.line"
+    return 1
+  fi
+  mkdir "$d" || return 1
+  if ! tstr "$d"; then
+    echo "case $cs: did not run (cannot make its STR files, see $d/*.str) -> FAIL" > "$d.line"; return 1
+  fi
+  why="$(twrite "$d" "$ref/shyfem" m19 k19 g19)"
+  donecase "$cs" "$t0" "$why" || return 1
+  : > "$d.detail"
+  for x in m k g; do
+    case "$x" in
+      m) nrec=2; bas=MM_coarse_smooth.bas ;;
+      *) nrec=3; bas=venlag62.bas ;;
+    esac
     s="$d/${x}19"
     tooldo "$s" info.txt rstinf w.rst
     tooldo "$s" info_m.txt "$ref/rstinf" w.rst
@@ -1152,17 +1262,13 @@ case_tools() {
     [ "$(nocommit "$s/t/rst2shy.txt")" = "$(nocommit "$s/tm/rst2shy.txt")" ] \
       || bad="$bad${x}19: rst2shy prints other lines than REF_BIN_DIR's (diff $s/t/rst2shy.txt $s/tm/rst2shy.txt); "
     bad="$bad$(tshy "$s/t" "$s/tm" "${x}19 rst2shy")"
-    # the version 20 file converts as the version 19 file of the same run
-    bad="$bad$(tshy "$d/${x}20/t" "$s/tm" "${x}20 rst2shy against ${x}19")"
-    echo "    $x: version 20 and 19 files of $nrec records; rstinf diff of the patched copy: $(grep -c 'records are different' \
-      "$d/${x}20/patched.txt" 2> /dev/null) records differ; rst2shy: $(cat "$d/${x}20/t/nshy.txt" 2> /dev/null) .shy files" \
-      >> "$d.detail"
+    echo "    $x: version 19 file of $nrec records; rst2shy: $(cat "$s/t/nshy.txt" 2> /dev/null) .shy files" >> "$d.detail"
   done
   if [ -n "$bad" ]; then
     echo "case $cs: ${bad%; } -> FAIL" > "$d.line"; return 1
   fi
-  echo "case $cs: rstinf (list, diff, diff of a patched copy) and rst2shy read the version 20 files (mm COARE," \
-       "venlag k-epsilon, venlag GOTM), and work on the version 19 files as REF_BIN_DIR's -> PASS" > "$d.line"
+  echo "case $cs: rstinf (list, diff) and rst2shy work on the version 19 files (mm COARE, venlag k-epsilon," \
+       "venlag GOTM) as REF_BIN_DIR's -> PASS" > "$d.line"
   return 0
 }
 
@@ -1176,23 +1282,32 @@ for cs in $CASES; do
     keps_to_gotm)    case_keps_to_gotm ;;
     offline_ts_noheat) case_offline ;;
     tools)           case_tools ;;
+    tools_v19)       case_tools_v19 ;;
     *)               onecase "$cs" ;;
   esac & PIDS="$PIDS $!"
 done
 wait
 PIDS=""
 
-rc=0
+rc=0; nskip=0
 for cs in $CASES; do
   if [ -s "$P/$cs.line" ]; then cat "$P/$cs.line"; else echo "case $cs: did not run (no result) -> FAIL"; fi
   [ -s "$P/$cs.detail" ] && cat "$P/$cs.detail"
-  grep -q -- '-> PASS$' "$P/$cs.line" 2> /dev/null || rc=1
+  if grep -q -- '-> SKIPPED$' "$P/$cs.line" 2> /dev/null; then
+    nskip=$(( nskip + 1 ))
+  elif ! grep -q -- '-> PASS$' "$P/$cs.line" 2> /dev/null; then
+    rc=1
+  fi
 done
 tm=""
 for cs in $CASES; do [ -s "$P/$cs.time" ] && tm="$tm$(cat "$P/$cs.time"), "; done
 echo "time: ${tm}total $(( $(date +%s) - T0 )) s"
 if [ "$rc" = 0 ]; then
-  echo "RESTART FIDELITY: PASS"
+  if [ "$nskip" = 0 ]; then
+    echo "RESTART FIDELITY: PASS"
+  else
+    echo "RESTART FIDELITY: PASS ($nskip cases skipped: they need REF_BIN_DIR)"
+  fi
   rm -rf "$P"
 else
   echo "  files kept in $P"
