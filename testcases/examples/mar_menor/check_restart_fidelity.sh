@@ -105,9 +105,13 @@
 #                 .ts.shy files, which hold no data record then, the same
 #                 bytes; compared even if a log line is missing); both logs
 #                 must say "T/S from the offline file",
-#                 "evapv not applied" and "windcd not applied (itdrag = 4, no
-#                 heat flux)", must show that the offline file was read, and
-#                 must not have qflux3d's start-up line (it never runs)
+#                 "evapv not applied", "windcd not applied (itdrag = 4, no
+#                 heat flux)" and "tws, dtw not applied (no heat flux)" (the
+#                 outputs cannot show tws and dtw: qflux3d never runs), must
+#                 show that the offline file was read, and must not have
+#                 qflux3d's start-up line (it never runs); the run uses
+#                 idtoff = -2 only, idtoff = -3 and <= -4 (also T/S from the
+#                 file) are covered by reading the code (offline_reads_ts)
 #   tools         rstinf and rst2shy (this build's, on PATH) on version 20
 #                 files, and on version 19 files as main's (REF_BIN_DIR's)
 #                 rstinf and rst2shy; six write runs, serial, with a record
@@ -132,7 +136,7 @@
 #                 without REF_BIN_DIR the case fails
 # and a case kept out of the default list, a canary for the comparator:
 #   mm_e0         mm_i0 with ievap = 0: no evaporation, no wet/dry, no
-#                 closure, so it passes also with 9187cdf1 (version 19)
+#                 closure, so it passes also with main before version 20
 # Required for a case: the three runs end (exit code 0 and "simulation
 # end" in the log, timeout 1200 s each); the log of an NP-process run has
 # "shympi initialized: ID NP" once from each rank 0 to NP-1 (so that NP
@@ -742,6 +746,8 @@ offlog() {
   [ "$k" = 1 ] || echo -n "$2: 'reading offline from file' $k times in $1, not 1; "
   k="$(grep -c 'qflux3d: iheat' "$1")"
   [ "$k" = 0 ] || echo -n "$2: qflux3d started ('qflux3d: iheat' $k times in $1); "
+  k="$(grep -c 'tws, dtw not applied (no heat flux)' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: 'tws, dtw not applied (no heat flux)' $k times in $1, not 1; "
   e0log "$1" "$2"
 }
 # case_offline: a read whose T/S comes from an offline file (idtoff = -2)
