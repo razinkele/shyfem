@@ -27,7 +27,7 @@ from shyfem_ui.services.partitioning_logic import (
     stage_grid,
     validate_partition_files,
 )
-from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper, failed_run_text
 
 logger = logging.getLogger(__name__)
 
@@ -263,10 +263,7 @@ def partitioning_server(
                 stem = staged.name[: -len(staged.suffix)]
                 _analyze_partitions(output_path / f"{stem}.{np_val}.elem.grd")
             else:
-                log_content.set(
-                    log_content.get() + f"\n*** shyparts failed (code {result.return_code}) ***\n"
-                    f"{result.stderr}\n"
-                )
+                log_content.set(log_content.get() + failed_run_text("shyparts", result)[0])
 
         except Exception as e:
             logger.exception("Unexpected error running shyparts on %s", grd_path)

@@ -139,7 +139,12 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
     come from a trusted source (the launch record on stdin, or the DB row):
     its ``cwd`` is where output files are looked for.
     """
-    from shyfem_ui.services.shyfem_wrapper import TAIL_CHARS, ShyfemWrapper, tool_failure
+    from shyfem_ui.services.shyfem_wrapper import (
+        TAIL_CHARS,
+        ShyfemWrapper,
+        failure_reason,
+        tool_failure,
+    )
 
     failure = None
     if not timed_out:
@@ -158,6 +163,14 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
     else:
         status = JobStatus.FAILED
         tail = read_tail(files.stderr)
+        if failure is None and not timed_out and return_code != 0:
+            # The tools and the model print their error stop line to stdout
+            # (#335): stderr is empty or only the MPI_ABORT banner.
+            failure = failure_reason(
+                read_tail(files.stdout, TAIL_CHARS), read_tail(files.stderr, TAIL_CHARS)
+            )
+            if failure:
+                tail = ""
         error = (f"{tail}\n{failure}" if failure else tail).strip()[-1000:] or "Unknown error"
     wrapper = ShyfemWrapper(spec.get("shyfem_dir") or ".")
     output_files = wrapper._find_output_files(

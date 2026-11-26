@@ -1,0 +1,145 @@
+
+ ----------------------------------------------
+
+ SHYFEM
+ System of HydrodYnamic Finite Element Modules     
+ Copyright (C) The Shyfem Team 1985-2026           
+
+ version: 8.6.0     
+ commit : 2026-11-24
+ routine: shyfem - 3D hydrodynamic SHYFEM routine
+
+ ----------------------------------------------
+
+ compiled with parallel support: MPI
+ matrix solver: sparsekit
+ compiler: gfortran (13.3.0)
+ compiler profile: normal
+ local commit: 2026-11-24
+
+ simulation start:   2026-11-26::23:34:00
+ reading basin: MM_coarse_smooth
+ preparing to read bas file: MM_coarse_smooth.bas
+ finished reading bas file: MM_coarse_smooth.bas
+
+ ----------------------------------------------
+
+ SHYFEM
+ System of HydrodYnamic Finite Element Modules     
+ Copyright (C) The Shyfem Team 1985-2026           
+
+ version: 8.6.0     
+ commit : 2026-11-24
+ routine: shyfem - 3D hydrodynamic SHYFEM routine
+
+ ----------------------------------------------
+
+ compiled with parallel support: MPI
+ matrix solver: sparsekit
+ compiler: gfortran (13.3.0)
+ compiler profile: normal
+ local commit: 2026-11-24
+
+ simulation start:   2026-11-26::23:34:00
+ reading basin: MM_coarse_smooth
+ preparing to read bas file: MM_coarse_smooth.bas
+ finished reading bas file: MM_coarse_smooth.bas
+ shympi initialized:            1           2           0
+ no mpi_debug_*.txt file opened:            0
+ set bmpi_debug_txt=.true. to write this file
+ shympi initialized:            0           2           0
+ start of setup of parallel OMP threads
+ the program can run in OMP parallel mode
+ maximum available OMP threads:           28
+ for simulation used OMP threads:            1
+ end of setup of parallel OMP threads
+ setting up mpi with number of threads:            2
+ no partitiones contained in basin...
+ we will do partitioning for domains:            2
+ partitioning with METIS...
+ partitioning with METIS...
+ checking connectivity and connections...
+ checking connectivity and connections...
+ ========================================
+ checking total domain... total domains =            2
+ ========================================
+ ========================================
+ finished checking domain...
+ ========================================
+ writing grd-file...
+ basin_to_grd:         1402        2545
+ ========================================
+ finished checking domain...
+ ========================================
+ Grid with partition on nodes in file: partition.2.node.grd
+ Grid with partition on elements in file: partition.2.elem.grd
+ domains:            0           1
+ writing information on partion to terminal...
+ min/max:            0           1
+
+ total number of nodes:         1402
+ total number of elems:         2545
+
+ Information on domains:            2
+
+    domain      area     nodes   percent  elements     ghost   percent   areas
+         0         1       696     49.64      1285        46      3.58       1
+         1         2       706     50.36      1306        46      3.52       1
+
+ total ghost elements:
+ (elements with 3 colors are tripple points)
+     colors   elements
+          1       2499
+          2         46
+          3          0
+ no tripple points found
+
+ partition quality:    1.71981931    
+ size of ipextern:          730         730           1
+         730        1306        1306
+         730           2
+ size of ipextern:          730         724           0
+         730        1306        1306
+         730           2
+ finished transfer_domain
+ start running ghost_handle            1
+ finished transfer_domain
+ start running ghost_handle            0
+ mpi my_unit:            0
+ mpi domain:       1      1
+nkn:    1402    730    706    706     24
+nel:    2545   1306   1285   1260     46
+ ghost_exchange: start exchange...           1
+ mpi my_unit:            0
+ mpi domain:       0      1
+nkn:    1402    724    696    696     28
+nel:    2545   1285   1260   1239     46
+ ghost_exchange: start exchange...           0
+ ghost_exchange: finished exchange...           1
+ finished running ghost_handle            1
+ ghost_exchange: finished exchange...           0
+ finished running ghost_handle            0
+ info on nkn/nel:            0
+ nkn:         1402         724         696         696
+ nel:         2545        1285        1260        1239
+ tot:         1402        2545
+ info on nkn/nel:            1
+ nkn:         1402         730         706         706
+ nel:         2545        1306        1285        1260
+ tot:         1402        2545
+ 2D arrays allocated:          724        1285           9
+ 2D arrays allocated:          730        1306           9
+ name: itanf
+ text: xyz                           
+ *** cannot parse date:           99 xyz                           
+     format should be YYYY-MM-DD::hh:mm:ss
+     possible also YYYY-MM-DD[::hh[:mm[:ss]]]
+     or it should be an integer (relative time)
+ error stop convert_date_d: cannot parse itanf
+ name: itanf
+ text: xyz                           
+ *** cannot parse date:           99 xyz                           
+     format should be YYYY-MM-DD::hh:mm:ss
+     possible also YYYY-MM-DD[::hh[:mm[:ss]]]
+     or it should be an integer (relative time)
+ error stop convert_date_d: cannot parse itanf

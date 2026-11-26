@@ -754,7 +754,7 @@ class LocalJobQueue(JobQueue):
                 job.status = JobStatus.COMPLETED
             else:
                 job.status = JobStatus.FAILED
-                job.error_message = result.stderr[-1000:] if result.stderr else "Unknown error"
+                job.error_message = result.failure_text()
         except asyncio.CancelledError:
             if job_id in self._user_cancelled:
                 job.status = JobStatus.CANCELLED
