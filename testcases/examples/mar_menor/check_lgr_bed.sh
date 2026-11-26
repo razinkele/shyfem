@@ -39,20 +39,24 @@
 #     stands for), the measure of the measurements of #299 (anaA).
 # Printed, not gated: the bottom 15 % at 24:00, and the chi-square of the
 # 20-bin histogram with the same weight at 24:00 and its mean over the
-# hourly outputs 12:00 ... 24:00; and the log lines of particles with
-# their "element crossings used up with time left" (100 calls of track_xi
-# in a step; the particle stays in the basin): lgrseed = 1 has one, at
-# 22:55 in element 1149, of a particle in layer 1 at 22:00 and 23:00 (in
-# element 10, a column of one layer), with the walk of #286 and the bed
-# velocity of #299 (main has none here, but writes two at elements 1148
-# and 1149 in part 3).  These lines come from a trap in the horizontal
-# tracker (track_xi), not from the walk or the bed form: a particle
-# converges onto a node around which the layer-1 fluxes circulate, each
-# call ends at an element side and th shrinks geometrically (seen at
-# mm_hyd_41 elements 1148 / 1149, also 583, 191, 66).  Main has the same
-# trap (2 such lines in part 3); the walk and the bed form only change
-# which particles arrive there.  The line stays printed, not gated; the
-# trap is tracked as a follow-up issue.
+# hourly outputs 12:00 ... 24:00; and the log lines of particles that used
+# up their 100 element crossings (calls of track_xi) in a step with time
+# left (the particle stays in the basin).  These come from a trap in the
+# horizontal tracker (track_xi), not from the walk or the bed form: a
+# particle converges onto a node around which the layer-1 fluxes
+# circulate, each call ends at an element side and th shrinks
+# geometrically (seen at mm_hyd_41 elements 1148 / 1149, also 583, 191,
+# 66).  Since #310 such a step is logged as a node sink, "stopped at a node
+# the layer flow converges on (node sink) with time left" (event kind 26;
+# until then as "element crossings used up with time left", which remains
+# for the other steps that use up their crossings, as a particle that
+# circles a node outward, #315).  lgrseed = 1 has one, at 22:55 in element
+# 1149, of a particle (id 17673) in layer 1 at 22:00 and 23:00 (in element
+# 10, a column of one layer), with the walk of #286 and the bed velocity of
+# #299: one node-sink line and no "used up" line since #310 (before, one
+# "used up" line).  Main before #286/#299 has the same trap (2 such lines
+# in part 3); the walk and the bed form only change which particles arrive
+# there.  Both lines stay printed, not gated.
 #
 #========================= part 2: settling (#299) =========================
 # The bed velocity must not taper the settling velocity: settling is the
@@ -88,8 +92,10 @@
 #   - the run ends; the water is still (every active particle at 05:00
 #     at the position and in the element of its release); the basin is
 #     closed (no exited particle at any output, no log line of particles
-#     "lost with time left" or with their "element crossings used up with
-#     time left": in still water no particle moves horizontally);
+#     "lost with time left", with their "element crossings used up with
+#     time left" or "stopped at a node the layer flow converges on (node
+#     sink) with time left" (#310): in still water no particle moves
+#     horizontally);
 #   - the check can tell the forms apart: at least 300 particles judged
 #     (the noise of a particle's drift is about sigma/(s t) = 0.2 of it, so
 #     300 give a standard error near 1.2 %), and the drift the tapered form
@@ -130,8 +136,11 @@
 #     are in the bottom layer of their column (measured 0.926 on this
 #     branch, 0.933 on main; else the check would pass if settling stopped).
 # Printed, not gated: the log lines of particles with their "element
-# crossings used up with time left" (a trap in the horizontal tracker, see
-# part 1; main writes two in this case: a particle that stays in the basin).
+# crossings used up with time left" and the node-sink lines "stopped at a
+# node the layer flow converges on (node sink) with time left" (the trap
+# in the horizontal tracker, see part 1, logged as a node sink since #310;
+# main before #286/#299 writes two "used up" lines in this case: a
+# particle that stays in the basin).
 #
 #=============== part 4: the depth of a deposited particle (#311) ==========
 # The particle file gives every particle its depth hl below the surface
@@ -202,6 +211,8 @@
 #   39b8247d (the bed velocity, a zero time to leave
 #   the layer kept as 0)                                6 / 6 / 43 / 36992 (FAIL)
 #   the bed velocity, a zero time = no vertical motion  0 / 0 /  4 / 36988
+# (measured before #310: since #310 a step of these that converges onto a
+# node is logged as a node sink instead, see part 1)
 # 39b8247d lost its particles through walls (elements 659, 254, ...; the
 # first at 06:45); it gives part 1 particle files byte-identical to the
 # fixed build (sv = 0 there).
@@ -473,14 +484,19 @@ ended() {
 }
 
 # loglines C GATE KIND: the log lines of C with the text KIND (lines of
-# lgr_event, track_body_xi): their number and the first two printed; with
-# GATE = 1 any such line fails the check (the basins here are closed)
+# lgr_event, track_body_xi; a fixed string): their number and the first two
+# printed; with GATE = 1 any such line fails the check (the basins here are
+# closed).  XSINK: a particle that used up its crossings converging onto a
+# node, the trap of part 1, logged as a node sink since #310 (until then as
+# XUSED, which remains for the other steps that use up their crossings, as
+# a particle that circles a node outward, #315)
 LOST='lost with time left'
 XUSED='element crossings used up with time left'
+XSINK='stopped at a node the layer flow converges on (node sink) with time left'
 loglines() {
   local n
-  n="$(grep -c -- "$3" "$P/$1.log")"
-  [ "$n" = 0 ] || grep -m2 -- "$3" "$P/$1.log" | sed 's/^/    /'
+  n="$(grep -cF -- "$3" "$P/$1.log")"
+  [ "$n" = 0 ] || grep -m2 -F -- "$3" "$P/$1.log" | sed 's/^/    /'
   if [ "$2" = 1 ]; then
     echo "  log lines of particles '$3': $n"
     [ "$n" = 0 ] || fail "$1: log lines of particles '$3' in a closed basin"
@@ -497,6 +513,7 @@ if want 1; then
     ended $c || continue
     loglines $c 1 "$LOST"
     loglines $c 0 "$XUSED"
+    loglines $c 0 "$XSINK"
     PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$BOT5MIN" <<'EOF' || fail "$c: see above"
 import sys
 sys.path.insert(0, sys.argv[1])
@@ -553,6 +570,7 @@ if want 2; then
   if ended $c; then
     loglines $c 1 "$LOST"
     loglines $c 1 "$XUSED"
+    loglines $c 1 "$XSINK"
     PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$NMIN" "$RTAPMAX" "$RLO" "$RHI" <<'EOF' || fail "$c: see above"
 import math, sys
 sys.path.insert(0, sys.argv[1])
@@ -666,6 +684,7 @@ if want 3; then
       || fail "$c: the log does not show the $NPART particles read from the particle file"
     loglines $c 1 "$LOST"
     loglines $c 0 "$XUSED"
+    loglines $c 0 "$XSINK"
     PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$P/$c.hydro.shy" "$SFAST" "$NPART" <<'EOF' || fail "$c: see above"
 import struct, sys
 sys.path.insert(0, sys.argv[1])

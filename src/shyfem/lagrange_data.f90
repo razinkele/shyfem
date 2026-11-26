@@ -252,13 +252,13 @@
 	!      range, xi that cannot be adjusted), stops
 	! 24   track_xi: the error of xit_start_end_ierr, stops
 	! 25   track_xi: the error of xi_dist_ierr, stops
+	!(22 to 25 stopped with a bare stop in the utilities until #294)
 	! 26   track_body_xi: the element crossings used up with time left
 	!      while converging onto a node of the mesh (a node sink: the
 	!      flux reconstruction of the layer makes the particle spiral into
 	!      the node, the time to each side shrinking geometrically; #310,
 	!      track_xi_node_sink tells it from the other steps of kind 5,
 	!      which it counted as until then); the step ends as for kind 5
-	!(22 to 25 stopped with a bare stop in the utilities until #294)
 	!For the kinds that do not stop the run the counts and the events
 	!kept are the same on any number of threads (the key orders them; the
 	!events of one particle come from one thread, in order). For those
