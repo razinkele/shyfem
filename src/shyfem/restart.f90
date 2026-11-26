@@ -104,6 +104,8 @@
 ! 24.11.2026    arb     3D restart read on a process with fewer levels (#278)
 ! 26.11.2026    arb     version 20: iwetv, evapv, windcd, tws, dtw; the
 !			setweg clock is reset at a restart (#303 #304)
+! 26.11.2026    arb     version 20: the k-epsilon state (tken, eps, visv,
+!			difv) in the turbulence block (#304, N25)
 !
 ! notes :
 !
@@ -138,7 +140,9 @@
 ! 18	read only: upstream shyfemcm layout (iwetv, zov, zeov after vtlnv)
 ! 19	write simple-sediment bed mass (conza) (N25)
 ! 20	write iwetv, evapv, windcd, heat flag, tws, dtw after vtlnv
-!	(rst_read_hydro_v20 says which of them a read applies)
+!	(rst_read_hydro_v20 says which of them a read applies); with
+!	iturb = 2, write tken, eps, visv, difv after iturb (rst_read_keps
+!	says when a read applies them)
 !
 !	integer, save :: id_hydro_rst = 1	!1		hydro
 !	integer, save :: id_depth_rst = 2	!10		depth
@@ -151,12 +155,12 @@
 !	integer, save :: id_bfm_rst   = 9	!100000000	bfm
 !	integer, save :: id_ssedi_rst = 10	!1000000000	sediment bed mass
 !
-! known restart gaps (N25, not covered by any version above):
-!   - k-eps turbulence closure (iturb==2): tken/eps/rls (mod_keps) and
-!     visv/difv/z0bk have no write/read hooks (unlike iturb==1/GOTM,
-!     saved via write_restart_gotm/read_restart_gotm above). A restart
-!     with k-eps active re-develops mixing from cold-start values; see
-!     the runtime warning in rst_write_record.
+! the k-eps turbulence closure (iturb==2), a known restart gap (N25) up
+! to version 19 (its state was not written, so a restart re-developed
+! the mixing from cold-start values), is in the turbulence block from
+! version 20 on: tken, eps, visv, difv (#304). rls is not written (keps
+! never reads it), and z0bk is recomputed. A version 15-19 file written
+! with iturb==2 holds no arrays after iturb, and none is read.
 !
 !*********************************************************************
 
@@ -757,19 +761,11 @@
 	  call restart_write_value(iunit,bn,rhov)
 	end if
 
-	call restart_write_value(iunit,iturb)
+	call restart_write_value(iunit,iturb)	!the writer's closure
 	if( iturb .eq. 1 ) then
 	  call write_restart_gotm(iunit)
-	else if( iturb .eq. 2 .and. bmaster ) then
-	  !N25: k-eps closure state (tken/eps/rls in mod_keps, plus
-	  !visv/difv/z0bk) has no restart hooks -- see the "known restart
-	  !gaps" note near the top of this file. Warn instead of silently
-	  !dropping it, so the user knows mixing restarts cold after this
-	  !restart file is read back in.
-	  write(6,*) '*** warning: restart does not save k-eps '// &
-     &			'turbulence state (tken,eps,rls,visv,difv,z0bk)'
-	  write(6,*) '*** turbulent mixing will restart from cold '// &
-     &			'values when this restart file is read (N25)'
+	else if( iturb .eq. 2 ) then
+	  call rst_write_keps(iunit)	!version 20: k-epsilon state (#304)
 	end if
 
 	call restart_write_value(iunit,iconz)
@@ -1063,6 +1059,34 @@
 	  if( iturb .eq. 1 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_gotm(iunit)
+	  else if( iturb .eq. 2 ) then
+	    if( nvers .ge. 20 ) then	!k-epsilon state (#304)
+	      call rst_add_flag(id,iflag)
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'tken')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: tken'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'eps')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: eps'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'visv')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: visv'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	      read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
+	      call rst_check_read(ios,'difv')
+	      if( brewrite ) then
+	        write(iuout,*) 'rst: difv'
+	        write(iuout,*) rval3d1(1:(nlv+1)*nkn)
+	      end if
+	    end if
 	  end if
 	end if
 
@@ -1152,6 +1176,7 @@
 	use levels, only : nlvdi,nlv,ilhv,ilhkv
 	use basin
 	use mod_restart
+	use mod_keps, only : brst_keps
 	use shympi
 
         implicit none
@@ -1201,6 +1226,7 @@
 
 	nvers_rst = nvers
 	bsetweg_rst = .false.	!set if this record restores iwetv (v20)
+	brst_keps = .false.	!set if this record restores k-epsilon (v20)
 
 	date = 0
 	time = 0
@@ -1341,13 +1367,18 @@
 	    id = id_gotm_rst
 	    read(iunit,iostat=ios) iturb
 	    call rst_check_read(ios,'iturb')
-	    iturb_rst = iturb
+	    iturb_rst = iturb	!the writer's closure (handle_gotm_init)
 	    if( iturb .eq. 1 ) then
 	      call rst_add_flag(id,iflag)
 	      if( rst_want_restart(id) ) then
 	        call read_restart_gotm(iunit)
 	      else
 	        call skip_restart_gotm(iunit)
+	      end if
+	    else if( iturb .eq. 2 ) then
+	      if( nvers .ge. 20 ) then	!k-epsilon state (#304)
+	        call rst_add_flag(id,iflag)
+	        call rst_read_keps(iunit,rst_want_restart(id))
 	      end if
 	    end if
 	  end if
@@ -1567,6 +1598,122 @@
 	end if
 
 	end subroutine rst_read_hydro_v20
+
+!*******************************************************************
+
+	subroutine rst_write_keps(iunit)
+
+! writes the k-epsilon state into the turbulence block of a version 20
+! record, after the writer's iturb (2) (#304): tken, eps, visv, difv
+! (nodes x levels 0:nlv), gathered like the GOTM arrays, so it is called
+! on every process
+
+	use mod_keps, only : tken,eps
+	use mod_diff_visc_fric, only : visv,difv
+	use mod_restart, only : restart_write_value
+
+	implicit none
+
+	integer, intent(in) :: iunit	!unit of the restart file
+
+	logical, parameter :: bn = .false.
+
+	call restart_write_value(iunit,bn,tken)
+	call restart_write_value(iunit,bn,eps)
+	call restart_write_value(iunit,bn,visv)
+	call restart_write_value(iunit,bn,difv)
+
+	end subroutine rst_write_keps
+
+!*******************************************************************
+
+	subroutine rst_read_keps(iunit,bwant)
+
+! reads the k-epsilon state of the turbulence block of a version 20
+! record written with iturb = 2 (#304): tken, eps, visv, difv
+!
+! They are applied only if the turbulence block is wanted (bwant, flgrst
+! flag 8) and this run uses k-epsilon too (iturb = 2). Then keps_init
+! first gives rls its value (rls is not in the file, and keps never
+! reads it), the four arrays are read over the others, visv and difv
+! are also kept in visv_keps_rst and difv_keps_rst (set_eddy, called by
+! init_others after the restart, sets visv = vistur and difv = diftur;
+! handle_gotm_init puts them back), and brst_keps tells handle_gotm_init
+! and keps_shell not to call keps_init.
+!
+! In any other case the four records are skipped, and nothing is
+! applied: a run with another closure starts it as on a cold start (for
+! GOTM, handle_gotm_init sees from iturb_rst that the file holds no GOTM
+! arrays and calls gotm_internal_init). iturb is asked for only when the
+! block is wanted, so that a tool that does not want it (rst2shy reads
+! with flgrst 1111) and has no parameter table only skips the records.
+
+	use mod_keps, only : tken,eps,brst_keps,visv_keps_rst,difv_keps_rst
+	use mod_diff_visc_fric, only : visv,difv
+	use mod_restart, only : restart_read_value
+
+	use para
+	implicit none
+
+	integer, intent(in) :: iunit	!unit of the restart file
+	logical, intent(in) :: bwant	!turbulence block wanted (flgrst)
+
+	logical bapply		!apply the k-epsilon state
+	integer iturb		!this run's closure
+	integer i,ios,ierr
+
+	logical, parameter :: bn = .false.
+
+	iturb = 0
+	bapply = .false.
+	if( bwant ) then
+	  iturb = nint(getpar('iturb'))
+	  if( iturb == 2 ) bapply = .true.
+	end if
+
+	if( .not. bapply ) then
+	  do i=1,4
+	    read(iunit,iostat=ios)
+	    call rst_check_read(ios,'k-epsilon state (skip)')
+	  end do
+	  if( bwant ) then
+	    write(6,*) 'restart: k-epsilon state not applied (iturb = ' &
+     &			,iturb,')'
+	  else
+	    write(6,*) 'restart: k-epsilon state not applied' &
+     &			//' (turbulence not wanted)'
+	  end if
+	  return
+	end if
+
+	call keps_init		!rls, which the file does not hold
+	call restart_read_value(iunit,bn,tken)
+	call restart_read_value(iunit,bn,eps)
+	call restart_read_value(iunit,bn,visv)
+	call restart_read_value(iunit,bn,difv)
+
+	! a multi-record file is read record by record: allocated once
+	if( .not. allocated(visv_keps_rst) ) then
+	  allocate(visv_keps_rst(lbound(visv,1):ubound(visv,1) &
+     &			,lbound(visv,2):ubound(visv,2)),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('rst_read_keps: allocation failed')
+	  end if
+	end if
+	if( .not. allocated(difv_keps_rst) ) then
+	  allocate(difv_keps_rst(lbound(difv,1):ubound(difv,1) &
+     &			,lbound(difv,2):ubound(difv,2)),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('rst_read_keps: allocation failed')
+	  end if
+	end if
+	visv_keps_rst = visv
+	difv_keps_rst = difv
+	brst_keps = .true.
+
+	write(6,*) 'restart: k-epsilon state applied (tken, eps, visv, difv)'
+
+	end subroutine rst_read_keps
 
 !*******************************************************************
 

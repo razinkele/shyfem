@@ -43,7 +43,7 @@
 #   ven_np4       the same on 4 processes
 #   ven_keps_s    venlag_smoke.str with k-epsilon (iturb = 2), serial
 #   ven_keps_np4  the same on 4 processes
-# and four cases of another kind, each with its own write run (serial):
+# and five cases of another kind, each with its own write run (serial):
 #   old_v19       a version 19 file (venlag_smoke, as ven_s), written by
 #                 the reference binary REF_BIN_DIR/shyfem (an origin/main
 #                 build, before version 20) and read by this binary (r)
@@ -79,6 +79,21 @@
 #                 compared even if a log line is missing) and both logs must
 #                 say "evapv not applied" and "windcd not applied (itdrag =
 #                 4, no heat flux)"
+#   keps_to_gotm  the version 20 file of ven_keps_s's write run (k-epsilon,
+#                 iturb = 2: its turbulence block, id 8, holds tken, eps,
+#                 visv and difv, and no GOTM arrays) read with GOTM (iturb =
+#                 1), as written (r) and with flgrst = 1111111 (o: ids 1 to
+#                 7, so id 8 is not wanted, and GOTM starts from its own
+#                 initial state whatever the file holds): the k-epsilon
+#                 arrays must not be applied, and GOTM must start from its
+#                 own initial state, not from arrays the file does not hold.
+#                 r and o must end; r's restart table must show id 8
+#                 wanted and available (else the case would test nothing)
+#                 and o's id 8 not wanted; both logs must say "k-epsilon
+#                 state not applied" and "handle_gotm_init: GOTM arrays
+#                 initialised"; r's .hydro.shy, .ts.shy and .ext must hold
+#                 no NaN or infinity; and r must equal o (max|d| = 0;
+#                 compared even if a log line is missing)
 # Required for a case: the three runs end (exit code 0 and "simulation
 # end" in the log, timeout 1200 s each); the log of an NP-process run has
 # "shympi initialized: ID NP" once from each rank 0 to NP-1 (so that NP
@@ -110,7 +125,7 @@
 # with shypre from GRID/MM_coarse_smooth.grd and ../venice_lagoon/GRID/
 # venlag62.grd, INPUT is linked and the STR files are made there with sed
 # from mm_hyd_41.str and venlag_smoke.str, so nothing in the source
-# folders changes.  The cases run at the same time (36 processes at the
+# folders changes.  The cases run at the same time (37 processes at the
 # start); every mpirun has --bind-to none, so that the runs do not share
 # the two cores Open MPI binds a 2-process run to.  Takes about 2 minutes
 # on the development machine (the serial venlag cases are the longest).
@@ -120,12 +135,12 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 ALL="mm_i0 mm_i1 mm_h6d4 mm_h6noon ven_s ven_np2 ven_np4 ven_keps_s ven_keps_np4"
-ALL="$ALL old_v19 drag0_reads_cd4 flgrst_no_hydro evap_reads_noheat"
+ALL="$ALL old_v19 drag0_reads_cd4 flgrst_no_hydro evap_reads_noheat keps_to_gotm"
 CASES="${*:-$ALL}"
 needmm=no; needven=no; needmpi=no
 for c in $CASES; do
   case " $ALL " in *" $c "*) ;; *) echo "usage: [REF_BIN_DIR=DIR] $0 [case ...], cases: $ALL"; exit 2 ;; esac
-  case "$c" in mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat) needmm=yes ;; ven_*|old_v19) needven=yes ;; esac
+  case "$c" in mm_*|drag0_reads_cd4|flgrst_no_hydro|evap_reads_noheat) needmm=yes ;; ven_*|old_v19|keps_to_gotm) needven=yes ;; esac
   case "$c" in *_np*) needmpi=yes ;; esac
 done
 tools="shyfem shypre python3"
@@ -363,7 +378,7 @@ athour() {
 }
 
 #--- the cases of another kind (old_v19, drag0_reads_cd4, flgrst_no_hydro,
-#    evap_reads_noheat)
+#    evap_reads_noheat, keps_to_gotm)
 # rundir DIR mm|ven: a run folder with its own copy of the basin and INPUT
 rundir() {
   mkdir "$1" && mkdir "$1/GRID" || return 1
@@ -689,12 +704,102 @@ case_flgrst() {
   return 0
 }
 
+# nonfinite FILE...: the number of values that are NaN or infinite in the
+# data records of the .shy and .ext files (read as shy_maxdiff.py reads
+# them, which counts NaN in both files as equal); prints a message
+# instead of a number if a file cannot be read
+nonfinite() {
+  python3 - "$HERE" "$@" << 'EOF'
+import sys
+import numpy as np
+sys.path.insert(0, sys.argv[1])
+import shy_maxdiff
+n = 0
+for p in sys.argv[2:]:
+    try:
+        _, _, _, recs = shy_maxdiff.load(p)
+    except Exception as e:      # OSError, FormatError, struct.error
+        sys.exit(f"cannot read {p}: {e}")
+    for v in recs.values():
+        n += int(np.count_nonzero(~np.isfinite(np.frombuffer(v, '<f4'))))
+print(n)
+EOF
+}
+# k2glog LOG NAME WANT: the log checks of keps_to_gotm (WANT: T or F, id 8
+# wanted in the restart table); prints "NAME: reason; " for each one that
+# fails
+k2glog() {
+  local w k
+  w="$(readok "$1")" || echo -n "$2: $w; "
+  k="$(grep -c 'k-epsilon state not applied' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: 'k-epsilon state not applied' $k times in $1, not 1; "
+  k="$(grep -c 'handle_gotm_init: GOTM arrays initialised' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: 'handle_gotm_init: GOTM arrays initialised' $k times in $1, not 1; "
+  # the table of rst_perform_restart: id bwant bavail buse description
+  k="$(awk -v w="$3" '$1 == 8 && $2 == w && $3 == "T" && $5 == "gotm" { n++ } END { print n + 0 }' "$1")"
+  [ "$k" = 1 ] || echo -n "$2: the restart table of $1 does not show id 8 available with wanted = $3; "
+}
+# case_keps_to_gotm: a k-epsilon file read by a GOTM run starts GOTM from
+# its own initial state
+case_keps_to_gotm() {
+  local cs=keps_to_gotm d="$P/keps_to_gotm" s t0 why="" lw="" w f k rc=0 pr po cmpl="" nf line
+  t0=$(date +%s)
+  mkdir "$d" "$d/c" || return 1
+  for s in w r o; do rundir "$d/$s" ven || return 1; done
+  RTIME=""
+  if mkven "$cs" 2 && [ -n "$RTIME" ]; then
+    sed -i 's/^        iturb  = 2$/        iturb  = 1/' "$d/r/r.str"
+    sed -e 's/^        itrst = -1     ityrst = 1$/&\n        flgrst = 1111111/' "$d/r/r.str" > "$d/o/r.str"
+  fi
+  if [ -z "$RTIME" ] || [ "$(grep -c '^        iturb  = 1$' "$d/r/r.str")" != 1 ] \
+     || [ "$(grep -c '^        iturb  = 1$\|^        flgrst = 1111111$' "$d/o/r.str")" != 2 ]; then
+    echo "case $cs: did not run (cannot make its STR files, see $d/*/*.str) -> FAIL" > "$d.line"; return 1
+  fi
+  # w writes with k-epsilon; r and o read w.rst with GOTM, o without id 8
+  if ! run "$d/w" w 1 > "$d/w.why"; then
+    why="$(cat "$d/w.why"); "
+  elif [ ! -s "$d/w/w.rst" ]; then
+    why="w: no restart file $d/w/w.rst; "
+  else
+    ln -s ../w/w.rst "$d/r/w.rst" && ln -s ../w/w.rst "$d/o/w.rst" || return 1
+    run "$d/r" r 1 > "$d/r.why" & pr=$!
+    run "$d/o" r 1 > "$d/o.why" & po=$!
+    if wait "$pr"; then lw="$lw$(k2glog "$d/r/r.log" r T)"; else why="${why}r: $(cat "$d/r.why"); "; fi
+    if wait "$po"; then lw="$lw$(k2glog "$d/o/r.log" o F)"; else why="${why}o: $(cat "$d/o.why"); "; fi
+  fi
+  donecase "$cs" "$t0" "$why" || return 1
+  : > "$d.detail"
+  # compared even when a log line is missing, so that GOTM started from
+  # other arrays shows as a difference
+  for f in hydro.shy ts.shy ext; do
+    python3 "$HERE/shy_maxdiff.py" "$d/o/r.$f" "$d/r/r.$f" > "$d/cmp.$f.txt" 2>&1
+    k=$?
+    [ "$k" = 0 ] || rc=1
+    s="$(grep '^SUMMARY' "$d/cmp.$f.txt")"
+    [ -n "$s" ] || s="$(head -1 "$d/cmp.$f.txt")"
+    echo "    $f (o against r): ${s#SUMMARY *: }" >> "$d.detail"
+    case "$k" in 0) cmpl="${cmpl}$f equal, " ;; 1) cmpl="${cmpl}$f DIFFERS, " ;; *) cmpl="${cmpl}$f not compared, " ;; esac
+  done
+  nf="$(nonfinite "$d/r/r.hydro.shy" "$d/r/r.ts.shy" "$d/r/r.ext" 2>&1)"
+  case "$nf" in
+    0) ;;
+    ''|*[!0-9]*) lw="${lw}r: NaN/infinity not counted (${nf:-no output}); " ;;
+    *) lw="${lw}r: $nf values are NaN or infinite; " ;;
+  esac
+  line="case $cs: iturb = 1 read of a k-epsilon file, against the same read without id 8 (flgrst = 1111111):"
+  line="$line ${cmpl%, }; NaN/infinity in r: ${nf:-?}"
+  if [ -n "$lw" ]; then line="$line; log: ${lw%; }"; rc=1; fi
+  if [ "$rc" = 0 ]; then echo "$line -> PASS" > "$d.line"; else echo "$line -> FAIL" > "$d.line"; fi
+  return "$rc"
+}
+
 for cs in $CASES; do
   case "$cs" in
     old_v19)         case_old_v19 ;;
     drag0_reads_cd4) case_drag0 ;;
     flgrst_no_hydro) case_flgrst ;;
     evap_reads_noheat) case_evap ;;
+    keps_to_gotm)    case_keps_to_gotm ;;
     *)               onecase "$cs" ;;
   esac & PIDS="$PIDS $!"
 done

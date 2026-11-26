@@ -65,7 +65,8 @@
 ! 17	write bfm restart
 ! 18	read only: upstream shyfemcm layout (iwetv, zov, zeov after vtlnv)
 ! 19	write simple-sediment bed mass (conza) (N25)
-! 20	write iwetv, evapv, windcd, heat flag, tws, dtw after vtlnv
+! 20	write iwetv, evapv, windcd, heat flag, tws, dtw after vtlnv; with
+!	iturb = 2, write tken, eps, visv, difv after iturb
 !
 !*********************************************************************
 
@@ -88,7 +89,8 @@
 	! wrote 18 with the ssedi layout 2026-07-21/22 only; such files
 	! fail to read and must be regenerated); 19 = ssedi bed-mass block;
 	! 20 = the hydro block also holds iwetv, evapv, windcd, a heat flag
-	! and tws/dtw (this fork, what we write, #303 #304)
+	! and tws/dtw, and the turbulence block of a k-epsilon run (iturb =
+	! 2) tken, eps, visv and difv (this fork, what we write, #303 #304)
 	integer, save :: nvmax = 20		!last version of file
 	integer, parameter :: nidmax = 10
 
@@ -108,7 +110,9 @@
 	integer, save :: iwvert_rst = 0
 	integer, save :: ieco_rst   = 0
 	integer, save :: imerc_rst  = 0
-	integer, save :: iturb_rst  = 0
+	integer, save :: iturb_rst  = 0		!the writer's iturb (v >= 15):
+						!the turbulence block holds
+						!GOTM's arrays only if 1 (#304)
 
 	logical, save :: bsetweg_rst = .false.	!the record read restored
 						!iwetv (v20): reset the
