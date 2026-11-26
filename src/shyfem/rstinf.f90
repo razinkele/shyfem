@@ -52,6 +52,14 @@
 !                       mode compares them (#303 #304)
 ! 26.11.2026    arb     version 20: the writer's itdrag (#303 #304, R4)
 ! 26.11.2026    arb     the itdrag line names the heat flag rule (#323)
+! 26.11.2026    arb     the diff mode exits 1 when it finds differences,
+!                       also in the number of records (#332)
+!
+! exit status: 0 for the list, the usage and help, and a diff that finds
+! no difference; 1 for a diff that finds differences in the records or
+! in their number; 7 for an error (error_stop, also a diff whose headers
+! or flag integers differ: compare_header, get_integer; or with an empty
+! file)
 
 !******************************************************************
 
@@ -78,7 +86,7 @@
 
 	implicit none
 
-	integer nc,ierr
+	integer nc
 
 	call rst_init
 
@@ -86,22 +94,18 @@
 
         if( bverbose ) write(6,*) 'running rstinf...'
 
+	! every branch ends the program: clo_usage and rst_info with exit 0,
+	! rst_diff with 0 or 1 (differences found), error_stop with 7
+
         if( nc == 0 ) then
           call clo_usage
         else if( nc == 1 ) then
           call rst_info
         else if( nc == 2 ) then
-          call rst_diff(ierr)
+          call rst_diff
         else
           write(6,*) 'nc = ',nc
           call error_stop('rstinf','wrong number of files')
-        end if
-
-        if( ierr > 0 ) then
-          if( ierr == 99 ) ierr = 100   !terrible hack - FIXME
-          call exit(ierr)
-        else
-          call exit(99)
         end if
 
         end
@@ -296,7 +300,12 @@
 !******************************************************************
 !******************************************************************
 
-	subroutine rst_diff(ierr)
+	subroutine rst_diff
+
+! compares the records of two restart files and ends the program: exit 1
+! if a record differs or one file has more records (nerror, counted by
+! check_real, check_double, check_integer and compare_header), 0 if not
+! (#332; it ended with exit 0 in both cases), 7 if a file is empty
 
         use clo
         use mod_rstinf
@@ -360,6 +369,8 @@
 	  write(6,*) 'read error while reading restart file'
 	  call error_stop('rst_diff','read error')
 	end if
+	!an empty file: no time to write (it stopped with SIGFPE, #332)
+	if( nread == 0 ) call error_stop('rst_diff','no data in file')
 
         write(6,*)
 	write(6,*) 'Number of records read: ',nread
@@ -371,8 +382,13 @@
 	write(6,*)
 
 !-------------------------------------------------------------------
-! end of routine
+! end of routine: exit 1 if the files differ, else 0
 !-------------------------------------------------------------------
+
+	if( nerror > 0 ) then
+	  flush(6)
+	  call exit(1)
+	end if
 
 	stop
  1000	format(a)
@@ -682,7 +698,11 @@
 
 	subroutine compare_header(iu1,iu2,nvers,atime,nkn,nel,nlv,ierr)
 
+! reads the headers of the next record of both files (ierr < 0: no more
+! records); when one file ends before the other, counts a difference
+
 	use mod_restart
+	use mod_rstinf, only : nerror
 
 	use mod_error_stop
 
@@ -691,6 +711,7 @@
 	integer iu1,iu2,nvers,nkn,nel,nlv,ierr
 	double precision atime
 
+	integer ios
 	integer nvers1,nvers2
 	integer date1,time1,nkn1,nel1,nlv1
 	integer date2,time2,nkn2,nel2,nlv2
@@ -698,9 +719,24 @@
 	character*20 aline
 
 	call read_header(iu1,nvers1,date1,time1,atime1,nkn1,nel1,nlv1,ierr)
-	if( ierr /= 0 ) return
+	if( ierr /= 0 ) then		!no record in file 1
+	  if( ierr < 0 ) then		!its end: a difference if file 2 goes on
+	    read(iu2,iostat=ios)	!(#332; the diff stopped there with 0)
+	    if( .not. is_iostat_end(ios) ) then
+	      write(6,*) 'file 2 has more records than file 1'
+	      nerror = nerror + 1
+	    end if
+	  end if
+	  return
+	end if
 	call read_header(iu2,nvers2,date2,time2,atime2,nkn2,nel2,nlv2,ierr)
-	if( ierr /= 0 ) return
+	if( ierr /= 0 ) then		!no record in file 2
+	  if( ierr < 0 ) then		!its end: file 1 has one more (#332)
+	    write(6,*) 'file 1 has more records than file 2'
+	    nerror = nerror + 1
+	  end if
+	  return
+	end if
 
 	if( nvers1 /= nvers2 ) goto 99
 	if( date1 /= date2 ) goto 99

@@ -54,11 +54,21 @@
 ! 10.05.2024	ggu	implement no option
 ! 25.11.2024	ggu	check length of string, use nlen to set max string len
 ! 18.03.2025	ggu	more documentation
+! 26.11.2026	arb	errors exit 7 through mod_error_stop, --help (#332)
 !
 ! notes :
 !
-! handles automatically options -h|-help and -v|-version
+! handles automatically options -h|-help and -v|-version (also with two
+! dashes, --help, since #332)
 ! creates automatically clo_usage and clo_fullusage
+!
+! exit status: help, version and usage output (clo_fullusage, clo_version,
+! clo_usage, also for too few files) exit 0; an error (an unknown option,
+! an option without its value, a number that cannot be read, clo_error
+! and the internal errors) exits 7 through error_stop of mod_error_stop
+! (#332). Every process of the model parses the same command line, so all
+! of them stop the same way; in the standalone model this is before MPI
+! is initialized (the NUOPC cap starts after ESMF has started MPI)
 ! 
 ! in clo_add/set/get_option numbers can be integer, real or double precision
 ! in clo_add_option give extra information for number or string (see example)
@@ -182,18 +192,22 @@
 
         subroutine clo_init_alloc
 
+        use mod_error_stop, only : error_stop
+
         type(entry), allocatable :: paux(:)
         integer ierr
 
         if( ndim == 0 ) then
           ndim = 10
           allocate(pentry(0:ndim),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('clo_init_alloc' &
+     &				,'allocation of pentry failed')
           return
         else
           ndim = ndim*2
           allocate(paux(0:ndim),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('clo_init_alloc' &
+     &				,'allocation of paux failed')
           paux(0:ndim/2) = pentry(0:ndim/2)
           call move_alloc(paux,pentry)
         end if
@@ -220,10 +234,12 @@
 
 	subroutine clo_init_id(id)
 
+	use mod_error_stop, only : error_stop
+
 	integer id
 
 	if( id > ndim ) then
-	  stop 'error stop clo_init_id: ndim'
+	  call error_stop('clo_init_id','ndim')
 	end if
 
 	pentry(id)%name = ' '
@@ -295,12 +311,17 @@
 
 	subroutine clo_error(name,text)
 
+! an error in the use of an option: writes it and the usage, exits 7
+! (it called clo_usage, which ended the program with exit 0, #332)
+
+	use mod_error_stop, only : error_stop
+
 	character*(*) name
 	character*(*) text
 
 	write(6,*) 'error: ',trim(text),': ',trim(name)
-	call clo_usage
-	stop 'error stop clo_error'
+	call clo_write_usage
+	call error_stop('clo_error',trim(text)//': '//trim(name))
 
 	end subroutine clo_error
 
@@ -967,6 +988,11 @@
 
 	subroutine clo_parse_options(opt_nexpect)
 
+! an unknown option or an option without its value writes the usage and
+! exits 7 (#332); too few files writes the usage and exits 0 (clo_usage)
+
+	use mod_error_stop, only : error_stop
+
 	integer, optional :: opt_nexpect  !number of expected files (at least)
 
 	logical bnooption
@@ -994,6 +1020,10 @@
 	  if( option(1:1) /= '-' ) exit
 
 	  option = option(2:)
+	  select case( option )		!--help, --version, ...: as -help, ...
+	  case( '-h', '-help', '-hh', '-fullhelp', '-v', '-version' )
+	    option = option(2:)		!(they exited 0 as unknown options, #332)
+	  end select
 	  bnooption = .false.
 	  if( clo_has_option(option) .and. option(1:2) == 'no' ) then
 	    nooption = option(3:)
@@ -1011,7 +1041,9 @@
 	    call clo_version
 	  else if( .not. clo_has_option(option) ) then
 	    write(6,*) '*** no such option: ',trim(option)
-	    call clo_usage
+	    call clo_write_usage
+	    call error_stop('clo_parse_options' &
+     &			,'no such option: '//trim(option))
 	  else if( clo_is_flag(option) ) then
 	    if( bnooption ) then
 	      call clo_set_option(option,.false.)
@@ -1022,7 +1054,9 @@
 	    i = i + 1
 	    if( i > nc ) then
 	      write(6,*) '*** no value for option ',trim(option)
-	      call clo_usage
+	      call clo_write_usage
+	      call error_stop('clo_parse_options' &
+     &			,'no value for option: '//trim(option))
 	    end if
 	    call get_command_argument(i,string)
 	    if( clo_is_number(option) ) then
@@ -1035,11 +1069,11 @@
 		write(6,*) 'nstring,nmax: ',nl,nlen
 		write(6,*) trim(string)
 		write(6,*) 'please adjust nlen in clo.f90'
-	        stop 'error stop clo_parse_options: internal error (2)'
+	        call error_stop('clo_parse_options','internal error (2)')
 	      end if
 	      call clo_set_option(option,string)
 	    else
-	      stop 'error stop clo_parse_options: internal error (1)'
+	      call error_stop('clo_parse_options','internal error (1)')
 	    end if
 	    
 	  end if
@@ -1054,6 +1088,8 @@
 
 	subroutine clo_s2d(string,value)
 
+	use mod_error_stop, only : error_stop
+
 	character*(*) string
 	double precision value
 
@@ -1062,7 +1098,7 @@
 	return
    99	continue
 	write(6,*) '*** cannot convert to number: ',string
-	stop 'error stop clo_s2d: cannot convert'
+	call error_stop('clo_s2d','cannot convert')
 	end subroutine clo_s2d
 
 !**************************************************************
@@ -1098,10 +1134,12 @@
 
 	subroutine clo_add_extra(string)
 
+	use mod_error_stop, only : error_stop
+
 	character*(*) string
 
 	ielast = ielast + 1
-	if( ielast > 10 ) stop 'error stop clo_add_extra: ielast'
+	if( ielast > 10 ) call error_stop('clo_add_extra','ielast')
 
 	extra(ielast) = string
 
@@ -1127,6 +1165,19 @@
 
 	subroutine clo_usage
 
+! writes the usage line and ends the program with exit 0
+
+	call clo_write_usage
+
+	stop 'clo_usage: usage displayed'
+	end subroutine clo_usage
+
+!**************************************************************
+
+	subroutine clo_write_usage
+
+! writes the usage line and returns (the errors exit 7 after it, #332)
+
 	integer nr,nf
 
 	nr = len_trim(routine_name)
@@ -1135,8 +1186,7 @@
 	write(6,*) 'Usage: ',routine_name(1:nr) &
      &			,' [-h|-help] [-options] ',files_name(1:nf)
 
-	stop 'clo_usage: usage displayed'
-	end subroutine clo_usage
+	end subroutine clo_write_usage
 
 !**************************************************************
 

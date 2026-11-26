@@ -77,7 +77,26 @@
 ! 16.06.2022    ggu     bug fix in bas_get_special_coordinates() -> np
 ! 10.05.2024    ggu     handle spherical, new routine bas_check_spherical()
 ! 01.08.2024    ggu     more output for bas_info()
+! 26.11.2026    arb     errors exit 7 through mod_error_stop (#332)
 !
+! notes :
+!
+! every error ends through error_stop of mod_error_stop (exit 7, the
+! message "error stop ROUTINE: TEXT" on stdout), not a bare stop (exit 0,
+! #332). Not shympi_abort_internal (exit 33): shyadj links basin.o
+! without the shympi library. In the standalone model (not the NUOPC
+! cap, which starts after ESMF has started MPI) the errors come before
+! MPI is initialized, on the whole basin and on every process alike:
+!   - cstfile reads the basin (basin_read: basin_get_par, basin_init,
+!     basin_read_internal, bas_check_spherical), every process the same
+!     file
+!   - set_spherical (initialize.f90) checks the isphe of the STR file
+!     with bas_check_spherical, so the later check in prilog (bas_info,
+!     after MPI started, on the nodes of the master's domain) cannot fail
+!     (#332)
+! After MPI started only basin_init for the domain of a process
+! (mpi_basin.f90) can stop, on an allocation failure of that process;
+! mpirun then ends the job (an exit 7 without MPI_Finalize)
 !***********************************************************
 !***********************************************************
 !***********************************************************
@@ -146,6 +165,8 @@
 
 	subroutine basin_init(nk,ne)
 
+	use mod_error_stop, only : error_stop
+
 	integer nk,ne
 	integer ierr
 
@@ -184,25 +205,35 @@
 	if( nk == 0 ) return
 
 	allocate(nen3v(3,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of nen3v failed')
 	allocate(ipev(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of ipev failed')
 	allocate(ipv(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of ipv failed')
 	allocate(iarv(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of iarv failed')
 	allocate(iarnv(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of iarnv failed')
 	allocate(xgv(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of xgv failed')
 	allocate(ygv(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of ygv failed')
 	allocate(hm3v(3,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of hm3v failed')
 	allocate(area_part_node(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of area_part_node failed')
 	allocate(area_part_elem(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_init' &
+     &				,'allocation of area_part_elem failed')
 
 	end subroutine basin_init
 
@@ -238,6 +269,8 @@
 
 ! reads basin or fails if error
 
+	use mod_error_stop, only : error_stop
+
 	character*(*) file
 
 	integer iunit
@@ -246,7 +279,7 @@
 
 	if( iunit .le. 0 ) then
 	  write(6,*) 'file: ',trim(file)
-	  stop 'error stop basin_read_by_file: cannot open file'
+	  call error_stop('basin_read_by_file','cannot open file')
 	end if
 
 	call basin_read_by_unit(iunit)
@@ -281,6 +314,8 @@
 
 ! writes basin
 
+	use mod_error_stop, only : error_stop
+
 	character*(*) file
 
 	integer iunit
@@ -289,7 +324,7 @@
 
 	if( iunit .le. 0 ) then
 	  write(6,*) 'file: ',trim(file)
-	  stop 'error stop basin_write_by_file: cannot open file'
+	  call error_stop('basin_write_by_file','cannot open file')
 	end if
 
 	call basin_write_by_unit(iunit)
@@ -402,6 +437,8 @@
 !
 ! iunit		unit number of file to be read
 
+	use mod_error_stop, only : error_stop
+
 	integer nb,nknddi,nelddi
 
 	integer i,ii,nvers
@@ -444,16 +481,16 @@
 	return
    99	continue
 	write(6,*) 'Cannot read bas file on unit :',nb
-	stop 'error stop basin_read_internal: error reading file'
+	call error_stop('basin_read_internal','error reading file')
    98	continue
 	write(6,*) 'Cannot read version: nvers = ',-nvers
 	write(6,*) 'nvers = ',-nvers
-	stop 'error stop basin_read_internal: error in version'
+	call error_stop('basin_read_internal','error in version')
    97	continue
 	write(6,*) 'nknddi,nelddi :',nknddi,nelddi
 	write(6,*) 'nkn,nel       :',nkn,nel
 	write(6,*) 'ngr,mbw       :',ngr,mbw
-	stop 'error stop basin_read_internal: dimension error'
+	call error_stop('basin_read_internal','dimension error')
 	end subroutine basin_read_internal
 
 !***********************************************************
@@ -463,6 +500,8 @@
 ! unformatted write to lagoon file
 !
 ! nb		unit number for write
+
+	use mod_error_stop, only : error_stop
 
 	integer nb
 
@@ -497,7 +536,7 @@
    99	continue
 	write(6,*) 'Writing basin...'
 	write(6,*) 'Cannot write bas file on unit :',nb
-	stop 'error stop : basin_write_internal'
+	call error_stop('basin_write_internal','cannot write bas file')
 	end subroutine basin_write_internal
 
 !***********************************************************
@@ -549,6 +588,8 @@
 
         subroutine basin_check(text)
 
+        use mod_error_stop, only : error_stop
+
         implicit none
 
         character*(*), optional :: text
@@ -568,7 +609,7 @@
             if( k .le. 0 .or. k .gt. nkn ) then
               write(6,*) ii,ie,k
               write(6,*) 'error checking basin: ',trim(string)
-              stop 'error stop basin_check: nen3v'
+              call error_stop('basin_check','nen3v')
             end if
           end do
         end do
@@ -636,6 +677,8 @@
 !
 ! iunit		unit number of file to be read
 
+	use mod_error_stop, only : error_stop
+
 	integer nb
 	integer nkn,nel,ngr,mbw
 
@@ -658,11 +701,11 @@
    99	continue
 	write(6,*) 'Cannot read bas file on unit :',nb
 	if( nb > 0 ) write(6,*) 'file name = ',trim(file)
-	stop 'error stop : basin_get_par'
+	call error_stop('basin_get_par','not a bas file')
    98	continue
 	write(6,*) 'Cannot read version: nvers = ',-nvers
 	if( nb > 0 ) write(6,*) 'file name = ',trim(file)
-	stop 'error stop : basin_get_par'
+	call error_stop('basin_get_par','unsupported bas file version')
    97	continue
 
 	end subroutine
@@ -670,6 +713,8 @@
 !***********************************************************
 
 	subroutine basin_info_partition
+
+	use mod_error_stop, only : error_stop
 
 	implicit none
 
@@ -688,9 +733,11 @@
 	write(6,*) 'ne min/max: ',nemin,nemax
 
 	allocate(nncount(nnmin:nnmax),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_info_partition' &
+     &				,'allocation of nncount failed')
 	allocate(necount(nemin:nemax),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('basin_info_partition' &
+     &				,'allocation of necount failed')
 	nncount = 0
 	necount = 0
 
@@ -717,7 +764,7 @@
 	if( sum(nncount) /= nkn .or. sum(necount) /= nel ) then
 	  write(6,*) sum(nncount),nkn
 	  write(6,*) sum(necount),nel
-	  stop 'error stop basin_info_partition: internal error'
+	  call error_stop('basin_info_partition','internal error')
 	end if
 	  
 	end
@@ -946,6 +993,7 @@
 	subroutine bas_insert_regular(regpar)
 
 	use basin
+	use mod_error_stop, only : error_stop
 
 ! inserts regular basin (boxes) into basin structure
 
@@ -973,9 +1021,11 @@
 	ne = 4*(nx-1)*(ny-1)
 
 	allocate(indexv(nx,ny),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('bas_insert_regular' &
+     &				,'allocation of indexv failed')
 	allocate(indexm(nx,ny),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('bas_insert_regular' &
+     &				,'allocation of indexm failed')
 
 	call basin_init(nk,ne)
 
@@ -1081,6 +1131,7 @@
 ! computes grade of basin and nuber of grades per node
 
 	use basin
+	use mod_error_stop, only : error_stop
 
         implicit none
 
@@ -1105,7 +1156,8 @@
 	ngrade = maxval(ng) + 1			!first guess
 
 	allocate(ngv(0:2*ngrade,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('compute_ng' &
+     &				,'allocation of ngv failed')
 	ngv = 0
 
         do ie=1,nel
@@ -1127,7 +1179,7 @@
 	    ng(k) = ng(k) + 1
 	  else
 	    write(6,*) 'wrong connectivity: ',k,n
-	    stop 'error stop estimate_ngr: internal error'
+	    call error_stop('compute_ng','wrong connectivity')
 	  end if
 	end do
 
@@ -1138,10 +1190,10 @@
 	return
    98	continue
 	write(6,*) '(98) nkn,k,ie: ',nkn,k,ie
-	stop 'error stop compute_ng: corrupt node index'
+	call error_stop('compute_ng','corrupt node index')
    99	continue
 	write(6,*) '(99) nkn,k1,k2,ie: ',nkn,k1,k2,ie
-	stop 'error stop compute_ng: corrupt node index'
+	call error_stop('compute_ng','corrupt node index')
         end
 
 !*************************************************
@@ -1250,6 +1302,7 @@
         subroutine bas_check_spherical
 
 	use basin
+	use mod_error_stop, only : error_stop
 
         implicit none
 
@@ -1272,13 +1325,14 @@
 
 	if( sphebas == 1 .and. ispherical == 0 ) then
 	  write(6,*) 'sphebas,ispherical: ',sphebas,ispherical
-	  stop 'error stop bas_check_spherical: coordinates are not spherical'
+	  call error_stop('bas_check_spherical' &
+     &			,'coordinates are not spherical')
 	else if( sphebas == 0 .and. ispherical == 1 ) then
 	  write(6,*) 'bas_check_spherical: sphebas,ispherical: ' &
      &				,sphebas,ispherical
 	  write(6,*) 'coordinates are used as cartesian even if very small'
 	else
-	  stop 'error stop bas_check_spherical: internal error'
+	  call error_stop('bas_check_spherical','internal error')
 	end if
 
         end

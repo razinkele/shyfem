@@ -8,6 +8,16 @@
 #
 #   write : 3d baroclinic run, writes strip_rst.rst (last record)
 #   skip  : rstinf reads every record through rst_skip_record
+#   diff  : rstinf of two files exits 0 when no record differs and 1 when
+#           one does (#332; it exited 0 in both cases): the file against
+#           a copy, and against a copy whose first level depth (hlv(1) =
+#           2.0, at byte 76: the first value of the record after the 4
+#           header records) has its low-order byte changed. The file
+#           against itself twice (cat), in both orders, exits 1 with "file
+#           N has more records" (it exited 0 with no difference), and an
+#           empty file exits 7 (it stopped with SIGFPE, 136). rstinf with
+#           an unknown option exits 7 (#332; it exited 0), with -h and
+#           --help 0 and the help (--help was an unknown option)
 #   conv  : rst2shy (restart + basin file) converts the restart file to
 #           .hydro.shy and .ts.shy. rst2shy exits non-zero on an error
 #           (#327; it exited 0 before). The gate removes any old
@@ -39,6 +49,48 @@ step() {  # name, log, command...
 step shypre  shypre.log  shypre strip.grd
 step write   write.log   shyfem strip_rst.str
 step rstinf  rstinf.log  rstinf strip_rst.rst
+off=76
+{ [ "$(od -An -tu4 -j72 -N4 strip_rst.rst | tr -d ' ')" = 12 ] \
+  && [ "$(od -An -tx1 -j$off -N4 strip_rst.rst | tr -d ' ')" = 00000040 ]; } \
+  || { echo "FAIL rstinf diff: strip_rst.rst has no hlv(1) = 2.0 at byte $off"; exit 1; }
+rm -f strip_same.rst strip_diff.rst rstinf_same.log rstinf_diff.log
+cp strip_rst.rst strip_same.rst && cp strip_rst.rst strip_diff.rst \
+  && printf '\001' | dd of=strip_diff.rst bs=1 seek=$off count=1 conv=notrunc 2> /dev/null \
+  || { echo "FAIL rstinf diff: cannot make the copies"; exit 1; }
+timeout 300 rstinf strip_rst.rst strip_same.rst > rstinf_same.log 2>&1; rc=$?
+{ [ "$rc" -eq 0 ] && grep -q 'Differences found: *0$' rstinf_same.log; } \
+  || { echo "FAIL rstinf diff of a copy: exit $rc (want 0 + Differences found: 0)"; exit 1; }
+timeout 300 rstinf strip_rst.rst strip_diff.rst > rstinf_diff.log 2>&1; rc=$?
+{ [ "$rc" -eq 1 ] && grep -q 'records are different: hlv ' rstinf_diff.log \
+  && grep -q 'Differences found: *1$' rstinf_diff.log; } \
+  || { echo "FAIL rstinf diff of a changed copy: exit $rc (want 1 + hlv differs, Differences found: 1)"; exit 1; }
+echo "ok   rstinf diff exits 0 for a copy, $rc for a copy with one byte changed"
+rm -f strip_two.rst strip_empty.rst rstinf_more12.log rstinf_more21.log rstinf_empty.log
+cat strip_rst.rst strip_rst.rst > strip_two.rst && : > strip_empty.rst \
+  || { echo "FAIL rstinf diff: cannot make the two-record and empty files"; exit 1; }
+for o in 12 21; do
+  if [ $o = 12 ]; then a=strip_rst.rst; b=strip_two.rst; m='file 2 has more records than file 1'
+  else a=strip_two.rst; b=strip_rst.rst; m='file 1 has more records than file 2'; fi
+  timeout 300 rstinf $a $b > rstinf_more$o.log 2>&1; rc=$?
+  { [ "$rc" -eq 1 ] && grep -q "$m" rstinf_more$o.log \
+    && grep -q 'Differences found: *1$' rstinf_more$o.log; } \
+    || { echo "FAIL rstinf $a $b: exit $rc (want 1 + '$m', Differences found: 1)"; exit 1; }
+done
+timeout 300 rstinf strip_empty.rst strip_rst.rst > rstinf_empty.log 2>&1; rc_e=$?
+{ [ "$rc_e" -eq 7 ] && grep -q 'error stop rst_diff: no data in file' rstinf_empty.log; } \
+  || { echo "FAIL rstinf of an empty file: exit $rc_e (want 7 + rst_diff: no data in file)"; exit 1; }
+echo "ok   rstinf diff exits $rc for one record against two (both orders), $rc_e for an empty file"
+rm -f rstinf_bogus.log rstinf_help.log
+timeout 300 rstinf --bogus strip_rst.rst > rstinf_bogus.log 2>&1; rc=$?
+{ [ "$rc" -eq 7 ] && grep -q -- 'no such option: -bogus' rstinf_bogus.log; } \
+  || { echo "FAIL rstinf --bogus: exit $rc (want 7 + no such option: -bogus)"; exit 1; }
+for h in -h --help; do
+  timeout 300 rstinf $h > rstinf_help.log 2>&1; rc_h=$?
+  { [ "$rc_h" -eq 0 ] && grep -q 'Usage: rstinf' rstinf_help.log \
+    && ! grep -q 'no such option' rstinf_help.log; } \
+    || { echo "FAIL rstinf $h: exit $rc_h (want 0 + Usage: rstinf, no 'no such option')"; exit 1; }
+done
+echo "ok   rstinf --bogus exits $rc, rstinf -h and --help exit $rc_h"
 rm -f strip_rst.hydro.shy strip_rst.ts.shy
 step rst2shy rst2shy.log rst2shy strip_rst.rst strip.bas
 nrec() { sed -n 's/.*Number of records read: *\([0-9][0-9]*\).*/\1/p' "$1" | tail -1; }

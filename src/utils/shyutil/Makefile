@@ -210,6 +210,7 @@ zip:	cleanall
 ../../../lib/mod/sigma.mod: sigma.o
 ../../../lib/mod/simul.mod: simul.o
 ../../../lib/mod/zadapt.mod: zadaptutil.o
+basin.o: ../../../lib/mod/mod_error_stop.mod
 evgeom.o: ../../../lib/mod/basin.mod
 fast_find.o: ../../../lib/mod/basin.mod ../../../lib/mod/stack.mod
 fem_util.o: ../../../lib/mod/basin.mod
