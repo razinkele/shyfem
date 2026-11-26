@@ -35,6 +35,16 @@
 ! 27.04.2023	ggu	better error handling
 ! 21.11.2024	ggu	honor debug flag
 ! 23.11.2024	ggu	introduced pqual
+! 26.11.2026	arb	errors exit 7 through mod_error_stop (#336)
+!
+! notes :
+!
+! exit status: 0 for a partition without connectivity errors, 9 for one
+! with connectivity errors (they can be ignored), 7 for an error (a file
+! that cannot be read, no or a wrong -np, an allocation failure) through
+! error_stop of mod_error_stop, imported as tool_error_stop because the
+! program uses shympi, whose own error_stop exits 33 (it exited 0, #336);
+! the usage (no file) exits 0
 !
 !****************************************************************
 
@@ -61,6 +71,7 @@
 	use clo
 	use shympi
         use grd
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -94,9 +105,11 @@
 !-----------------------------------------------------------------
 
         allocate(epart(nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call tool_error_stop('shyparts' &
+     &				,'allocation of epart failed')
         allocate(npart(nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call tool_error_stop('shyparts' &
+     &				,'allocation of npart failed')
 	npart = 0
 	epart = 0
 
@@ -172,6 +185,7 @@
 	use basin
 	!use basutil
 	use mod_shyparts
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -190,7 +204,7 @@
 	  breadbas = .false.
 	else
 	  write(6,*) 'Cannot read this file: ',trim(file)
-	  stop 'error stop read_given_file: format not recognized'
+	  call tool_error_stop('read_given_file','format not recognized')
 	end if
 
 	end
@@ -200,6 +214,7 @@
 	subroutine shyparts_init(grdfile,np,bdebug)
 
 	use clo
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -224,14 +239,15 @@
         call clo_get_option('debug',bdebug)
 
         if (np == -1 ) then
-	  stop 'error stop shyparts_init: no np given'
+	  call tool_error_stop('shyparts_init','no np given')
 	else if( np == 1 ) then
-	  stop 'error stop shyparts_init: no partitioning for np == 1'
+	  call tool_error_stop('shyparts_init' &
+     &				,'no partitioning for np == 1')
 	end if
 
         if (np < 2 ) then
           write(6,*) 'nparts: ',np
-	  stop 'error stop shyparts_init: np < 2'
+	  call tool_error_stop('shyparts_init','np < 2')
         end if
 
 	end

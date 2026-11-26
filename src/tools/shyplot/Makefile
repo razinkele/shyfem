@@ -175,6 +175,7 @@ def_para_post.o: ../../../lib/mod/para.mod
 line_nodes.o: ../../../lib/mod/basin.mod \
 		../../../lib/mod/mod_geom.mod 
 plotutil.o: ../../../lib/mod/basin.mod ../../../lib/mod/clo.mod \
+		../../../lib/mod/mod_error_stop.mod \
 		../../../lib/mod/nls.mod \
 		../../../lib/mod/shyfile.mod 
 shyplot.o: ../../../lib/mod/basin.mod ../../../lib/mod/clo.mod \

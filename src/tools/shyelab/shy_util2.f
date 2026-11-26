@@ -37,6 +37,14 @@
 ! 21.05.2019	ggu	changed VERS_7_5_62
 ! 28.01.2020	ggu	minor changes in error message
 ! 28.04.2023    ggu     update function calls for belem
+! 26.11.2026    arb     errors exit 7 through mod_error_stop (#336)
+!
+! notes :
+!
+! every error ends through error_stop of mod_error_stop (exit 7, the
+! message "error stop ROUTINE: TEXT" on stdout), not a bare stop (exit 0,
+! #336), imported as tool_error_stop (shyelab and the other tools that
+! link this file use shympi, whose own error_stop exits 33)
 
 !***************************************************************
 
@@ -149,6 +157,7 @@
 	subroutine open_next_file_by_name(file,idold,id)
 
 	use shyfile
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -159,17 +168,17 @@
 
 	if( .not. shy_exist_file(file) ) then
 	  write(6,*) 'file: ',trim(file)
-	  stop 'error stop shyelab: file not existing'
+	  call tool_error_stop('shyelab','file not existing')
 	end if
 	if( .not. shy_is_shy_file(file) .and.
      +      .not. shy_is_lgr_file(file) ) then
 	  write(6,*) 'file: ',trim(file)
-	  stop 'error stop shyelab: not a valid shy file'
+	  call tool_error_stop('shyelab','not a valid shy file')
 	end if
 
 	id = shy_init(file)
 	if( id == 0 ) then
-	  stop 'error stop open_next_file: internal error (1)'
+	  call tool_error_stop('open_next_file','internal error (1)')
 	end if
 
 	!write(6,*) '================================'
@@ -180,7 +189,7 @@
 	if( ierr /= 0 ) then
 	  write(6,*) 'error reading header, ierr = ',ierr
 	  write(6,*) 'file = ',trim(file)
-	  stop 'error stop open_next_file: reading header'
+	  call tool_error_stop('open_next_file','reading header')
 	end if
 
 	if( idold > 0 ) then
@@ -190,7 +199,7 @@
 	    call shy_info(idold)
 	    write(6,*) 'info from second file: '
 	    call shy_info(id)
-	    stop 'error stop open_next_file: not compatible'
+	    call tool_error_stop('open_next_file','not compatible')
 	  end if
 	  !call shy_close(idold)
 	end if
@@ -208,6 +217,7 @@ c
 c nunit is 0 if no other file exists
 
         use clo
+        use mod_error_stop, only: tool_error_stop => error_stop
 
         implicit none
 
@@ -224,7 +234,7 @@ c nunit is 0 if no other file exists
 
         if( nunit .le. 0 ) then
           write(6,*) 'file: ',trim(file)
-          stop 'error stop open_shy_file: opening file'
+          call tool_error_stop('open_shy_file','opening file')
         end if
 
         end
@@ -267,6 +277,7 @@ c nunit is 0 if no other file exists
 	use elabutil
 	use shyfile
 	use shyutil
+	use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -338,16 +349,16 @@ c nunit is 0 if no other file exists
 	return
    74	continue
 	write(6,*) n,m,nexp,nndim,lmax,nlvddi
-	stop 'error stop read_records: dimension error...'
+	call tool_error_stop('read_records','dimension error...')
    75	continue
         write(6,*) 'error in reading file : ',ierr
-	stop 'error stop read_records: reading file'
+	call tool_error_stop('read_records','reading file')
    76	continue
         write(6,*) 'end of file between variables'
-	stop 'error stop read_records: EOF unexpected'
+	call tool_error_stop('read_records','EOF unexpected')
    85	continue
 	write(6,*) 'dtime,dtvar,iv,ivar,nvar: ',dtime,dtvar,iv,ivar,nvar
-	stop 'error stop read_records: time mismatch'
+	call tool_error_stop('read_records','time mismatch')
 	end
 
 !***************************************************************
