@@ -31,8 +31,44 @@ SHYPARTS = _BIN if _BIN.exists() else Path(shutil.which("shyparts") or _BIN)
 def test_stats_and_map_come_from_the_real_elem_grd():
     stats, pmap = analyze_partitions(MM / "MM_coarse.4.elem.grd")
     assert stats["num_partitions"] == 4
-    assert stats["elements_per_partition"] == [478, 549, 594, 924]
+    counts = stats["elements_per_partition"]
+    # The METIS element partition of MM_coarse on 4 domains (#302). The old
+    # snapshot, made while check_connections damaged iarv (#290), read
+    # [478, 549, 594, 924]: one domain with twice the elements of another.
+    assert counts == [637, 638, 638, 632]
+    assert max(counts) < 1.1 * min(counts), "an element partition METIS made is balanced"
     assert len(pmap) == 2545 and set(pmap.values()) == {0, 1, 2, 3}
+
+
+@pytest.mark.parametrize(
+    "grd, np_val, total",
+    [
+        ("mar_menor/GRID/MM_coarse.grd", 2, 2545),
+        ("mar_menor/GRID/MM_coarse.grd", 4, 2545),
+        ("venice_lagoon/GRID/venlag62.grd", 2, 7842),
+        ("venice_lagoon/GRID/venlag62.grd", 4, 7842),
+        ("venice_lagoon/GRID/venlag62.grd", 8, 7842),
+    ],
+)
+def test_committed_elem_snapshots_are_balanced(grd, np_val, total):
+    """Every committed *.N.elem.grd is a balanced METIS partition, not the damaged one
+    shyparts wrote before #290 (venlag62 on 2: 6559 against 1283)."""
+    path = REPO / "testcases" / "examples" / grd
+    snap = path.with_name(f"{path.stem}.{np_val}.elem.grd")
+    counts = analyze_partitions(snap)[0]["elements_per_partition"]
+    assert len(counts) == np_val and sum(counts) == total
+    assert max(counts) < 1.2 * min(counts), counts  # venlag62 on 8: 1029 against 902
+
+
+@pytest.mark.skipif(not SHYPARTS.exists(), reason="needs the built shyparts")
+def test_the_committed_mm_coarse_snapshot_is_what_shyparts_writes(tmp_path):
+    """The snapshot goes stale silently (#302): compare it with a fresh run."""
+    shutil.copy(MM / "MM_coarse.grd", tmp_path / "MM_coarse.grd")
+    w = ShyfemWrapper(SHYPARTS.parent.parent)
+    r = asyncio.run(w.run_shyparts(tmp_path / "MM_coarse.grd", tmp_path, np=4))
+    assert r.success, r.stdout[-400:]
+    fresh = analyze_partitions(tmp_path / "MM_coarse.4.elem.grd")[0]["elements_per_partition"]
+    assert fresh == analyze_partitions(MM / "MM_coarse.4.elem.grd")[0]["elements_per_partition"]
 
 
 def test_a_missing_elem_grd_gives_empty_stats(tmp_path):
