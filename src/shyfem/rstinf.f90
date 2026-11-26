@@ -51,6 +51,7 @@
 ! 26.11.2026    arb     version 20: the list shows its records, the diff
 !                       mode compares them (#303 #304)
 ! 26.11.2026    arb     version 20: the writer's itdrag (#303 #304, R4)
+! 26.11.2026    arb     the itdrag line names the heat flag rule (#323)
 
 !******************************************************************
 
@@ -233,7 +234,8 @@
 	write(6,'(a)') '   hydro block, after vtlnv: iwetv, evapv, itdrag' &
      &		// ', windcd, heat flag, tws, dtw'
 	write(6,'(a,i0,a)') '   itdrag of the writer: ',itdrag_rst &
-     &		,'  (the windcd record is applied only with the same itdrag)'
+     &		,'  (the windcd record is applied only with the same itdrag' &
+     &		// ', and with 4 only if the heat flag is set)'
 	write(6,'(a,i0,a)') '   heat flag: ',iheatflag_rst &
      &		,'  (1: qflux3d ran in the writer; tws and dtw hold its state)'
 	if( iturb_rst == 2 ) then
