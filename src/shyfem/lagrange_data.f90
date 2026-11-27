@@ -259,6 +259,13 @@
 	!      the node, the time to each side shrinking geometrically; #310,
 	!      track_xi_node_sink tells it from the other steps of kind 5,
 	!      which it counted as until then); the step ends as for kind 5
+	! 27   track_xi: all the time left spent moving off a vertex (a vertex
+	!      hold: the th = 0 path from a vertex pushes the particle at most
+	!      5e-6 in internal coordinates into the next element and ends its
+	!      step there, from where the re-snap of diff_body can put it back
+	!      on the node; #316, until then silent: such steps were most of
+	!      those of a particle held at a node sink); nothing changes in the
+	!      motion, the step ends as before
 	!For the kinds that do not stop the run the counts and the events
 	!kept are the same on any number of threads (the key orders them; the
 	!events of one particle come from one thread, in order). For those
@@ -293,7 +300,8 @@
 	integer, parameter :: lgr_ev_xit = 24
 	integer, parameter :: lgr_ev_xidist = 25
 	integer, parameter :: lgr_ev_adv_node = 26
-	integer, parameter :: lgr_nev = 26		!kinds
+	integer, parameter :: lgr_ev_vertex_hold = 27
+	integer, parameter :: lgr_nev = 27		!kinds
 	integer, parameter :: lgr_ev_ni = 9		!integer values of a kind
 	integer, parameter :: lgr_ev_nd = 6		!real values of a kind
         integer, save :: lgr_ev_n(lgr_nev) = 0
@@ -633,8 +641,8 @@
 ! the particles released, idbdy) only for a kind that does not stop the
 ! run (brun). One particle can give several events of a kind in the run
 ! (both walls, repeated crossings, one event in every step), so P can pass
-! 100: for the kinds 5 to 10 and 26 the part reads "P events per 100 of
-! the I particles released" (#305; until then "%"); the kinds 1 and 2 keep
+! 100: for the kinds 5 to 10, 26 and 27 the part reads "P events per 100
+! of the I particles released" (#305; until then "%"); the kinds 1 and 2 keep
 ! "% of the", the lines of #288 unchanged. The values are the ni
 ! integer values, then the nd real values
 ! (with three decimals if bfix, else in full precision, g0), named by
@@ -690,6 +698,15 @@
           end select
           if( kind >= lgr_ev_adv_cross ) cname(3) = 'crossings left'
           if( kind == lgr_ev_adv_node ) cname(3) = 'layer'
+        case( lgr_ev_vertex_hold )		!#316
+          brun = .true.
+          ni = 4
+          nd = 1
+          bfix = .true.
+          cname(1:5) = [character(len=20) :: 'id','element','layer'	&
+     &			,'node','time spent [s]']
+          ctext = 'all the time left spent moving off a vertex'	&
+     &		//' (vertex hold)'
         case( lgr_ev_vd_depth, lgr_ev_xi_depth )
           ni = 4
           nd = 6

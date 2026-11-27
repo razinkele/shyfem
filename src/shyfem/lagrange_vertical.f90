@@ -324,10 +324,25 @@
 ! particle approach the bed exponentially, never reach it). One-layer
 ! columns and the layers above keep the layer mean, and a bottom layer
 ! of zero thickness keeps the path of before (tv = 0: not moving)
+!
+! a vertex hold (#316): a particle on a vertex of its element (xie with
+! two zero coordinates) that takes the th = 0 path is moved off the
+! vertex by the push of track_xi_next_element (at most 5e-6 in internal
+! coordinates) and spends here t = min(tt,tv). When that is all the time
+! it has left (t = tt; always for ilagr 1 and 2, where w = 0 and tv =
+! 2*time), its step ends a few millimetres from the vertex, and the
+! re-snap of x, y in diff_body can put it back on the node for the next
+! step. Such a call is an event of lgr_event (lgr_ev_vertex_hold: id,
+! element, layer, the external number of the node, the time spent),
+! whether or not the element across has the layer. Until #316 these steps
+! wrote nothing: a particle held at a node sink of the flux
+! reconstruction spends most of its steps so (nt1 of the investigation:
+! 1582 of its 2083 steps at node 702), silently. The event changes
+! nothing: the path, its time and xi are those of before
 
 	use mod_lagrange
 	use mod_hydro_vel, only : wlov,wlnv
-	use basin, only : nen3v
+	use basin, only : nen3v, ipv
 
 	implicit none
 
@@ -573,6 +588,18 @@
 
 	if( th == 0. ) then		!body not moving or laying on side
           if (vel > 0.) then
+	    ! all the time left spent moving off a vertex: a vertex hold,
+	    ! an event (#316, see above); nothing else changes
+	    if( tt > 0.d0 .and. t == tt ) then
+	      if( count( xie == 0.d0 ) == 2 ) then
+	        k = 0
+	        do ii=1,3
+	          if( xie(ii) /= 0.d0 ) k = nen3v(ii,iel)	!the vertex
+	        end do
+	        call lgr_event(lgr_ev_vertex_hold,id,(/id,iel,lb,ipv(k)/)	&
+     &			,(/tt/))
+	      end if
+	    end if
             xi = xie
             call track_xi_next_element(iel,xi,id,ncross,iside)    !for particles laying on side
 	    call track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
