@@ -146,6 +146,42 @@ def test_failed_conversion_raises_and_leaves_no_entry(tmp_path, kw, quoted):
     assert list(viewer_cache_dir(None, cfg).iterdir()) == []
 
 
+def _fake_shyelab(tmp_path, body: str) -> ShyfemWrapper:
+    """The real wrapper with a fake ``shyelab`` script, so ``success`` and
+    ``stderr`` are what ``run_command`` builds from a real exit status."""
+    d = tmp_path / "shyfem"
+    (d / "bin").mkdir(parents=True, exist_ok=True)
+    exe = d / "bin" / "shyelab"
+    exe.write_text("#!/bin/bash\n" + body)
+    exe.chmod(0o755)
+    return ShyfemWrapper(d)
+
+
+def test_exit_0_stop_with_a_non_empty_out_nc_is_a_failure(tmp_path):
+    """gfortran's bare ``stop 'error stop x'`` exits 0 and prints ``STOP ...``
+    to stderr; the NetCDF file it had opened is not a result (#344)."""
+    cfg = _cfg(tmp_path)
+    w = _fake_shyelab(
+        tmp_path,
+        "echo partial > out.nc\necho 'STOP error stop nc_init_variable' >&2\nexit 0\n",
+    )
+    with pytest.raises(ConversionError) as e:
+        _go(_src(tmp_path), cfg, w)
+    assert "STOP error stop nc_init_variable" in str(e.value)
+    assert "run.ts.shy" in str(e.value)
+    assert list(viewer_cache_dir(None, cfg).iterdir()) == []
+
+
+def test_exit_0_clean_run_with_the_real_wrapper_is_cached(tmp_path):
+    cfg = _cfg(tmp_path)
+    w = _fake_shyelab(tmp_path, "echo converted > out.nc\nexit 0\n")
+    src = _src(tmp_path)
+    nc = _go(src, cfg, w)
+    assert nc.read_text() == "converted\n"
+    (tmp_path / "shyfem" / "bin" / "shyelab").write_text("#!/bin/bash\nexit 9\n")
+    assert _go(src, cfg, w) == nc  # served from the cache, shyelab not run
+
+
 def test_killed_shyelab_with_partial_out_nc_is_a_failure(tmp_path):
     cfg = _cfg(tmp_path)
 
