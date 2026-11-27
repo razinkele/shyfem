@@ -22,6 +22,8 @@
 #        shyplot   missing.shy, wrong.shy       (plotutil.f90)
 #        shyadj    missing.grd, wrong.grd       (grd.f90)
 #        lgrelab   missing.lgr, wrong.lgr       (shy_util2.f)
+#        extelab   missing.ext                  (extelab1.f90, #355)
+#        flxelab   missing.flx                  (flxelab1.f90, #355)
 #      a wrong file is "junk line" / "1 2 3"; and the two clo.f90 messages:
 #        shyelab -  and  shyelab - FILE   (no option name after "-")
 #        shyplot -tmin <1100 characters> FILE (value too long for option)
@@ -38,8 +40,13 @@
 #      "file not existing" for a file that exists): shyelab, shyplot -varid 1
 #      and lgrelab -lgmean on the .shy files in a folder nested 5 deep, with
 #      100 characters of folder names added to the mktemp -d path
+#      and shyelab -split on an .ext and a .flx file, on a short and on that
+#      long path (#355: extelab1.f90 and flxelab1.f90 kept the name in
+#      character*80, ifileo failed and the first read segfaulted on unit -1
+#      at over 80 characters; the files come from a 6 hour run of mm_ef.str,
+#      written by this script: 4 extra nodes and one flux section)
 #
-# Needs shyfem and the seven tools on PATH. Leaves nothing in this folder.
+# Needs shyfem, extelab, flxelab and the seven tools on PATH. Leaves nothing in this folder.
 # Usage:  ./check_tool_exit.sh
 #         PATH=<other bin>:$PATH ./check_tool_exit.sh   (checks that build)
 #------------------------------------------------------------------------
@@ -49,7 +56,7 @@ TOOLS="shypre shybas shyparts shyelab shyplot shyadj lgrelab"
 verdict() { echo "=================================================================="
   if [ "$1" -eq 0 ]; then echo "TOOL EXIT: PASS"; else echo "TOOL EXIT: FAIL"; fi; }
 
-for t in shyfem $TOOLS; do
+for t in shyfem extelab flxelab $TOOLS; do
   command -v "$t" > /dev/null || { echo "FAIL: $t not on PATH"; verdict 1; exit 1; }
 done
 echo "binaries: $(dirname "$(command -v shypre)")"
@@ -116,6 +123,43 @@ timeout 600 shyfem mm_lgr.str > shyfem.log 2>&1 \
 for f in mm_lgr.hydro.shy mm_lgr.lgr.shy; do
   [ -s "$f" ] || { echo "FAIL: shyfem made no $f"; verdict 1; exit 1; }
 done
+# a second short run for the .ext and .flx files (no lagrangian part): four
+# extra nodes, and one flux section of two adjacent nodes (two vertices of
+# element 1 of GRID/MM_coarse.grd)
+cat > mm_ef.str <<'EOF_STR' || { echo "FAIL: cannot write mm_ef.str"; verdict 1; exit 1; }
+$title
+        2D sim for Mar Menor - ext and flx for the tool gate
+        mm_ef
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-01::06:00:00'
+        idt = '300s'
+        idtext = '300s'
+        idtflx = '300s'
+
+        date = 20090101
+
+        ilin = 1
+$end
+
+$extra
+        128     'sea boundary'
+        58      'inlet'
+        868     'center of lagoon'
+        441     'border of lagoon'
+$end
+
+$flux
+        334 828 'r1'
+$end
+EOF_STR
+timeout 600 shyfem mm_ef.str > shyfem_ef.log 2>&1 \
+  || { echo "FAIL: shyfem mm_ef.str did not complete"; tail -3 shyfem_ef.log; verdict 1; exit 1; }
+for f in mm_ef.ext mm_ef.flx; do
+  [ -s "$f" ] || { echo "FAIL: shyfem made no $f"; verdict 1; exit 1; }
+done
 cd good || exit 1
 row 0 "" shybas ../GRID/MM_coarse.bas
 row 0 "domain successfully partitioned" shyparts -np 2 ../GRID/MM_coarse.grd
@@ -123,16 +167,21 @@ row 0 "Successful completion" shyadj ../GRID/MM_coarse.grd
 row 0 "time records read" shyelab ../mm_lgr.hydro.shy
 row 0 "total number of plots" shyplot -varid 1 ../mm_lgr.hydro.shy
 row 0 "time records read" lgrelab -lgmean ../mm_lgr.lgr.shy
+row 0 "time records elaborated" shyelab -split ../mm_ef.ext
+row 0 "time records elaborated" shyelab -split ../mm_ef.flx
 
 # the same runs on a path over 80 characters, whatever the length of TMPDIR
 LONGDIR="$TMP"
 for i in 1 2 3 4 5; do LONGDIR="$LONGDIR/long_path_segment_$i"; done
-mkdir -p "$LONGDIR" && ln -s "$TMP/mm_lgr.hydro.shy" "$TMP/mm_lgr.lgr.shy" "$LONGDIR/" \
+mkdir -p "$LONGDIR" && ln -s "$TMP/mm_lgr.hydro.shy" "$TMP/mm_lgr.lgr.shy" \
+  "$TMP/mm_ef.ext" "$TMP/mm_ef.flx" "$LONGDIR/" \
   || { echo "FAIL: cannot make the long path"; verdict 1; exit 1; }
 [ "${#LONGDIR}" -gt 80 ] || { echo "FAIL: long path is not over 80 characters"; verdict 1; exit 1; }
 row 0 "time records read" shyelab "$LONGDIR/mm_lgr.hydro.shy"
 row 0 "total number of plots" shyplot -varid 1 "$LONGDIR/mm_lgr.hydro.shy"
 row 0 "time records read" lgrelab -lgmean "$LONGDIR/mm_lgr.lgr.shy"
+row 0 "time records elaborated" shyelab -split "$LONGDIR/mm_ef.ext"
+row 0 "time records elaborated" shyelab -split "$LONGDIR/mm_ef.flx"
 cd .. || exit 1
 
 echo "=== help and usage (exit 0)"
@@ -158,6 +207,8 @@ row 7 "error stop grd_internal_init: cannot open file"           shyadj missing.
 row 7 "error stop grd_read: error reading grd file"              shyadj wrong.grd
 row 7 "error stop shyelab: file not existing"                    lgrelab missing.lgr
 row 7 "error stop shyelab: not a valid shy file"                 lgrelab wrong.lgr
+row 7 "error stop extelab: cannot open file"                     extelab missing.ext
+row 7 "error stop flxelab: cannot open file"                     flxelab missing.flx
 
 echo "=== option errors of clo.f90 (exit 7, message on stdout)"
 long=$(printf '%01100d' 0)

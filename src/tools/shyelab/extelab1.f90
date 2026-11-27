@@ -78,6 +78,7 @@
         use mod_depth
         use evgeom
         use levels
+        use mod_error_stop, only: tool_error_stop => error_stop
 
 ! elaborates ext file
 
@@ -114,7 +115,8 @@
 	integer ip,nb,naccum
 	integer knausm
 	integer date,time
-	character*80 title,name,file,femver,format,range
+	character*80 title,name,femver,format,range
+	character*256 file
 	character*20 dline
 	character*80 basnam,simnam
 	real rnull
@@ -163,6 +165,7 @@
 	call clo_reset_files
 	call clo_get_next_file(file)
 	nin = ifileo(0,file,'unform','old')
+	if( nin <= 0 ) call tool_error_stop('extelab','cannot open file')
 
         call populate_strings
 

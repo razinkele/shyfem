@@ -65,6 +65,7 @@
         use mod_depth
         use evgeom
         use levels
+        use mod_error_stop, only: tool_error_stop => error_stop
 
 ! elaborates flx file
 
@@ -106,7 +107,7 @@
 	real vmin,vmax,vmed
 	double precision atime,atime0,atfirst,atold,atnew,atlast,atwrite
 	character*1 :: what(5) = (/'u','v','z','m','a'/)
-	character*80 file
+	character*256 file
 
 	integer iapini,ifileo
 	integer ifem_open_file
@@ -135,6 +136,7 @@
         call clo_reset_files
         call clo_get_next_file(file)
         nin = ifileo(0,file,'unform','old')
+        if( nin <= 0 ) call tool_error_stop('flxelab','cannot open file')
 
         call populate_strings
 
