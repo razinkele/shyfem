@@ -160,6 +160,16 @@ def judge_run(
     return None, failure_reason(stdout_tail, stderr_tail) or ""
 
 
+def exit_ok(tool_name: str, return_code: int | None) -> bool:
+    """Whether ``return_code`` means ``tool_name`` ran OK (#342).
+
+    ``ShyfemWrapper.OK_EXIT_CODES`` lists the tools that exit non-zero on a
+    good run (shyparts exits 9 after writing a partition with ignorable
+    connectivity warnings). Every verdict on a finished run uses this one rule.
+    """
+    return return_code in ShyfemWrapper.OK_EXIT_CODES.get(tool_name, (0,))
+
+
 def failed_run_text(tool: str, result: CommandResult) -> tuple[str, str]:
     """(log text, notification text) for a run that failed (#335).
 
@@ -505,17 +515,17 @@ class ShyfemWrapper:
         output_files = self._find_output_files(tool_name, working_dir, before_snapshot)
 
         stderr_text = "\n".join(stderr_lines)
-        exit_ok = return_code in self.OK_EXIT_CODES.get(tool_name, (0,))
+        ran_ok = exit_ok(tool_name, return_code)
         failure, reason = judge_run(
             tool_name,
-            0 if exit_ok else return_code,
+            0 if ran_ok else return_code,
             "\n".join(stdout_tail)[-TAIL_CHARS:],
             stderr_text[-TAIL_CHARS:],
         )
         if failure:
             stderr_text = f"{stderr_text}\n{failure}".lstrip("\n")
         return CommandResult(
-            success=exit_ok and failure is None,
+            success=ran_ok and failure is None,
             return_code=return_code,
             stdout="\n".join(stdout_lines),
             stderr=stderr_text,
@@ -707,7 +717,7 @@ class ShyfemWrapper:
             stderr = read_tail(files.stderr, TAIL_CHARS)
             failure, reason = judge_run(
                 spec.get("tool_name") or tool_name,
-                return_code,
+                0 if exit_ok(spec.get("tool_name") or tool_name, return_code) else return_code,
                 read_tail(files.stdout, TAIL_CHARS),
                 stderr,
             )
@@ -715,7 +725,9 @@ class ShyfemWrapper:
                 stderr = f"{stderr}\n{failure}".lstrip("\n")
             stderr = stderr[-1000:]
         return CommandResult(
-            success=return_code == 0 and not timed_out and failure is None,
+            success=exit_ok(spec.get("tool_name") or tool_name, return_code)
+            and not timed_out
+            and failure is None,
             return_code=return_code if return_code is not None else -1,
             stdout="",
             stderr=stderr,
