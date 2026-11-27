@@ -265,13 +265,15 @@ class LocalJobQueue(JobQueue):
             if exit_record is not None:
                 from shyfem_ui.job_runner import result_fields
 
-                # Only the output snapshot comes from the file: where to look
-                # and which tool ran come from the row, because the user can
-                # write the job's directory.
+                # Only the output snapshot (and, for shypre, the folder of its
+                # grid) comes from the file: where else to look and which tool
+                # ran come from the row, because the user can write the job's
+                # directory.
                 trusted = {
                     "cwd": row.working_dir,
                     "tool_name": row.job_type,
                     "before_snapshot": spec.get("before_snapshot") or {},
+                    "extra_dirs": spec.get("extra_dirs") or [],
                 }
                 fields = result_fields(
                     trusted,

@@ -348,7 +348,8 @@ class ShyfemWrapper:
         # this run actually produced (new) or touched (modified) -- not
         # unrelated pre-existing files left by earlier jobs sharing the same
         # working directory (N48).
-        before_snapshot = self._snapshot_output_files(tool_name, working_dir)
+        extra_dirs = self.extra_output_dirs(tool_name, args, working_dir)
+        before_snapshot = self._snapshot_output_files(tool_name, working_dir, extra_dirs)
 
         # Build environment
         run_env = os.environ.copy()
@@ -373,6 +374,7 @@ class ShyfemWrapper:
                 before_snapshot,
                 detached,
                 progress_callback,
+                extra_dirs,
             )
 
         start_time = datetime.now()
@@ -515,7 +517,7 @@ class ShyfemWrapper:
         duration = (end_time - start_time).total_seconds()
 
         # Find output files: only ones new or modified since before_snapshot.
-        output_files = self._find_output_files(tool_name, working_dir, before_snapshot)
+        output_files = self._find_output_files(tool_name, working_dir, before_snapshot, extra_dirs)
 
         stderr_text = "\n".join(stderr_lines)
         ran_ok = exit_ok(tool_name, return_code)
@@ -555,6 +557,7 @@ class ShyfemWrapper:
         before_snapshot: dict[str, int],
         detached: DetachedRun,
         progress_callback: Callable[[float, str], None] | None,
+        extra_dirs: list[Path] | None = None,
     ) -> CommandResult:
         """Start the supervisor for ``cmd`` and watch it until the tool ends."""
         from shyfem_ui.config import get_config
@@ -574,6 +577,7 @@ class ShyfemWrapper:
             "shyfem_dir": str(self.shyfem_dir),
             "timeout": get_config().command_timeout_seconds,
             "before_snapshot": before_snapshot,
+            "extra_dirs": [str(d) for d in extra_dirs or []],
         }
         for stale in (files.pid, files.exit):
             stale.unlink(missing_ok=True)
@@ -738,7 +742,12 @@ class ShyfemWrapper:
             command=" ".join(spec.get("cmd") or []),
             working_dir=str(cwd),
             duration=(datetime.now() - start).total_seconds(),
-            output_files=self._find_output_files(tool_name, cwd, spec.get("before_snapshot") or {}),
+            output_files=self._find_output_files(
+                tool_name,
+                cwd,
+                spec.get("before_snapshot") or {},
+                self.spec_extra_dirs(tool_name, spec),
+            ),
         )
 
     async def _stop_supervisor(
@@ -834,9 +843,39 @@ class ShyfemWrapper:
                 pass
         return None
 
-    def _snapshot_output_files(self, tool_name: str, working_dir: Path) -> dict[str, int]:
+    @staticmethod
+    def extra_output_dirs(tool_name: str, args: list[str], working_dir: Path | str) -> list[Path]:
+        """Folders besides the working folder where a run leaves its outputs.
+
+        ``shypre`` writes ``<grid>.bas`` next to its input grid, so a run on a
+        grid in another folder (the Full Simulation Pipeline's, #352) has its
+        output there. The run itself stays in the working folder: the queue
+        writes the job's log files there, and they must not land in the
+        user's grid folder.
+        """
+        if tool_name != "shypre":
+            return []
+        grids = [a for a in args if str(a).endswith(".grd")]
+        if not grids:
+            return []
+        folder = Path(os.path.abspath(Path(working_dir) / grids[-1])).parent
+        if folder.resolve() == Path(working_dir).resolve():
+            return []
+        return [folder]
+
+    @staticmethod
+    def spec_extra_dirs(tool_name: str, spec: dict) -> list[Path]:
+        """``extra_output_dirs`` as recorded in a job's launch record."""
+        if tool_name != "shypre":
+            return []
+        return [Path(d) for d in spec.get("extra_dirs") or []]
+
+    def _snapshot_output_files(
+        self, tool_name: str, working_dir: Path, extra_dirs: list[Path] | None = None
+    ) -> dict[str, int]:
         """Snapshot {path: mtime_ns} for every file matching the tool's
-        candidate output extensions, currently present in ``working_dir``.
+        candidate output extensions, currently present in ``working_dir``
+        and in ``extra_dirs`` (see ``extra_output_dirs``).
 
         Taken immediately before launching the subprocess so
         ``_find_output_files`` can later tell apart files this run actually
@@ -844,14 +883,15 @@ class ShyfemWrapper:
         """
         extensions = self.OUTPUT_EXTENSIONS.get(tool_name, [])
         snapshot: dict[str, int] = {}
-        for ext in extensions:
-            for f in working_dir.glob(f"*{ext}"):
-                try:
-                    snapshot[str(f)] = f.stat().st_mtime_ns
-                except OSError:
-                    # File vanished between glob() and stat() -- ignore, it
-                    # can't be a "before" state worth tracking.
-                    continue
+        for folder in [working_dir, *(extra_dirs or [])]:
+            for ext in extensions:
+                for f in folder.glob(f"*{ext}"):
+                    try:
+                        snapshot[str(f)] = f.stat().st_mtime_ns
+                    except OSError:
+                        # File vanished between glob() and stat() -- ignore, it
+                        # can't be a "before" state worth tracking.
+                        continue
         return snapshot
 
     def _find_output_files(
@@ -859,6 +899,7 @@ class ShyfemWrapper:
         tool_name: str,
         working_dir: Path,
         before: dict[str, int] | None = None,
+        extra_dirs: list[Path] | None = None,
     ) -> list[str]:
         """Find output files this run actually produced.
 
@@ -873,18 +914,19 @@ class ShyfemWrapper:
         extensions = self.OUTPUT_EXTENSIONS.get(tool_name, [])
         before = before or {}
         output_files: list[str] = []
-        for ext in extensions:
-            # By name within an extension: glob order is the filesystem's.
-            for f in sorted(working_dir.glob(f"*{ext}"), key=lambda p: p.name):
-                if str(f) in output_files:
-                    continue  # x.hydro.shy is listed once, under ".hydro.shy"
-                try:
-                    mtime_ns = f.stat().st_mtime_ns
-                except OSError:
-                    continue
-                prior = before.get(str(f))
-                if prior is None or mtime_ns > prior:
-                    output_files.append(str(f))
+        for folder in [working_dir, *(extra_dirs or [])]:
+            for ext in extensions:
+                # By name within an extension: glob order is the filesystem's.
+                for f in sorted(folder.glob(f"*{ext}"), key=lambda p: p.name):
+                    if str(f) in output_files:
+                        continue  # x.hydro.shy is listed once, under ".hydro.shy"
+                    try:
+                        mtime_ns = f.stat().st_mtime_ns
+                    except OSError:
+                        continue
+                    prior = before.get(str(f))
+                    if prior is None or mtime_ns > prior:
+                        output_files.append(str(f))
         return output_files
 
     # Convenience methods for specific tools

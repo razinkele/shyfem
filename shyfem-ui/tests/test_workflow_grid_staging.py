@@ -29,7 +29,6 @@ NAME = "mm.grd"
 
 SHYPRE = 'g="${@: -1}"\ncp "$g" "${g%.grd}.bas"\n'
 SHYBAS = 'printf "%s\\n" "$@" > bas_args.txt\n'
-SHYPARTS = 'printf "%s\\n" "$@" > parts_args.txt\n'
 
 
 def _tool(shyfem_dir, name, body):
@@ -161,29 +160,6 @@ async def test_staged_copy_is_removed_when_a_step_fails(shyfem_dir, session_fact
     wf, _ = await _run(shyfem_dir, session_factory, work, work / "GRID" / NAME)
 
     assert wf.status == WorkflowStatus.FAILED
-    assert not (work / NAME).exists()
-
-
-@pytest.mark.asyncio
-async def test_full_simulation_partitions_the_staged_basin(shyfem_dir, session_factory, work):
-    _tool(shyfem_dir, "shyparts", SHYPARTS)
-    _tool(shyfem_dir, "shyfem", "exit 1\n")  # stop after partitioning
-    strf = work / "run.str"
-    strf.write_text("$title\n$end\n")
-    wf, _ = await _run(
-        shyfem_dir,
-        session_factory,
-        work,
-        work / "GRID" / NAME,
-        template="full_simulation",
-        input_str=str(strf),
-        mpi_np=2,
-    )
-
-    assert wf.step_results["grid_prep"]["status"] == "completed"
-    assert wf.step_results["partitioning"]["status"] == "completed"
-    assert (work / "parts_args.txt").read_text().split() == ["-np", "2", str(work / "mm.bas")]
-    assert wf.status == WorkflowStatus.FAILED  # the fake shyfem stops it
     assert not (work / NAME).exists()
 
 

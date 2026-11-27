@@ -120,7 +120,13 @@ class TestRunDropdownsWithProject:
         s = pw_page.locator("select#run-wf_input_str")
         expect(s).to_be_attached(timeout=10000)
         expect_option(s, "sim.str")
+        # The default template (full_simulation) takes its grid from the STR (#352):
+        # no grid picker, a note instead. Only grid_only uses {input_grd}.
+        expect(pw_page.locator("select#run-wf_input_grd")).to_have_count(0)
+        expect(pw_page.get_by_text("The grid is the one the STR's $title names")).to_be_visible()
+        pw_page.locator("select#run-wf_template").select_option("grid_only")
         g = pw_page.locator("select#run-wf_input_grd")
+        expect(g).to_be_attached(timeout=10000)
         expect_option(g, "mesh.grd")
         w = pw_page.locator("select#run-wf_working_dir")
         expect(w).to_have_value(str(tmp_path))

@@ -34,7 +34,6 @@ NO_OUTPUT_MESSAGE = (
     "such as idtout (hydrodynamics) or idtcon (tracers) in $para."
 )
 SHYPRE = 'g="${@: -1}"\ncp "$g" "${g%.grd}.bas"\n'
-SHYPARTS = "exit ${PARTS_EXIT:-0}\n"
 SHYELAB = 'printf "%s\\n" "$@" > elab_args.txt\n'
 GRID = "mm.grd"
 
@@ -73,7 +72,6 @@ def shyfem_dir(tmp_path, db):
     (d / "bin").mkdir(parents=True)
     _tool(d, "shyelab", SHYELAB)
     _tool(d, "shypre", SHYPRE)
-    _tool(d, "shyparts", SHYPARTS)
     return d
 
 
@@ -136,16 +134,16 @@ async def test_no_output_fails_with_the_specific_message(shyfem_dir, session_fac
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("parts_exit", ["0", "9"])
 async def test_full_simulation_without_output_gives_the_same_message(
-    shyfem_dir, session_factory, work, monkeypatch, parts_exit
+    shyfem_dir, session_factory, work
 ):
-    monkeypatch.setenv("PARTS_EXIT", parts_exit)
+    # The full simulation derives its grid from the STR's $title (#352).
+    (work / "run.str").write_text("$title\nt\nrun\nmm\n$end\n")
     _shyfem_writing(shyfem_dir)
     wf, queue = await _run(shyfem_dir, session_factory, work, template="full_simulation")
 
     assert wf.status == WorkflowStatus.FAILED
-    assert wf.step_results["partitioning"]["status"] == "completed"
+    assert wf.step_results["grid_prep"]["status"] == "completed"
     assert wf.error_message == "Step 'postprocess' error: " + NO_OUTPUT_MESSAGE
     assert "shyelab" not in [j.tool_name for j in queue._jobs.values()]
 

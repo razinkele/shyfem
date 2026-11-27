@@ -110,15 +110,10 @@ class TestWorkflowTemplates:
                 assert step.name
                 assert step.tool_name
 
-    def test_full_simulation_has_four_steps(self):
-        """Test full_simulation pipeline has 4 steps."""
+    def test_full_simulation_has_three_steps(self):
+        """full_simulation prepares the STR's grid, simulates, post-processes (#352)."""
         tpl = WORKFLOW_TEMPLATES["full_simulation"]
-        assert len(tpl["steps"]) == 4
-        names = [s.name for s in tpl["steps"]]
-        assert "grid_prep" in names
-        assert "partitioning" in names
-        assert "simulation" in names
-        assert "postprocess" in names
+        assert [s.name for s in tpl["steps"]] == ["grid_prep", "simulation", "postprocess"]
 
     def test_offline_tracer_template_exists(self):
         """Test that offline_tracer template is defined."""
@@ -325,10 +320,12 @@ class TestWorkflowEngine:
 
         mock_queue.submit = slow_submit
 
+        _grid(tmp_path, "t.grd")
+        (tmp_path / "t.str").write_text("$title\nt\nrun\nt\n$end\n")  # names t.grd (#352)
         wf_id = await engine.create_workflow(
             "full_simulation",
             working_dir=tmp_path,
-            params={"input_grd": _grid(tmp_path, "t.grd"), "input_str": "/tmp/t.str"},
+            params={"input_str": str(tmp_path / "t.str")},
         )
         await asyncio.sleep(0.1)
 

@@ -1,7 +1,7 @@
 """Workflow engine for multi-step SHYFEM job chaining.
 
 Supports predefined workflows like:
-  Grid Prep -> Partition -> Simulate -> Post-process
+  Grid Prep (of the grid the STR names) -> Simulate -> Post-process
 
 Each workflow is a sequence of steps that auto-chain on completion.
 Steps can reference outputs from previous steps.
@@ -119,17 +119,15 @@ class WorkflowInstance:
 WORKFLOW_TEMPLATES = {
     "full_simulation": {
         "name": "Full Simulation Pipeline",
-        "description": "Grid Prep -> Partition -> Simulate -> Post-process",
+        "description": "Prepares the grid the STR names (rewrites its .bas) -> Simulate -> Post-process",
+        # The grid is not a launch parameter: create_workflow derives
+        # {basin_grd} from the STR's $title (#352).
+        "grid_from_str": True,
         "steps": [
             WorkflowStep(
                 name="grid_prep",
                 tool_name="shypre",
-                args_template=["{input_grd}"],
-            ),
-            WorkflowStep(
-                name="partitioning",
-                tool_name="shyparts",
-                args_template=["-np", "{mpi_np}", "{grid_prep.output_files[0]}"],
+                args_template=["{basin_grd}"],
             ),
             WorkflowStep(
                 name="simulation",
@@ -198,6 +196,74 @@ WORKFLOW_TEMPLATES = {
         ],
     },
 }
+
+
+def template_uses_input_grd(template_key: str) -> bool:
+    """Whether the template's steps take a launch-time ``{input_grd}``."""
+    tpl = WORKFLOW_TEMPLATES.get(template_key)
+    return bool(tpl) and any("{input_grd}" in a for s in tpl["steps"] for a in s.args_template)
+
+
+def basin_grid_for_str(str_path: "str | Path | None", working_dir: Path) -> Path:
+    """The ``.grd`` of the basin an STR names, as the core reads the name.
+
+    The basin is the third line of ``$title`` after blank lines and lines
+    starting with ``#`` or ``!``; the whole stripped line is the name (a
+    trailing comment is part of it). It is relative to the working folder.
+    With no extension or ``.bas`` the core reads ``<name>.bas``, which
+    ``shypre`` writes next to ``<name>.grd``; a ``.grd`` name would make it
+    read the ``.grd`` itself, and any other extension stops it.
+
+    Raises ValueError, with a message for the user, when the STR cannot be
+    used for the Full Simulation Pipeline.
+    """
+    import os
+
+    if not str_path:
+        raise ValueError("The Full Simulation Pipeline needs an STR file.")
+    str_name = Path(str_path).name
+
+    from shyfem_ui.services.parser_str import StrParser
+
+    try:
+        title = StrParser.parse_file(str_path).sections.get("title")
+    except OSError:
+        title = None
+    lines = [
+        line.strip()
+        for line in (title.raw_lines if title else [])
+        if line.strip() and line.strip()[0] not in "#!"
+    ]
+    if len(lines) < 3:
+        raise ValueError(
+            f"Cannot find the basin name in {str_name}: "
+            "it is the third line of its $title section."
+        )
+    basin = lines[2]
+
+    ext = Path(basin).suffix
+    if ext == ".grd":
+        raise ValueError(
+            f"{str_name} names the basin {basin} with the .grd extension, so the "
+            "simulation would read the .grd and not the prepared basin. Name it "
+            "without an extension, or use Simulate + Post-process."
+        )
+    if ext not in ("", ".bas"):
+        raise ValueError(f"{str_name} names the basin {basin}; the extension must be .bas or none.")
+
+    root = os.path.abspath(working_dir)
+    grd = os.path.normpath(os.path.join(root, (basin[: -len(ext)] if ext else basin) + ".grd"))
+    if not Path(grd).resolve().is_relative_to(Path(root).resolve()):
+        raise ValueError(
+            f"The grid {basin} that {str_name} names is outside the working folder. "
+            "Move it into the working folder, or use Simulate + Post-process."
+        )
+    if not os.path.isfile(grd):
+        raise ValueError(
+            f"The grid {os.path.relpath(grd, root)} that {str_name} names "
+            "does not exist in the working folder."
+        )
+    return Path(grd)
 
 
 def _parse_dt(value: str | datetime | None) -> datetime | None:
@@ -467,6 +533,8 @@ class WorkflowEngine:
         return {
             key: {
                 "name": tpl["name"],
+                "uses_input_grd": template_uses_input_grd(key),
+                "grid_from_str": bool(tpl.get("grid_from_str")),
                 "description": tpl["description"],
                 "steps": [{"name": s.name, "tool_name": s.tool_name} for s in tpl["steps"]],
             }
@@ -500,7 +568,12 @@ class WorkflowEngine:
         if not template:
             raise ValueError(f"Unknown workflow template: {template_key}")
 
-        params = params or {}
+        params = dict(params or {})
+        if template.get("grid_from_str"):
+            # Before anything is stored: a refusal leaves no workflow and no job.
+            params["basin_grd"] = str(
+                basin_grid_for_str(params.get("input_str"), Path(working_dir or "."))
+            )
 
         # Deep copy steps from template (no options field)
         steps = []
