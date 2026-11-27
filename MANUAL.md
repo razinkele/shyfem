@@ -1560,7 +1560,7 @@ Every option in the table below stops the run at start-up on more than one proce
 | `artype` | `$lagrg` | `/= -1` | transit time out of an area |
 | `ldecay` | `$lagrg` | `> 0` | decay of particles |
 | `lgrini` | `$lagrg` | file name given | initial distribution from a file |
-| `ised` | `$lagrg` | `> 0` | sediment module |
+| `ised` | `$lagrg` | `> 0` | sediment module (with `ilagr = 3` a settling particle that reaches the bed within a step deposits there, with probability `1 - 0.5**(tcd/tau)` for a bottom stress `tau` below its threshold `tcd`; not supported with MPI) |
 | `ilarv` | `$lagrg` | `> 0` | larvae module |
 | `icnn` | `$connec` | `/= 0` | connectivity |
 | `lgrpps` | `$boundN` | `/= 0` on any boundary | continuous release at a boundary |

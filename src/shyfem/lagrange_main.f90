@@ -138,6 +138,8 @@
 	use shympi
 	use femtime
 	use mod_lagrange_random, only : lgr_random_set_step
+	use mod_bstress, only : taubot
+	use mod_sediment, only : isedi
 
 	use para
 	implicit none
@@ -353,6 +355,10 @@
 !---------------------------------------------------------------
 ! transport of particles 
 !---------------------------------------------------------------
+
+	! the bottom stress of the deposition test (#311), once per step,
+	! before the tracking (track_finish, lgr_sediment); not for ised = 0
+	if( bsedim .and. isedi == 0 ) call bottom_stress(taubot)
 
 	lgr_step = lgr_step + 1		!set here, only read inside drogue
  	call drogue(dtime)
@@ -861,6 +867,8 @@
 ! then the steps after diff_body and lag_stk ran and stored the state)
 
 	use mod_lagrange
+	use lgr_sedim_module, only : nls,lgr_dep_test
+	use levels, only : ilhv
 	use shympi, only : ip_int_elem
 
 	implicit none
@@ -875,7 +883,8 @@
 	double precision xi(3)
 	integer ty
 	real dt,ttime,tmax
-	logical bpark
+	real tau,rdep
+	logical bpark,bdep
 	integer ierr
 	logical lgr_internal_failed
 
@@ -922,11 +931,28 @@
 	    y  = lgr_park_xy(2,i)
 	  end if
 	  bpark = .false.
-	  if( phase < 2 ) then
+	  ! deposition (#311, rule A): a settling particle that the advection
+	  ! has brought to the bed (the bottom layer, z = 1) deposits here,
+	  ! with the test of lgr_sediment (lgr_dep_test): layer -1, z = 1, no
+	  ! vertical walk in this step. The layer travels with the particle
+	  ! (hand-over), so nothing else has to
+	  if( bsedim .and. bvdiff .and. phase == 0 ) then
+	    if( ty >= 1 .and. ty <= nls .and. ie > 0 .and. z >= 1.		&
+     &			.and. lgr_ar(i)%sinking > 0.d0 ) then
+	      if( lb == ilhv(ie) ) then
+	        call lgr_dep_test(id,ty,ie,xi,tau,rdep,bdep)
+	        if( bdep ) then
+	          lb = -1
+	          z  = 1.
+	        end if
+	      end if
+	    end if
+	  end if
+	  if( lb > 0 .and. phase < 2 ) then
 	    call diff_body(i,id,ty,x,y,z,xi,ie,lb,ttime,phase==1,bpark)
 	    if( lgr_internal_failed() ) return	!recorded in the loop (#305)
 	  end if
-	  if( .not. bpark ) then
+	  if( .not. bpark .and. lb > 0 ) then
 	    call lag_stk(i,id,ty,x,y,xi,ie,lb,ttime,phase==2,bpark)
 	    if( lgr_internal_failed() ) return	!recorded in the loop (#305)
 	  end if
@@ -940,7 +966,7 @@
 	    lgr_ar(i)%type      = ty
 	    return
 	  end if
-	  call lag_beach(i,id,xi,ie,ty)
+	  if( lb > 0 ) call lag_beach(i,id,xi,ie,ty)
 	end if
 
 !---------------------------------------------------------------

@@ -40,6 +40,8 @@ The owner's decision is to fix all four in **one change**, so that `ilagr = 3` r
 
   *(My call: this lies outside the four issues. It is recorded here, and will be measured and filed as a separate issue.)*
 
+  *(Update: #311 implements rule A for this: a settling particle that the advection brings to the bed within the step deposits there, with the stress test of `lgr_sediment` (`lgr_dep_test`), and takes no walk in that step. `lgr_sediment`'s z = 1 branch stays.)*
+
 **Anti-goals.** The change fails, even if it works, if:
 - the walk's own cost (walk-only) is more than **2.1x** today's walk on either reference case, timed on the production code. The owner said "up to 2x slower is fine" and confirmed that this means the walk's own cost, not the whole run. On 2026-11-25 they accepted up to about 2.1x, because the chosen setting measured 2.06–2.08x on the prototype. The reference cases are the `check_lgr_fixes.sh ilagr3` reproducer and the particle-heavy GOTM case without advection (39,960 particles). The ratio depends on the case: on the #299 forced case it is about 1.5x, and on the parabolic test profile 2.2–3.1x (computed, not timed);
 - anything is written or aborted inside the OpenMP particle loop;

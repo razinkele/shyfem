@@ -52,6 +52,7 @@
         double precision, allocatable :: ws(:)   !particle settling velocity [mm/s]
         real, allocatable             :: tcd(:)  !critical stress deposition [N/m**2]
         real                          :: tce     !critical threshold for erosion [N/m**2]
+        real, parameter               :: rfa = 0.5 !probabilistic factor [0.3-0.5]
 
 !================================================================
         contains
@@ -99,6 +100,48 @@
 	end if
 
         end subroutine lgr_sedim_init
+
+!*******************************************************************
+! the deposition test of a particle at the bed (#311), the one place of it
+! (called by track_finish where the settling brings a particle to the bed,
+! and by lgr_sediment for a particle at z = 1): the bottom stress tau at
+! the position xi in the element ie and the draw r of the particle id in
+! this step (lgr_random, site lgr_rnd_sedim, keyed on id and step: the
+! same value wherever it is called in the step), and bdep, true if
+! tau < tcd(nr) and r**(tau/tcd(nr)) >= rfa (probability 1 - rfa**(tcd/tau)
+! for 0 < tau < tcd, 1 for tau = 0). nr is the sediment class, 1 ... nls.
+! Reads module data only, so it can be called from the OpenMP particle loop
+
+        subroutine lgr_dep_test(id,nr,ie,xi,tau,r,bdep)
+
+        use basin, only : nen3v
+        use mod_bstress, only : taubot
+        use mod_lagrange_random, only : lgr_random, lgr_rnd_sedim
+
+        implicit none
+
+        integer, intent(in)           :: id	!id of the particle
+        integer, intent(in)           :: nr	!sediment class
+        integer, intent(in)           :: ie	!element (local, > 0)
+        double precision, intent(in)  :: xi(3)	!internal coordinates
+        real, intent(out)             :: tau	!bottom stress at the particle
+        real, intent(out)             :: r	!the draw of the particle
+        logical, intent(out)          :: bdep	!deposition test passed
+
+        integer                       :: ii(3)
+        real                          :: tcdp,perc
+
+        tcdp = tcd(nr)			!deposition threshold
+        ii   = nen3v(:,ie)
+        tau  = sum(taubot(ii)*xi)	!bottom stress at particle position
+        r    = lgr_random(id,lgr_rnd_sedim,0)	!random number
+        bdep = .false.
+        if( tau < tcdp ) then
+          perc = r**(tau/tcdp)
+          bdep = ( perc >= rfa )
+        end if
+
+        end subroutine lgr_dep_test
 
 !*******************************************************************
 ! assign sediment class, settlign velocity and grainsize to particle
@@ -198,9 +241,6 @@
 	use mod_lagrange
 	use lgr_sedim_module
 	use levels
-	use mod_bstress, only : taubot
-	use mod_sediment, only : isedi
-	use mod_lagrange_random, only : lgr_random, lgr_rnd_sedim
 
 	implicit none
 
@@ -210,12 +250,11 @@
 	integer, save           :: icall = 0 
         integer                 :: nr
 	double precision	:: sv
-	real		        :: tau,tcdp
+	real		        :: tau
 	real                    :: r,perc
+	logical			:: bdep
 	integer			:: id
-	real			:: rfa = 0.5   !probabilistic factor [0.3-0.5]
         double precision 	:: xi(3)
-        integer          	:: ii(3)
 
 !-----------------------------------------------------
 ! initialization
@@ -228,10 +267,9 @@
 	end if
 
 !-----------------------------------------------------
-! compute bottom shear stresses 
+! the bottom shear stress is computed once per step by lagrange, before
+! the tracking (#311: track_finish needs it)
 !-----------------------------------------------------
-
-	if ( isedi == 0 ) call bottom_stress(taubot)
 
 !-----------------------------------------------------
 ! Loop over particles
@@ -255,18 +293,14 @@
 	    call shympi_abort_internal('error stop lgr_sediment: particle'	&
      &		//' type is not a sediment class')
 	  end if
-	  tcdp = tcd(nr)		!deposition threshold
           xi   = lgr_ar(i)%actual%xi(:)
-          ii   = nen3v(:,ie)
-          tau  = sum(taubot(ii)*xi)	!bottom stress at particle position
-          r = lgr_random(id,lgr_rnd_sedim,0)	!random number
+	  call lgr_dep_test(id,nr,ie,xi,tau,r,bdep)	!stress, draw, test
 
 !         -----------------------------------------------------
 !         Deposition of particle 
 !         -----------------------------------------------------
-          if ( tau < tcdp ) then
-            perc = r**(tau/tcdp)
-            if ( lb /= -1 .and. z == 1. .and. perc >= rfa ) then 
+          if ( tau < tcd(nr) ) then
+            if ( lb /= -1 .and. z == 1. .and. bdep ) then 
                lgr_ar(i)%actual%l = -1    		!particle reached bottom
             end if
 

@@ -111,6 +111,7 @@
 ! 13.11.2024    ggu     marked old code with INTEL_BUG_OLD
 ! 03.12.2024    lrp     new parameter irain for the coupled model
 ! 25.01.2025    ggu     tentative cubic interpolation for wind (bbspline)
+! 27.11.2026    arb     pressure in mbar for rh2dp in meteo_get_heat_extra (#319)
 !
 ! notes :
 !
@@ -1759,8 +1760,11 @@
         real uuw                        !u-component wind speed [m/s]
         real vvw                        !v-component wind speed [m/s]
 
+	real pp				!atmospheric pressure [mbar]
+
         !dp  = metdew(k)  
-	call rh2dp(mettair(k),ppv(k),methum(k),dp)
+	pp = 0.01 * ppv(k)		!ppv is in Pa, rh2dp wants mbar (#319)
+	call rh2dp(mettair(k),pp,methum(k),dp)
         uuw = wxv(k)
         vvw = wyv(k)
 
