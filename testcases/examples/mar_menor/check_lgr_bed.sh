@@ -205,10 +205,11 @@
 # over s times the concentration of the band 0.2 m above the bed (the
 # deposits over the sum of s/0.2 m of the particles in it, mean of the two
 # ends of each hour) in BANDLO ... BANDHI, at least DEPMIN deposits.
-# Measured (the final head; 15 min output, then 1 h as here): crossing ratio
-# 1.013 (bd5_a), band ratio 0.999 (idt 300, K 3.3e-7) and 0.995 (idt 600, K
-# 3e-4); the old rule (0 deposits) gives 0 (RED), and the first form 0.77
-# for bd5_b.
+# Measured (the final head, as here, output every hour): crossing ratio 1.013
+# (3096 class-3 deposits of 3055 crossings, bd5_a), band ratio 1.002 (5246
+# deposits, bd5_a) and 0.978 (4860, bd5_b).  The reference build gives 0 and 0
+# (0.000, 1 deposit for bd5_b: FAIL), and the first form of the rule (deposit
+# only if still in the bottom layer after the walk) 0.752 for bd5_b (FAIL).
 #
 # Measured (2026-11-25), part 1: the bottom 5 % and 15 % at 24:00, the
 # chi-square (release-column weight) mean over 12:00 ... 24:00 and at
