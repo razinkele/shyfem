@@ -145,7 +145,7 @@
 	integer ifile
 	integer idold,id
 
-	character*80 file
+	character*1024 file
 
 	call clo_get_file(ifile,file)
 	call open_next_file_by_name(file,idold,id)
@@ -161,7 +161,7 @@
 
 	implicit none
 
-	character*80 file
+	character*(*) file
 	integer idold,id
 
 	integer ierr
@@ -224,7 +224,7 @@ c nunit is 0 if no other file exists
         character*(*) status
         integer nunit
 
-        character*80 file
+        character*1024 file
         integer ifileo
 
         nunit = 0
@@ -253,7 +253,7 @@ c nunit is 0 if no other file exists
 	logical bok
 	integer datetime(2)
 	double precision dtime
-	character*80 file
+	character*1024 file
 
 	atstart = -1.
 
