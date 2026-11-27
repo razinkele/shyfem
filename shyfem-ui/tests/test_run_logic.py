@@ -717,3 +717,17 @@ class TestListScopedWorkflows:
         e = _FakeWorkflowEngine({"mine": 2, "theirs": 3})
         got = list_scoped_workflows(e, True, lambda: VIEWER, show_all_fn=lambda: True)
         assert got == ["mine"]
+
+
+def test_run_page_does_not_offer_shyparts():
+    """#342: the page passes no -np, so every shyparts run it queued exited 7;
+    the Partitioning page is where shyparts runs."""
+    from shyfem_ui.pages.run import RUN_TOOL_CHOICES
+    from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+    assert "shyparts" not in RUN_TOOL_CHOICES
+    assert "shyfem" in RUN_TOOL_CHOICES and "shypre" in RUN_TOOL_CHOICES
+    # The choices stay inside what the wrapper may run, and shyparts stays
+    # runnable for the pages that use it.
+    assert set(RUN_TOOL_CHOICES) <= set(ShyfemWrapper.ALLOWED_TOOLS)
+    assert "shyparts" in ShyfemWrapper.ALLOWED_TOOLS

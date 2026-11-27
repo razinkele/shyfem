@@ -39,8 +39,10 @@ class TestJobSubmissionForm:
         _switch_tab(pw_page, "Run")
         select = pw_page.locator("#run-tool_select")
         options_text = " ".join(select.locator("option").all_inner_texts())
-        for tool in ["shyfem", "shypre", "shybas", "shyparts", "shyelab", "shyplot"]:
+        for tool in ["shyfem", "shypre", "shybas", "shyelab", "shyplot"]:
             assert tool in options_text, f"Tool '{tool}' not found in dropdown"
+        # shyparts runs on the Partitioning page, not here (#342).
+        assert "shyparts" not in options_text
 
     def test_mpi_toggle(self, pw_page):
         """Test enabling MPI shows the process count input."""

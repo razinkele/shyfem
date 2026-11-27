@@ -64,6 +64,20 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 
 
+# The tools the Run page submits. shyparts is not one (#342): the page passes
+# no -np, so it exits 7 ("no np given"), and shyparts writes next to its input,
+# outside the job folder. The Partitioning page stages the grid properly.
+RUN_TOOL_CHOICES = {
+    "shyfem": "shyfem (Simulation)",
+    "shypre": "shypre (Grid Prep)",
+    "shybas": "shybas (Basin Analysis)",
+    "shyelab": "shyelab (Post-process)",
+    "shyplot": "shyplot (Plotting)",
+    "exgrd": "exgrd (Grid Extraction)",
+    "shyadj": "shyadj (Mesh Adjustment)",
+}
+
+
 @module.ui
 def run_ui() -> ui.Tag:
     """Job execution page UI."""
@@ -85,16 +99,7 @@ def run_ui() -> ui.Tag:
                     ui.input_select(
                         "tool_select",
                         "Tool",
-                        choices={
-                            "shyfem": "shyfem (Simulation)",
-                            "shypre": "shypre (Grid Prep)",
-                            "shybas": "shybas (Basin Analysis)",
-                            "shyparts": "shyparts (Partitioning)",
-                            "shyelab": "shyelab (Post-process)",
-                            "shyplot": "shyplot (Plotting)",
-                            "exgrd": "exgrd (Grid Extraction)",
-                            "shyadj": "shyadj (Mesh Adjustment)",
-                        },
+                        choices=RUN_TOOL_CHOICES,
                     ),
                     ui.output_ui("input_file_picker"),
                     ui.output_ui("working_dir_picker"),
