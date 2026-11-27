@@ -187,7 +187,7 @@ async def test_full_simulation_partitions_the_staged_basin(shyfem_dir, session_f
     assert not (work / NAME).exists()
 
 
-# --- the single shypre job on the Run page ---------------------------------
+# --- stage_grid and stage_tool_input ----------------------------------------
 
 
 def test_stage_grid_names_the_folder_it_is_given(tmp_path):
@@ -239,6 +239,25 @@ def test_stage_tool_input_refuses_a_different_file_of_that_name(work):
     with pytest.raises(ValueError, match="working folder"):
         stage_tool_input("shypre", work / "GRID" / NAME, work)
     assert (work / NAME).read_text() == "other\n"
+
+
+def test_stage_tool_input_creates_a_working_folder_that_does_not_exist_yet(work):
+    from shyfem_ui.services.run_logic import stage_tool_input
+
+    new = work / "fresh" / "run1"  # confine_path(for_write=True) accepts this
+    got = stage_tool_input("shypre", work / "GRID" / NAME, new)
+    assert got == new / NAME and new.is_dir() and got.read_text() == "grid v1\n"
+
+
+def test_stage_tool_input_creates_nothing_for_other_tools(work):
+    from shyfem_ui.services.run_logic import stage_tool_input
+
+    new = work / "fresh"
+    stage_tool_input("shyelab", work / "GRID" / NAME, new)
+    assert not new.exists()
+
+
+# --- the single shypre job on the Run page ----------------------------------
 
 
 def test_run_page_stages_before_it_builds_the_spec():

@@ -247,9 +247,10 @@ def stage_tool_input(tool_name: str, validated_input: Path, validated_workdir: P
     ``shypre`` writes ``<grid>.bas`` next to its input, but a job's outputs
     are collected only from its working folder and only that folder was
     write-checked. For shypre a grid elsewhere is therefore copied into the
-    working folder (the copy stays: the page cannot see when a detached job
-    ends, and it sits next to the ``.bas`` the job made). Every other tool
-    writes into its working folder, so its input is returned unchanged.
+    working folder, created first if it is new (the copy stays: the page
+    cannot see when a detached job ends, and it sits next to the ``.bas`` the
+    job made). Every other tool writes into its working folder, so its input
+    is returned unchanged and nothing is created.
 
     Raises:
         ValueError: the working folder holds a different file of that name.
@@ -259,6 +260,7 @@ def stage_tool_input(tool_name: str, validated_input: Path, validated_workdir: P
         return validated_input
     from shyfem_ui.services.partitioning_logic import stage_grid
 
+    validated_workdir.mkdir(parents=True, exist_ok=True)
     staged, _created = stage_grid(validated_input, validated_workdir, folder="working folder")
     return staged
 
