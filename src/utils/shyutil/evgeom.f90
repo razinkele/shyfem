@@ -579,10 +579,8 @@
 ! calls that one inside its OpenMP loop, where nothing may write or stop;
 ! xy2xi_write_error writes the lines). A bare stop (exit code 0): for
 ! the tools; the model calls xy2xi_ierr and stops through
-! shympi_abort_internal (#305), with one known exception: femintp_xi
-! (below), the upwind value of TVD (itvd = 2, also on several
-! processes), calls this routine inside the OpenMP tasks of conz3d_omp,
-! where no abort may come from a worker either (issue #317)
+! shympi_abort_internal (#305); the upwind value of TVD (itvd = 2) uses
+! femintp_xi_ierr (#317), which returns the error of xy2xi_ierr
 
 	implicit none
 
@@ -1622,12 +1620,62 @@
 
 !***********************************************************
 
+        subroutine femintp_xi_ierr(ie,z,xp,yp,zp,ierr)
+
+! interpolation in element (using xi coordinates), as femintp_xi, but
+! writes nothing and never stops (#317): the error of xy2xi_ierr is
+! returned in ierr (0 no error, -1 ie out of range, 1 or 3 the error of
+! adjust_xi; see xy2xi_ierr), zp is then 0. For a caller inside an OpenMP
+! task (tvd_get_upwind_c in the tasks of conz3d_omp), which records the
+! error and checks it after the parallel region.
+!
+! needs array ev
+
+        use evgeom
+
+        implicit none
+
+        integer, intent(in) :: ie      !element
+        real, intent(in) :: z(3)       !values on nodes
+        real, intent(in) :: xp,yp      !coordinates of point
+        real, intent(out) :: zp        !interpolated value (return)
+        integer, intent(out) :: ierr   !error code, 0 = ok
+
+        integer :: ii
+        double precision :: zh
+        double precision :: x,y
+        double precision :: xi(3)
+
+	x = xp
+	y = yp
+	call xy2xi_ierr(ie,x,y,xi,ierr)
+
+	if( ierr /= 0 ) then
+	  zp = 0.
+	  return
+	end if
+
+        zh=0.
+        do ii=1,3
+	  zh = zh + z(ii) * xi(ii)
+        end do
+
+        zp = zh
+
+        end
+
+!***********************************************************
+
         subroutine femintp_xi(ie,z,xp,yp,zp)
 
 ! interpolation in element (using xi coordinates)
 !
 ! interpolates in element ie from nodal values z to point xp,yp
 ! result is in zp
+!
+! stops on an error, as xy2xi (a bare stop, exit code 0, after the lines
+! of xy2xi_write_error); the model does not call this routine since #317
+! (tvd_get_upwind_c calls femintp_xi_ierr inside the OpenMP tasks)
 !
 ! needs array ev
 
@@ -1640,21 +1688,17 @@
         real, intent(in) :: xp,yp      !coordinates of point
         real, intent(out) :: zp         !interpolated value (return)
 
-        integer :: ii
-        double precision :: zh
+        integer :: ierr
         double precision :: x,y
-        double precision :: xi(3)
+
+        call femintp_xi_ierr(ie,z,xp,yp,zp,ierr)
+        if( ierr == 0 ) return
 
 	x = xp
 	y = yp
-	call  xy2xi(ie,x,y,xi)
-
-        zh=0.
-        do ii=1,3
-	  zh = zh + z(ii) * xi(ii)
-        end do
-
-        zp = zh
+	call xy2xi_write_error(ie,x,y,ierr)
+	if( ierr < 0 ) stop 'error stop xy2xi: ie<=0'
+	stop 'error stop xy2xi: wrong xi'
 
         end
 

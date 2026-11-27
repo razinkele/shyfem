@@ -626,6 +626,12 @@
 	   call ecological_module	!ecological model
            call atoxi3d			!toxi
            call mercury_module
+!	   sedi, atoxi3d, mercury_module and the ecological model run their
+!	   transport in parallel regions of their own, where conz3d_omp does
+!	   not check: an error of the TVD upwind value recorded there is
+!	   checked here, on the main thread outside any parallel region,
+!	   every time step (also the last), before the outputs (#317)
+	   call tvd_check_error(.true.)
 	   call beaching_run
 
            call lagrange
@@ -1036,6 +1042,13 @@
 !$OMP END TASK
 
 !$OMP TASKWAIT
+
+!	all transports (T/S, tracers, bfm) of this step are done here: an
+!	error of the TVD upwind value recorded in their tasks is checked on
+!	the master thread, once (#317); the T/S output record of the step
+!	is written by barocl before this point (with the first-order
+!	fallback value for the failed upwind value)
+	call tvd_check_error(.true.)
 
 !$OMP END MASTER
 

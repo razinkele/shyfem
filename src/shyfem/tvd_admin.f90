@@ -145,6 +145,8 @@
 	btvd2 = itvd == 2
 	write(6,*) 'tvd type: ',itvd_type
 
+	if( btvd2 ) call tvd_test_hook_init
+
 	if( btvd2 ) call mod_tvd_init(nel)
 
 	if( btvd2 ) then
@@ -605,6 +607,101 @@
         
 !*****************************************************************
 
+        subroutine tvd_test_hook_init
+
+! reads the test hook TVD_TEST_ERROR=K once (#317), on the master process
+! only (so that exactly one error is made on several processes); called
+! from tvd_init, outside the parallel region
+
+	use mod_tvd
+	use shympi
+
+        implicit none
+
+	character(len=32) :: sval
+	integer :: ist,ios,ir
+
+	tvd_test_event = 0
+	tvd_test_left = 0
+
+	call get_environment_variable('TVD_TEST_ERROR',sval,status=ist)
+	if( ist /= 0 ) return
+	read(sval,*,iostat=ios) ir
+	if( ios /= 0 ) return
+	if( ir < 1 .or. ir > 3 ) return
+	if( .not. shympi_is_master() ) return
+
+	tvd_test_event = ir
+	tvd_test_left = 1
+	write(6,'(a,i0,a)') ' test hook TVD_TEST_ERROR: an error of kind '	&
+     &		,tvd_test_event,' (1 xy2xi, 2 lremote, 3 xy2xi always)'	&
+     &		//' in the first upwind value'
+
+	end
+
+!*****************************************************************
+
+	subroutine tvd_check_error(bmaster)
+
+! checks the error record of tvd_get_upwind_c (#317): an error is written
+! once and ends the run through shympi_abort_internal (exit code 33).
+! bmaster false (conz3d_omp, conz3d_orig): acts only outside a parallel
+! region (omp_in_parallel false); inside one the transport is a task, MPI
+! is initialised for the main thread only (MPI_THREAD_FUNNELED) and
+! other transports may still run tvd_get_upwind_c, so the record is left
+! for the call with bmaster true, made on the master thread after the
+! TASKWAIT that closes the transport tasks of the time step
+! (shyfem_subs.f90). The record is read under the lock, and only the
+! call that claims it (tvd_err_reported) writes and aborts. Every
+! process checks its own record.
+
+	use mod_tvd
+	use basin
+	use shympi
+!$	use omp_lib
+
+        implicit none
+
+	logical, intent(in) :: bmaster
+
+	character(len=300) :: text
+	logical :: binpar,bclaim
+	integer :: n,code,ie,ienew,l
+	double precision :: x,y
+
+	binpar = .false.
+!$	binpar = omp_in_parallel()
+	if( binpar .and. .not. bmaster ) return
+
+	bclaim = .false.
+!$OMP CRITICAL (tvd_error_record)
+	if( tvd_err_n > 0 .and. .not. tvd_err_reported ) then
+	  tvd_err_reported = .true.
+	  bclaim = .true.
+	  n = tvd_err_n
+	  code = tvd_err_code
+	  ie = tvd_err_ie
+	  ienew = tvd_err_ienew
+	  l = tvd_err_l
+	  x = tvd_err_x
+	  y = tvd_err_y
+	end if
+!$OMP END CRITICAL (tvd_error_record)
+	if( .not. bclaim ) return
+
+	write(text,'(a,i0,a,i0,a,i0,a,i0,a,2g14.6,a,i0,a)')		&
+     &		'error stop tvd_get_upwind_c: code ',code,		&
+     &		' (1/3 wrong xi, -1 element out of range, 4 lremote)'	&
+     &		//' at element ',ipev(ie),				&
+     &		' level ',l,' upwind element ',				&
+     &		ipev(ienew),' point ',x,y,				&
+     &		' (',n,' errors in all)'
+	call shympi_abort_internal(trim(text))
+
+	end
+
+!*****************************************************************
+
         subroutine tvd_get_upwind_c(ie,l,ic,id,cu,cv)
 
 ! computes concentration of upwind node (using info on upwind node)
@@ -622,7 +719,7 @@
 
 	logical bdebug
         integer ienew
-        integer ii,k,ipoint,lremote
+        integer ii,k,ipoint,lremote,ierr
         real xu,yu
         real c(3)
 	real cu2
@@ -644,7 +741,18 @@
         ienew = ietvdup(id,ic,ie)
 
         if( ienew .le. 0 ) return
-	if( lremote /= ilhv(ienew) ) stop 'error stop tvd_get_upwind_c: lremote'
+
+! an error is recorded, not written or stopped on (#317: this runs inside
+! the OpenMP tasks of conz3d_omp; tvd_check_error checks the record
+! outside the tasks); cu keeps the value the caller gave
+! it (the local value, tvd_fluxes), a defined value that is used only
+! until that check ends the run
+
+	if( tvd_test_take(2) .or. lremote /= ilhv(ienew) ) then
+	  call tvd_error_record(ie,ienew,l,4			&
+     &			,dble(xtvdup(id,ic,ie)),dble(ytvdup(id,ic,ie)))
+	  return
+	end if
 	if( lremote .lt. l ) return		!no such level in ienew element
 
         do ii=1,3
@@ -656,7 +764,13 @@
         yu = ytvdup(id,ic,ie)
 
         !call femintp(ienew,c,xu,yu,cu)		!TVD_OLD
-        call femintp_xi(ienew,c,xu,yu,cu)
+        call femintp_xi_ierr(ienew,c,xu,yu,cu2,ierr)
+	if( tvd_test_take(1) ) ierr = 1
+	if( ierr /= 0 ) then
+	  call tvd_error_record(ie,ienew,l,ierr,dble(xu),dble(yu))
+	  return
+	end if
+	cu = cu2
 
 	if( bdebug ) then
 	  xd = xu
