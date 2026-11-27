@@ -52,6 +52,7 @@ from shyfem_ui.services.run_logic import (  # re-exported for backward compat (t
     list_scoped_jobs,
     restart_info_text,
     restart_selection_denied_reason,
+    stage_tool_input,
     write_restart_str,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -907,6 +908,14 @@ def run_server(
                     f"Could not apply restart selection: {e}", type="error", duration=6
                 )
                 return
+
+        # shypre writes its .bas next to its input: a grid outside the
+        # write-checked working folder is copied in first (#348).
+        try:
+            validated_input = stage_tool_input(tool, validated_input, validated_workdir)
+        except (ValueError, OSError) as e:
+            ui.notification_show(f"Could not stage the input grid: {e}", type="error", duration=6)
+            return
 
         spec = build_job_spec(
             name=name,

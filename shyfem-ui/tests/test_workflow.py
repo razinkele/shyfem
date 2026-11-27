@@ -178,7 +178,7 @@ class TestWorkflowEngine:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
         )
         assert isinstance(wf_id, str)
         assert len(wf_id) > 0
@@ -198,7 +198,7 @@ class TestWorkflowEngine:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
         )
         await asyncio.sleep(0.5)
 
@@ -219,7 +219,7 @@ class TestWorkflowEngine:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
             user_id=7,
             project_id=3,
         )
@@ -230,10 +230,16 @@ class TestWorkflowEngine:
     @pytest.mark.asyncio
     async def test_list_workflows_filters_by_user(self, engine, tmp_path):
         mine = await engine.create_workflow(
-            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/a.grd"}, user_id=7
+            "grid_only",
+            working_dir=tmp_path,
+            params={"input_grd": _grid(tmp_path, "a.grd")},
+            user_id=7,
         )
         theirs = await engine.create_workflow(
-            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/b.grd"}, user_id=8
+            "grid_only",
+            working_dir=tmp_path,
+            params={"input_grd": _grid(tmp_path, "b.grd")},
+            user_id=8,
         )
         assert [w.id for w in engine.list_workflows(user_id=7)] == [mine]
         assert {w.id for w in engine.list_workflows()} >= {mine, theirs}
@@ -244,7 +250,7 @@ class TestWorkflowEngine:
         await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
         )
         await asyncio.sleep(0.1)
 
@@ -257,7 +263,7 @@ class TestWorkflowEngine:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
         )
         # Wait for completion
         for _ in range(50):
@@ -275,7 +281,7 @@ class TestWorkflowEngine:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
         )
         for _ in range(50):
             wf = engine.get_workflow(wf_id)
@@ -293,7 +299,7 @@ class TestWorkflowEngine:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
             name="My Custom Workflow",
         )
         wf = engine.get_workflow(wf_id)
@@ -322,7 +328,7 @@ class TestWorkflowEngine:
         wf_id = await engine.create_workflow(
             "full_simulation",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+            params={"input_grd": _grid(tmp_path, "t.grd"), "input_str": "/tmp/t.str"},
         )
         await asyncio.sleep(0.1)
 
@@ -591,7 +597,7 @@ class TestWorkflowPersistence:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/test.grd"},
+            params={"input_grd": _grid(tmp_path, "test.grd")},
         )
 
         # Wait for workflow to complete
@@ -705,6 +711,13 @@ def _recording_queue(output_files: list[str]):
     return queue
 
 
+def _grid(folder, name: str = "t.grd") -> str:
+    """A real grid file in ``folder``: the engine stages the grid, so it must exist (#348)."""
+    path = folder / name
+    path.write_text("grid\n")
+    return str(path)
+
+
 async def _drive(engine: WorkflowEngine, wf_id: str) -> asyncio.Task:
     """Wait (bounded) for the workflow's driver task to end and return it."""
     task = engine._polling_tasks.get(wf_id)
@@ -726,7 +739,7 @@ class TestUnresolvableStepArgs:
         queue = _recording_queue(output_files=[])
         engine = WorkflowEngine(queue, session_factory=session_factory)
         wf_id = await engine.create_workflow(
-            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/t.grd"}
+            "grid_only", working_dir=tmp_path, params={"input_grd": _grid(tmp_path, "t.grd")}
         )
         task = await _drive(engine, wf_id)
 
@@ -751,7 +764,7 @@ class TestStepJobsCarryOwner:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/t.grd"},
+            params={"input_grd": _grid(tmp_path, "t.grd")},
             user_id=7,
             project_id=3,
         )
@@ -770,7 +783,7 @@ class TestStepJobsCarryOwner:
         queue = _recording_queue(output_files=["/tmp/out.bas"])
         engine = WorkflowEngine(queue, session_factory=session_factory)
         wf_id = await engine.create_workflow(
-            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/t.grd"}
+            "grid_only", working_dir=tmp_path, params={"input_grd": _grid(tmp_path, "t.grd")}
         )
         await _drive(engine, wf_id)
         for spec in queue.specs:
@@ -804,7 +817,7 @@ class TestStepJobsCarryOwner:
         wf_id = await engine.create_workflow(
             "grid_only",
             working_dir=tmp_path,
-            params={"input_grd": "/tmp/t.grd"},
+            params={"input_grd": _grid(tmp_path, "t.grd")},
             user_id=7,
             project_id=3,
         )

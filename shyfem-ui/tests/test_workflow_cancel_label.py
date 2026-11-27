@@ -24,6 +24,13 @@ from shyfem_ui.services.job_queue import JobInfo, JobStatus
 from shyfem_ui.services.workflow import WorkflowEngine, WorkflowStatus
 
 
+def _grid(folder) -> str:
+    """The engine stages the grid, so it must exist (#348)."""
+    path = folder / "t.grd"
+    path.write_text("grid\n")
+    return str(path)
+
+
 @pytest.fixture()
 def session_factory():
     engine = create_engine("sqlite:///:memory:")
@@ -89,7 +96,7 @@ async def test_cancel_from_another_session_is_recorded_cancelled(
     wf_id = await launcher.create_workflow(
         "full_simulation",
         working_dir=tmp_path,
-        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+        params={"input_grd": _grid(tmp_path), "input_str": "/tmp/t.str"},
     )
     await _wait(lambda: "job-1" in queue.jobs)
 
@@ -123,7 +130,7 @@ async def test_a_cancel_landing_between_steps_is_kept(
     wf_id = await launcher.create_workflow(
         "full_simulation",
         working_dir=tmp_path,
-        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+        params={"input_grd": _grid(tmp_path), "input_str": "/tmp/t.str"},
     )
     await _wait(lambda: "job-1" in queue.jobs)
     queue.jobs["job-1"].status = JobStatus.COMPLETED
@@ -162,7 +169,7 @@ async def test_a_cancel_landing_while_the_step_is_being_submitted_stops_that_job
     wf_id = await launcher.create_workflow(
         "full_simulation",
         working_dir=tmp_path,
-        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+        params={"input_grd": _grid(tmp_path), "input_str": "/tmp/t.str"},
     )
     await asyncio.wait_for(in_submit.wait(), 5)
 
@@ -202,7 +209,7 @@ async def test_a_same_session_cancel_during_submit_stops_the_submitted_job(
     wf_id = await launcher.create_workflow(
         "full_simulation",
         working_dir=tmp_path,
-        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+        params={"input_grd": _grid(tmp_path), "input_str": "/tmp/t.str"},
     )
     await asyncio.wait_for(in_submit.wait(), 5)
 
@@ -247,7 +254,7 @@ async def test_a_cancel_seen_by_the_step_start_save_starts_no_job(
     wf_id = await launcher.create_workflow(
         "full_simulation",
         working_dir=tmp_path,
-        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+        params={"input_grd": _grid(tmp_path), "input_str": "/tmp/t.str"},
     )
     await _wait(lambda: "job-1" in queue.jobs)
     queue.jobs["job-1"].status = JobStatus.COMPLETED

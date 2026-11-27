@@ -47,7 +47,9 @@ def analyze_partitions(elem_grd: Path) -> tuple[dict, dict]:
     return stats, pmap
 
 
-def stage_grid(grd_file: Path, output_dir: Path) -> tuple[Path, bool]:
+def stage_grid(
+    grd_file: Path, output_dir: Path, *, folder: str = "output folder"
+) -> tuple[Path, bool]:
     """The grid shyparts should run on, inside ``output_dir``; (path, created).
 
     shyparts writes ``<grd>.<np>.node.grd``/``.elem.grd`` next to its INPUT.
@@ -55,6 +57,8 @@ def stage_grid(grd_file: Path, output_dir: Path) -> tuple[Path, bool]:
     it must never be partitioned in place: when it is not already in the
     write-checked ``output_dir`` it is copied there, and the caller removes
     the copy afterwards (``created`` is True).
+
+    ``folder`` names ``output_dir`` in the error text for the caller's page.
 
     Raises:
         ValueError: ``output_dir`` already holds a different file of that name.
@@ -70,8 +74,7 @@ def stage_grid(grd_file: Path, output_dir: Path) -> tuple[Path, bool]:
         if staged.is_file() and filecmp.cmp(staged, grd_file, shallow=False):
             return staged, False
         raise ValueError(
-            f"The output folder already has a different {grd_file.name}; "
-            "choose another output folder"
+            f"The {folder} already has a different {grd_file.name}; choose another {folder}"
         )
     shutil.copy2(grd_file, staged)
     return staged, True
