@@ -671,8 +671,50 @@ class WorkflowEngine:
         wf.started_at = utcnow()
         self._save_instance(wf)
 
-        params = wf.metadata.get("params", {})
+        # A copy: the staged grid path goes to the step args only, never
+        # back into the stored params (they keep the path the user picked).
+        params = dict(wf.metadata.get("params", {}))
 
+        # shypre writes its .bas next to its input and a step's outputs are
+        # found only in the working folder, so a grid elsewhere is copied in
+        # first (#348). The copy is this run's own: it is removed when the
+        # workflow ends, whatever the outcome.
+        staged_copy: Path | None = None
+        if (
+            params.get("input_grd")
+            and wf.working_dir
+            and any("{input_grd}" in a for s in wf.steps for a in s.args_template)
+        ):
+            from shyfem_ui.services.partitioning_logic import stage_grid
+
+            try:
+                staged, created = stage_grid(
+                    Path(params["input_grd"]), Path(wf.working_dir), folder="working folder"
+                )
+            except (ValueError, OSError) as e:
+                wf.status = WorkflowStatus.FAILED
+                wf.error_message = f"Could not stage the input grid: {e}"
+                wf.completed_at = utcnow()
+                self._save_instance(wf)
+                self._polling_tasks.pop(workflow_id, None)
+                return
+            params["input_grd"] = str(staged)
+            if created:
+                staged_copy = staged
+
+        try:
+            await self._run_steps(wf, workflow_id, params)
+        finally:
+            if staged_copy is not None:
+                try:
+                    staged_copy.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("Could not remove the staged grid %s", staged_copy)
+
+    async def _run_steps(
+        self, wf: WorkflowInstance, workflow_id: str, params: dict[str, Any]
+    ) -> None:
+        """Run the steps in order and record how the workflow ended."""
         for i, step in enumerate(wf.steps):
             if wf.status != WorkflowStatus.RUNNING:
                 break
