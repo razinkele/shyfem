@@ -512,3 +512,94 @@ async def test_the_supervisors_own_output_stays_out_of_the_jobs_stderr(
     assert text.rstrip().endswith("no bas or grd file"), text[-300:]
     assert "Warning" not in text, text[-300:]
     assert files.runner_log.exists()  # the supervisor writes there instead
+
+
+# --- exit codes the tool lists as OK (#342) -------------------------------
+
+_SHYPARTS_NOTE = (
+    "echo ' conectivity errors in domains:            2           0'\n"
+    "echo ' (errors can be ignored)'\n"
+)
+
+
+def test_exit_ok_is_the_one_rule_for_a_listed_exit_code():
+    from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper, exit_ok
+
+    assert exit_ok("shyparts", 0) and exit_ok("shyparts", 9)
+    assert not exit_ok("shyparts", 7) and not exit_ok("shyparts", 1)
+    assert not exit_ok("shypre", 9) and exit_ok("shypre", 0)
+    assert not exit_ok("shypre", None) and not exit_ok("shyparts", None)
+    assert not exit_ok("not_a_tool", 9) and exit_ok("not_a_tool", 0)
+    # It reads the wrapper's table, not a copy of it.
+    for tool, codes in ShyfemWrapper.OK_EXIT_CODES.items():
+        assert all(exit_ok(tool, c) for c in codes)
+
+
+@pytest.mark.asyncio
+async def test_a_watched_shyparts_job_ends_completed_on_exit_9(db, shyfem_dir, tmp_path):
+    _tool(shyfem_dir, _SHYPARTS_NOTE + "echo parted > partition.4.txt\nexit 9\n", "shyparts")
+    queue = _queue(shyfem_dir)
+    job_id = await queue.submit(_spec(tmp_path / "work", "shyparts"))
+    job = await _until(lambda: (j := queue._jobs[job_id]) and not j.is_active and j)
+
+    assert job.status == JobStatus.COMPLETED
+    assert job.return_code == 9
+    assert not job.error_message
+    row = _row(job_id)
+    assert row["status"] == JobStatus.COMPLETED
+    assert row["return_code"] == 9
+    assert [Path(p).name for p in row["output_files"]] == ["partition.4.txt"]
+
+
+@pytest.mark.asyncio
+async def test_shyparts_exit_9_ends_completed_with_no_worker_watching(
+    db, shyfem_dir, tmp_path, groups
+):
+    pidfile = tmp_path / "tool.pid"
+    _tool(
+        shyfem_dir,
+        f"echo $$ > '{pidfile}'\nsleep 1\n"
+        + _SHYPARTS_NOTE
+        + "echo parted > partition.4.txt\nexit 9\n",
+        "shyparts",
+    )
+    queue = _queue(shyfem_dir)
+    job_id = await queue.submit(_spec(tmp_path / "work", "shyparts"))
+    pid = await _until(lambda: _read_pid(pidfile))
+    groups.append(os.getpgid(pid))
+    await _stop_watching(queue, job_id)
+
+    row = await _until(lambda: (r := _row(job_id)) and r["status"] != JobStatus.RUNNING and r)
+    assert row["status"] == JobStatus.COMPLETED
+    assert row["return_code"] == 9
+    assert not row["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_shyparts_exit_9_with_a_fatal_stop_still_fails(db, shyfem_dir, tmp_path):
+    """Guard (passes before and after): judging with 0 still reads the output."""
+    _tool(
+        shyfem_dir,
+        _SHYPARTS_NOTE + "echo 'STOP error stop x' >&2\nexit 9\n",
+        "shyparts",
+    )
+    queue = _queue(shyfem_dir)
+    job_id = await queue.submit(_spec(tmp_path / "work", "shyparts"))
+    job = await _until(lambda: (j := queue._jobs[job_id]) and not j.is_active and j)
+
+    assert job.status == JobStatus.FAILED
+    assert job.return_code == 9
+    assert _row(job_id)["status"] == JobStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_another_tool_exiting_9_still_fails(db, shyfem_dir, tmp_path):
+    """Guard (passes before and after): only shyparts lists 9."""
+    _tool(shyfem_dir, _SHYPARTS_NOTE + "exit 9\n", "shypre")
+    queue = _queue(shyfem_dir)
+    job_id = await queue.submit(_spec(tmp_path / "work", "shypre"))
+    job = await _until(lambda: (j := queue._jobs[job_id]) and not j.is_active and j)
+
+    assert job.status == JobStatus.FAILED
+    assert job.return_code == 9
+    assert _row(job_id)["status"] == JobStatus.FAILED

@@ -139,20 +139,26 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
     come from a trusted source (the launch record on stdin, or the DB row):
     its ``cwd`` is where output files are looked for.
     """
-    from shyfem_ui.services.shyfem_wrapper import TAIL_CHARS, ShyfemWrapper, judge_run
+    from shyfem_ui.services.shyfem_wrapper import (
+        TAIL_CHARS,
+        ShyfemWrapper,
+        exit_ok,
+        judge_run,
+    )
 
     failure, reason = None, ""
+    ran_ok = exit_ok(spec["tool_name"], return_code)
     if not timed_out:
         failure, reason = judge_run(
             spec["tool_name"],
-            return_code,
+            0 if ran_ok else return_code,
             read_tail(files.stdout, TAIL_CHARS),
             read_tail(files.stderr, TAIL_CHARS),
         )
     if timed_out:
         status = JobStatus.FAILED
         error = f"Command timed out after {spec.get('timeout')}s and was terminated"
-    elif return_code == 0 and failure is None:
+    elif ran_ok and failure is None:
         status = JobStatus.COMPLETED
         error = None
     else:
