@@ -731,7 +731,7 @@
 
 	t_left = ttime
 	if( blgrxi ) t_left = ttime*dripar	!account for drifter inertia
-	n_left = 100			!maximum number of element crossings
+	n_left = lgr_ncross_max		!element crossings, the extra ones too
 
 !---------------------------------------------------------------
 ! Compute advection, then diffusion, Stokes drift, beaching and store
@@ -764,9 +764,10 @@
 ! contracts for a caller that does not come through track_single:
 ! - lgr_ncross(i) and lgr_marked(i) are not reset here; the caller sets
 !   them
-! - the crossing count stored by track_body_xi is 100 - n_left, so the
-!   caller counts down from 100 over the whole step, also when a step is
-!   continued with a smaller budget
+! - the crossing count stored by track_body_xi is lgr_ncross_max -
+!   n_left, so the caller counts down from lgr_ncross_max (#315: the base
+!   budget and the extra crossings) over the whole step, also when a step
+!   is continued with a smaller budget
 
 	use mod_lagrange
 
@@ -1014,6 +1015,24 @@
 ! particle unchanged. The debug
 ! lines for a particle with id 0, which no release gives (ids start at
 ! 1), are off at compile time (bdebug, #294)
+!
+! the budget (#315): a step starts with lgr_ncross_max crossings left,
+! the base budget lgr_ncross_base and lgr_ncross_extra more. When the
+! base is used up (lgr_ncross_extra left, tested at the top of the loop,
+! so also on the process that continues a particle handed over at that
+! crossing) with time left, a node sink ends the step there (kind 26, as
+! before #315); any other step goes on with the extra crossings, so that
+! a particle circling a node outward, which the re-snap of x, y puts back
+! on the node each step, can leave it in the step. Kind 5 (lgr_ev_adv_cross)
+! is a step that used up the whole budget, tested for a node sink like
+! before. The crossings left are the only state of the budget and travel
+! in the hand-over as before. The vertex pick of track_xi hashes the
+! crossings left: in the base budget it is given n - lgr_ncross_extra
+! (lgr_ncross_base ... 1), so a step that stays in the base picks as before
+! #315 and only steps that use the extra crossings change. The events of
+! a step that ends with time left (kinds 5, 6, 7) report the crossings
+! left the same way, so their lines are those of before #315 for every
+! step that stays in the base
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_mpi_mark_side
@@ -1043,6 +1062,8 @@
 	logical lgr_internal_failed
 	logical track_xi_node_sink
 	logical, parameter :: bdebug = .false.	!debug lines (#294)
+	logical bsink			!base used up at a node sink (#315)
+	integer nx			!crossings left for the vertex pick
 
         if(iel <= 0 .or. ty < 0) return	!particle out of domain or beached
 
@@ -1052,15 +1073,24 @@
 
 	zz = z
 	bmark = .false.
+	bsink = .false.
 	
 !---------------------------------------------------------------
 ! track particle
 !---------------------------------------------------------------
 
 	do while ( ttime > 0 .and. n > 0 )
+	  if( n == lgr_ncross_extra ) then	!base used up (#315)
+	    if( track_xi_node_sink(lgr_ar(i)%actual%xi,xi) ) then
+	      bsink = .true.		!a node sink: the step ends here
+	      exit
+	    end if
+	  end if
 	  torig = ttime 		!time do advect
 	  ie_from = iel 		!start element 
-          call track_xi(id,iel,lb,sv,xi,zz,ttime,n,icut) !advection 
+	  nx = n			!vertex pick as before #315 in the base
+	  if( n > lgr_ncross_extra ) nx = n - lgr_ncross_extra
+          call track_xi(id,iel,lb,sv,xi,zz,ttime,nx,icut) !advection 
 	  ie_to = iel 			!new element if advection changed element
 
 	  if ( bconnect ) then		!connectivity
@@ -1088,7 +1118,7 @@
 	  return
 	end if
 
-	lgr_ncross(i) = 100 - n		!crossings used (own slot: OMP safe)
+	lgr_ncross(i) = lgr_ncross_max - n	!crossings used (own slot: OMP safe)
 
 	z = zz
 	call xi2xy_ierr(abs(iel),xx,yy,xi,ierr)
@@ -1111,20 +1141,22 @@
 !---------------------------------------------------------------
 
 	if( ttime > 0. ) then 		!not finished advecting: counted (#294)
-	  if( n == 0 ) then		!crossings used up
+	  nx = n			!crossings left as before #315 (see nx)
+	  if( n > lgr_ncross_extra ) nx = n - lgr_ncross_extra
+	  if( n == 0 .or. bsink ) then	!crossings used up (bsink: the base)
 	    !converging onto a node (#310): its own kind, the step the same
 	    if( track_xi_node_sink(lgr_ar(i)%actual%xi,xi) ) then
 	      call lgr_event(lgr_ev_adv_node,id,(/id,iel,lb/)		&
      &			,(/dble(ttime)/))
 	    else
-	      call lgr_event(lgr_ev_adv_cross,id,(/id,iel,n/)		&
+	      call lgr_event(lgr_ev_adv_cross,id,(/id,iel,nx/)		&
      &			,(/dble(ttime)/))
 	    end if
 	    !iel = -iel
 	  else if( iel < 1 ) then	!out of the domain
-	    call lgr_event(lgr_ev_adv_lost,id,(/id,iel,n/),(/dble(ttime)/))
+	    call lgr_event(lgr_ev_adv_lost,id,(/id,iel,nx/),(/dble(ttime)/))
 	  else				!cause unknown
-	    call lgr_event(lgr_ev_adv_unknown,id,(/id,iel,n/)		&
+	    call lgr_event(lgr_ev_adv_unknown,id,(/id,iel,nx/)		&
      &			,(/dble(ttime)/))
 	  end if
 	end if

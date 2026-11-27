@@ -868,7 +868,9 @@
 
 ! true if a particle that used up its element crossings with time left
 ! did so converging onto a node of the mesh, a node sink (#310; called by
-! track_body_xi only for such a particle). The flux reconstruction of a
+! track_body_xi only for such a particle: since #315 when the base budget
+! lgr_ncross_base is used up, and again when the extra crossings are
+! used up too). The flux reconstruction of a
 ! layer (track_xi_get_flux, xit_start_end) maps the distance from a node
 ! on the side a particle enters to the side it leaves by a fixed factor
 ! per element, so where the layer flow converges around an interior node
@@ -884,9 +886,11 @@
 ! The two d need not be to the same vertex (the start and the end lie in
 ! different elements). A particle that circles a node outward (a
 ! source, or one held at a node by the single-precision position kept
-! between steps, #315) or that is far from a vertex is not one: its step
-! keeps the kind "element crossings used up" (lgr_ev_adv_cross).
-! The particle is not changed: only the kind of its event.
+! between steps, #315) or that is far from a vertex is not one: since
+! #315 its step goes on with the extra crossings, and only a step that
+! uses those up too keeps the kind "element crossings used up"
+! (lgr_ev_adv_cross). A node sink is not changed: only the kind of its
+! event.
 ! Self-contained (no use): check_lgr_fixes.sh node-sink cuts it out and
 ! tests it on its own (it needs this end line)
 
@@ -1079,7 +1083,10 @@
 ! time step number and the crossings the particle has left in this
 ! time step: every run and every number of MPI processes makes the
 ! same pick, and two vertex events of one particle in one time step
-! get different values, so the particle cannot cycle.
+! get different values, so the particle cannot cycle. (#315: while the
+! base budget lasts track_body_xi gives the crossings left of the base,
+! lgr_ncross_base ... 1, as before the extra crossings existed; then
+! the extra crossings left, lgr_ncross_extra ... 1.)
 !
 ! Integer arithmetic modulo the prime m = 2**31-1 in integer*8: all
 ! products stay below 2**62, so no overflow and no floating point trap.

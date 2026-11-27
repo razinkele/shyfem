@@ -4222,13 +4222,14 @@
 ! park in the Stokes step, one resumed from the Stokes step finishes.
 !
 ! Bound: every hand-over at a side uses one crossing of the particle's
-! budget for the step (100, n_left), so a particle is handed over at a
-! side at most 100 times in a step; it parks at most twice (once in each
+! budget for the step (lgr_ncross_max, n_left; #315: the base budget and
+! the extra crossings), so a particle is handed over at a side at most
+! lgr_ncross_max times in a step; it parks at most twice (once in each
 ! step, and a resumed particle does no more advection, so no side mark
 ! follows a park). A round takes every marked particle one event
-! further, so after 102 rounds nothing is marked; a 103rd round is an
-! internal error, decided alike on every process (the counts are
-! global), and every process aborts.
+! further, so after lgr_ncross_max + 2 rounds nothing is marked; one
+! round more is an internal error, decided alike on every process (the
+! counts are global), and every process aborts.
 !
 ! called after drogue, outside any parallel region, on every process
 !
@@ -4250,7 +4251,7 @@
 
 	double precision, intent(in) :: dtime
 
-	integer, parameter :: nround_cap = 102	!100 crossings, 2 parks
+	integer, parameter :: nround_cap = lgr_ncross_max + 2 !crossings, 2 parks
 	integer :: nloc(3), nglob(3), nround, nround_side, nchg, ie, ierr
 
 	if( n_threads <= 1 ) return
@@ -4706,7 +4707,7 @@
 	  call track_xi_adjust_layer(lgr_ar(i)%id,0,ieb,lb,zz)
 	  lgr_ar(i)%actual%l = lb
 	  lgr_ar(i)%actual%z = real(zz)
-	  lgr_ncross(i) = 100 - inleft(nside_in)	!crossings so far
+	  lgr_ncross(i) = lgr_ncross_max - inleft(nside_in) !crossings so far
 	  lgr_marked(i) = 0
 	  islot(nside_in) = i
 	end do
