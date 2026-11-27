@@ -86,8 +86,10 @@ async def netcdf_for(path: Path, user: dict | None, config: Config, wrapper) -> 
     """Return a NetCDF for ``path``: a ``.nc`` as is, a ``.shy`` converted once.
 
     Raises:
-        ConversionError: shyelab failed (it exits 0 on most failures, so the
-            test is whether it produced a non-empty ``out.nc``).
+        ConversionError: shyelab failed. A conversion counts only when the
+            wrapper judged the run a success (exit status 0 and no ``STOP
+            error stop`` / ``error stop`` line: a bare Fortran ``stop`` exits
+            0) and it left a non-empty ``out.nc``.
     """
     path = Path(path)
     if path.suffix.lower() == ".nc":
@@ -117,8 +119,12 @@ async def netcdf_for(path: Path, user: dict | None, config: Config, wrapper) -> 
             raise ConversionError(f"Cannot convert {path.name}: shyelab not found ({e})") from e
         out = tmp / "out.nc"
         # A killed or timed-out shyelab can leave a partial out.nc behind.
-        if res.return_code != 0 or not out.is_file() or out.stat().st_size == 0:
-            reason = res.reason or _reason(res.stdout, res.stderr)
+        if not res.success or not out.is_file() or out.stat().st_size == 0:
+            if res.return_code == 0 and not res.success and not res.reason:
+                # Exit 0 but a stop line: the wrapper put that line in stderr.
+                reason = res.failure_text()
+            else:
+                reason = res.reason or _reason(res.stdout, res.stderr)
             if res.return_code != 0 and reason == "no output":
                 reason = f"shyelab exited with code {res.return_code}"
             raise ConversionError(f"Cannot convert {path.name}: {reason}")
