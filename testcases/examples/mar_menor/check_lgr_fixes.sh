@@ -566,12 +566,14 @@
 #             at the node, 17 the step that brings a particle onto it); the
 #             4-thread lines must be the 1-thread lines, and on 4 processes
 #             the N of each step summed over the ranks the serial N.
-#             REF_BIN_DIR may also be a build with #310 and without #316
-#             (the live reference build, for example): then its node-sink
-#             lines must be this binary's, step by step, it must write no
-#             vertex-hold line, and the files compared byte-identical: the
-#             vertex hold is a log line only.  The code before #316 fails
-#             this mode: no vertex-hold line.
+#             REF_BIN_DIR may also be a build with #310 (the live reference
+#             build, for example): then its node-sink lines must be this
+#             binary's, step by step, and the files compared byte-identical
+#             (the vertex hold is a log line only); a build with #316 must
+#             also write this binary's vertex-hold lines, step by step (N,
+#             M, and the first id, element, layer, node and time spent), and
+#             a build without #316 none.  The code before #316 fails this
+#             mode: no vertex-hold line.
 #   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
 #             (its list of parked particles grows) on 4 MPI processes with
 #             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
@@ -2410,10 +2412,21 @@ if "ref/ns_t1" in L:
     for mine, ref in (("ns_t1", "ref/ns_t1"), ("ns_np", "ref/ns_np")):
         rc_, rs = L[ref]
         if rs and not rc_:
-            # a reference with #310 and without #316 (#316): the node-sink
-            # lines are this binary's, step by step; no vertex-hold line
-            if H[ref]:
-                bad("%s: vertex-hold lines in the reference run (a binary with #316?)" % ref)
+            # a reference with #310: the node-sink lines are this binary's,
+            # step by step; its vertex-hold lines (a build with #316) too,
+            # and none in a build without #316 (#316)
+            hr, hm = H[ref], H[mine]
+            if hr:
+                hkeys = ("n", "ntot", "id", "el", "v3", "node", "tl")
+                if sorted(hm) != sorted(hr) or any([hm[k].group(g) for g in hkeys] != [hr[k].group(g) for g in hkeys]
+                                                   for k in hr):
+                    bad("%s: the vertex-hold lines differ from those of the reference %s (a build with #316)"
+                        % (mine, ref))
+                else:
+                    print("  %s: the vertex-hold lines are those of the reference (a build with #316), step by step"
+                          " (%d lines)" % (mine, len(hm)))
+            else:
+                print("  %s: the reference writes no vertex-hold line (a build without #316)" % ref)
             ms = L[mine][1]
             keys = ("n", "ntot", "id", "el", "v3", "tl")
             if sorted(ms) != sorted(rs) or any([ms[k].group(g) for g in keys] != [rs[k].group(g) for g in keys]
@@ -2421,7 +2434,7 @@ if "ref/ns_t1" in L:
                 bad("%s: the node-sink lines differ from those of the reference %s" % (mine, ref))
             else:
                 print("  %s: the node-sink lines are those of the reference (a build with #310), step by step"
-                      " (%d lines); the reference writes no vertex-hold line" % (mine, len(ms)))
+                      " (%d lines)" % (mine, len(ms)))
             continue
         if not rc_:
             bad("%s: no line '%s': the case no longer reaches the trap" % (ref, CROSS))
