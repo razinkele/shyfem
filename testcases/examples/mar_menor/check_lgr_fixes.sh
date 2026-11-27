@@ -434,9 +434,10 @@
 #             check line.  The 1-thread run must stop in the guard itself,
 #             as before #256 (no check line: a loop on one thread runs on
 #             the main thread).
-#   events    (#305) every kind of event of the tracker (lgr_event, the 26
-#             kinds of lgr_event_desc; 26, the node sink, since #310, see
-#             mode node-sink-run) and the three ways the run stops
+#   events    (#305) every kind of event of the tracker (lgr_event, the 27
+#             kinds of lgr_event_desc; 26, the node sink, since #310, and
+#             27, the vertex hold, since #316, see mode node-sink-run) and
+#             the three ways the run stops
 #             after an internal error, which no normal run reaches, with
 #             the test hook LGR_TEST_EVENT=K (read once at start-up,
 #             lgr_mpi_init: the particle in slot 1 records an event of kind
@@ -446,14 +447,14 @@
 #             lgr_internal_error, "error stop lgr_mpi_test_event: kind K";
 #             for kind 23 the error 1 of xy2xi_ierr in diff_body is forced
 #             instead, "error stop diff_body: error of xy2xi").  Case
-#             mm_lgr_a for 30 minutes, for each K = 1 ... 26 with nomp = 1
+#             mm_lgr_a for 30 minutes, for each K = 1 ... 27 with nomp = 1
 #             and nomp = 4 serially and with nomp = 1 on 4 MPI processes
 #             (timeout 120 s each).  Each run must acknowledge the hook and
 #             write the line of kind K as lgr_event_desc documents it (the
 #             expected head, text, names, the values with three decimals or
 #             in full precision, written out in this script, not taken from
 #             the code): for the kinds that do not stop the run (1, 2, 5 to
-#             10, 26) "1 in the step to T, 1 in the run (P % of the I
+#             10, 26, 27) "1 in the step to T, 1 in the run (P % of the I
 #             particles released)" for 1 and 2 (the lines of #288) and "(P
 #             events per 100 of the I particles released)" for the others
 #             (an event count, which can pass 100 per 100 particles; #305),
@@ -493,7 +494,8 @@
 #             not come from a worker either; each must be found once, by
 #             file, routine and line.  The code before #305 does not know
 #             the hook; the code before #310 has no kind 26 (LGR_TEST_EVENT
-#             =26 is out of range there: no hook, no line).
+#             =26 is out of range there: no hook, no line), the code before
+#             #316 no kind 27.
 #   node-sink (#310) the classifier of a node sink, track_xi_node_sink (a
 #             particle that used up its 100 element crossings with time left
 #             converging onto a node of the mesh: the flux reconstruction of
@@ -550,7 +552,26 @@
 #             in the run, and none of the other.  Without REF_BIN_DIR the
 #             comparison is skipped (said in the PASS line).  The code
 #             before #310 fails this mode on its lines "element crossings
-#             used up".
+#             used up".  Since #316 each run must also write lines "lgr
+#             advection: all the time left spent moving off a vertex (vertex
+#             hold): N in the step to T, M in the run (P events per 100 of
+#             the I particles released); first: id, element, layer L, node
+#             K, time spent [s] S" with L >= 1, K = 702 (the external number
+#             of the node) and S > 0, M the sum of the N so far, and exactly
+#             HOLD_EXPECT = 1599 events in the run: measured 2026-11-27, the
+#             th = 0 path of track_xi moved a particle off a vertex and spent
+#             all its time left 1599 times, in 80 passes, always at node
+#             702, each pass as often as the investigation's counter of
+#             these calls (#316; 1582 of them are steps that start and end
+#             at the node, 17 the step that brings a particle onto it); the
+#             4-thread lines must be the 1-thread lines, and on 4 processes
+#             the N of each step summed over the ranks the serial N.
+#             REF_BIN_DIR may also be a build with #310 and without #316
+#             (the live reference build, for example): then its node-sink
+#             lines must be this binary's, step by step, it must write no
+#             vertex-hold line, and the files compared byte-identical: the
+#             vertex hold is a log line only.  The code before #316 fails
+#             this mode: no vertex-hold line.
 #   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
 #             (its list of parked particles grows) on 4 MPI processes with
 #             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
@@ -2294,12 +2315,19 @@ def bad(msg):
 
 CROSS = "element crossings used up with time left"
 SINK = "stopped at a node the layer flow converges on (node sink) with time left"
+HOLD = "all the time left spent moving off a vertex (vertex hold)"	# #316
+HOLD_EXPECT = 1599	# events in the run, measured (see the head of this script)
+HOLD_NODE = "702"
 HEAD = r"^ lgr advection:(?: rank (?P<rank>\d+):)? "
 TAIL = (r": (?P<n>\d+) in the step to (?P<t>\S+?), (?P<ntot>\d+) in the run \([\d.]+ events per 100"
         r" of the \d+ particles released\); first: id (?P<id>\d+), element (?P<el>-?\d+), %s (?P<v3>-?\d+),"
         r" time left \[s\] (?P<tl>\S+)$")
 RX = {CROSS: re.compile(HEAD + re.escape(CROSS) + TAIL % "crossings left"),
-      SINK: re.compile(HEAD + re.escape(SINK) + TAIL % "layer")}
+      SINK: re.compile(HEAD + re.escape(SINK) + TAIL % "layer"),
+      HOLD: re.compile(HEAD + re.escape(HOLD)
+                       + r": (?P<n>\d+) in the step to (?P<t>\S+?), (?P<ntot>\d+) in the run \([\d.]+ events per"
+                       r" 100 of the \d+ particles released\); first: id (?P<id>\d+), element (?P<el>-?\d+),"
+                       r" layer (?P<v3>-?\d+), node (?P<node>\d+), time spent \[s\] (?P<tl>\S+)$")}
 
 def lines(tag, text):
     """the lines of the kind text in TAG.log: (rank, time) -> match"""
@@ -2336,10 +2364,31 @@ def per_step(d):
     return s
 
 L = {tag: (lines(tag, CROSS), lines(tag, SINK)) for tag in tags}
+H = {tag: lines(tag, HOLD) for tag in tags}		# #316
 for tag in tags:
     c, s = L[tag]
-    print("  %s: lines '%s' %d (%d in the run), node-sink lines %d (%d in the run)"
-          % (tag, CROSS, len(c), sum(per_step(c).values()), len(s), sum(per_step(s).values())))
+    print("  %s: lines '%s' %d (%d in the run), node-sink lines %d (%d in the run), vertex-hold lines %d (%d in"
+          " the run)" % (tag, CROSS, len(c), sum(per_step(c).values()), len(s), sum(per_step(s).values()),
+                         len(H[tag]), sum(per_step(H[tag]).values())))
+# the vertex hold (#316): every run, its count, its values; 4 threads and 4
+# processes as 1 thread
+for tag in ("ns_t1", "ns_t4", "ns_np"):
+    h = H[tag]
+    nh = sum(per_step(h).values())
+    if nh != HOLD_EXPECT:
+        bad("%s: %d vertex-hold events in the run ('%s'), expected %d" % (tag, nh, HOLD, HOLD_EXPECT))
+    for (r, t), m in h.items():
+        if int(m.group("v3")) < 1 or not float(m.group("tl")) > 0.0 or int(m.group("id")) < 1 \
+                or int(m.group("el")) < 1 or m.group("node") != HOLD_NODE:
+            bad("%s: vertex-hold line at %s: id %s, element %s, layer %s, node %s, time spent %s; expected id,"
+                " element and layer >= 1, node %s and time spent > 0" % (tag, t, m.group("id"), m.group("el"),
+                m.group("v3"), m.group("node"), m.group("tl"), HOLD_NODE))
+        if tag != "ns_np" and r is not None:
+            bad("%s: a serial vertex-hold line with rank %s" % (tag, r))
+if [m.group(0) for m in H["ns_t4"].values()] != [m.group(0) for m in H["ns_t1"].values()]:
+    bad("the vertex-hold lines of 4 threads differ from those of 1 thread")
+if per_step(H["ns_np"]) != per_step(H["ns_t1"]):
+    bad("ns_np: the vertex-hold events of a step summed over the ranks differ from the serial ones")
 for tag in ("ns_t1", "ns_t4", "ns_np"):
     c, s = L[tag]
     if c:
@@ -2360,6 +2409,20 @@ if per_step(L["ns_np"][1]) != per_step(s1):
 if "ref/ns_t1" in L:
     for mine, ref in (("ns_t1", "ref/ns_t1"), ("ns_np", "ref/ns_np")):
         rc_, rs = L[ref]
+        if rs and not rc_:
+            # a reference with #310 and without #316 (#316): the node-sink
+            # lines are this binary's, step by step; no vertex-hold line
+            if H[ref]:
+                bad("%s: vertex-hold lines in the reference run (a binary with #316?)" % ref)
+            ms = L[mine][1]
+            keys = ("n", "ntot", "id", "el", "v3", "tl")
+            if sorted(ms) != sorted(rs) or any([ms[k].group(g) for g in keys] != [rs[k].group(g) for g in keys]
+                                               for k in rs):
+                bad("%s: the node-sink lines differ from those of the reference %s" % (mine, ref))
+            else:
+                print("  %s: the node-sink lines are those of the reference (a build with #310), step by step"
+                      " (%d lines); the reference writes no vertex-hold line" % (mine, len(ms)))
+            continue
         if not rc_:
             bad("%s: no line '%s': the case no longer reaches the trap" % (ref, CROSS))
         if rs:
@@ -2479,15 +2542,15 @@ if [ "$MODE" = events ]; then
     echo $? > "$W/$tag.rc"
   }
   t0=$(date +%s)
-  echo "=== mm_lgr_a, 30 minutes, LGR_TEST_EVENT=K for K = 1 ... 26: 1 and 4 threads serially, 1 thread on $NP processes"
-  for k in $(seq 1 26); do
+  echo "=== mm_lgr_a, 30 minutes, LGR_TEST_EVENT=K for K = 1 ... 27: 1 and 4 threads serially, 1 thread on $NP processes"
+  for k in $(seq 1 27); do
     evrun ev_k${k}_t1 ev_t1 env LGR_TEST_EVENT=$k shyfem
     evrun ev_k${k}_t4 ev_t4 env LGR_TEST_EVENT=$k shyfem
     evrun ev_k${k}_np ev_t1 env LGR_TEST_EVENT=$k mpirun --oversubscribe -np $NP -x LGR_TEST_EVENT shyfem
   done
   echo "=== the same, 1 thread, LGR_TEST_EVENT=8 and LGR_TEST_INTERNAL_FAIL=1 (an event and a guard with no kind in the same pass)"
   evrun ev_if ev_t1 env LGR_TEST_EVENT=8 LGR_TEST_INTERNAL_FAIL=1 shyfem
-  echo "  79 runs in $(( $(date +%s) - t0 )) s"
+  echo "  82 runs in $(( $(date +%s) - t0 )) s"
   PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$NP" <<'EOF' || fail "see above"
 import os, re, sys
 
@@ -2540,6 +2603,8 @@ KIND = {
          ["id", "element", "error", "xis 1", "xis 2", "xis 3", "xie 1", "xie 2", "xie 3"], 3, False),
     26: (CADV, "stopped at a node the layer flow converges on (node sink) with time left", "per100",
          ["id", "element", "layer", "time left [s]"], 3, True),
+    27: (CADV, "all the time left spent moving off a vertex (vertex hold)", "per100",
+         ["id", "element", "layer", "node", "time spent [s]"], 4, True),
 }
 SITE = {18: "LGR_TEST_EVENT"}
 ANYEV = re.compile(r"^ lgr (vertical diffusion|advection|layers|connectivity|element search):")
@@ -2640,7 +2705,7 @@ def common(k, tag, log, rc, nthreads):
         values_ok(k, m, tag)
     return hits
 
-for k in range(1, 27):
+for k in range(1, 28):
     brun = KIND[k][2] is not None
     res = {}
     for flow, nth in (("t1", 1), ("t4", 4), ("np", None)):
