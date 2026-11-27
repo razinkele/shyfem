@@ -1,6 +1,7 @@
 #!/bin/bash
 #------------------------------------------------------------------------
-# The vertical velocity of ilagr = 3 particles in the bottom layer (#299).
+# The vertical velocity of ilagr = 3 particles in the bottom layer (#299),
+# and their deposition at the bed (#311, part 5).
 # In the bottom layer of a column of more than one layer the flow's
 # vertical velocity is linear in the relative depth z of the layer, from
 # the element mean of the interface velocity at the layer top (wt) to 0
@@ -180,6 +181,35 @@
 # fix hl equals hev(ie) exactly (difference 0; hl from 1.000 to 74.623 m),
 # in the normal and in the -fcheck=bounds build.
 #
+#=============== part 5: deposition at the bed (#311, rule A) ==============
+# A settling particle (ised = 1) deposits where the advection brings it to
+# the bed (z = 1 in the bottom layer) within the step: track_finish applies
+# the stress test of lgr_sediment (lgr_dep_test: tau < tcd, r**(tau/tcd) >=
+# 0.5) there and sets the layer -1 and z = 1, so the vertical walk of that
+# step does not move it away.  Until #311 lgr_sediment alone deposited, and
+# only at exactly z = 1, which the reflecting walk never leaves a particle
+# at: 0 deposits (mm_hyd_41 in still water, 120120 particles, five hours).
+# Case: part 2's build (still water, iturb = 0, ised = 1, ilagr = 3,
+# diftur = 0, lgrseed = 1), with nbdy = 3000 releases of ipvert = 40
+# particles (120120), nbdymax = 400000, output every hour, five hours.  The
+# bottom stress is 0, so every hit deposits.  Two runs in parallel:
+#   bd5_a: idt = 300 s, K = 3.3e-7 m2/s (the floor of the walk);
+#   bd5_b: idt = 600 s, diftur = 3e-4 (K = 3e-4 m2/s, 900 times), the case
+#          where the first form of the rule lost deposits: it decided at
+#          the hit but deposited only if the particle was still in the
+#          bottom layer after the walk (up to 29 % fewer, growing with idt).
+# Required, bd5_a: the particles of class 3 (3e-5 m/s) that deposit between
+# 1 h and 5 h, over the deterministic crossings at K = 0 of the same particles
+# (initial height above the bed d0, s (1 h - tt) < d0 <= s (5 h - tt)), in
+# DEPLO ... DEPHI, at least DEPMIN of them.  Required, both runs: the flux
+# over s times the concentration of the band 0.2 m above the bed (the
+# deposits over the sum of s/0.2 m of the particles in it, mean of the two
+# ends of each hour) in BANDLO ... BANDHI, at least DEPMIN deposits.
+# Measured (the final head; 15 min output, then 1 h as here): crossing ratio
+# 1.013 (bd5_a), band ratio 0.999 (idt 300, K 3.3e-7) and 0.995 (idt 600, K
+# 3e-4); the old rule (0 deposits) gives 0 (RED), and the first form 0.77
+# for bd5_b.
+#
 # Measured (2026-11-25), part 1: the bottom 5 % and 15 % at 24:00, the
 # chi-square (release-column weight) mean over 12:00 ... 24:00 and at
 # 24:00, lgrseed 1 / 2:
@@ -220,8 +250,8 @@
 # the other runs of the check beside it), the run of part 2 a few seconds,
 # part 3 about as long as part 1, the two runs of part 4 a few seconds.
 #
-# Usage:  ./check_lgr_bed.sh [all | 1 | 2 | 3 | 4]
-# (all, the default: the four parts; 1, 2, 3 or 4: that part only.)  Needs
+# Usage:  ./check_lgr_bed.sh [all | 1 | 2 | 3 | 4 | 5]
+# (all, the default: the five parts; 1 ... 5: that part only.)  Needs
 # shyfem and python3 with numpy on PATH, and `make init` done.  The scratch
 # folder is made with mktemp under ${TMPDIR:-/tmp}; it is removed at the
 # end when the check passes and kept (its path is printed) when it fails.
@@ -242,11 +272,16 @@ RHI=1.05
 SFAST=1.e-3		# part 3: the settling velocity set in the particle file [m/s]
 NPART=39960		# part 3: particles in the particle file
 HLTOL=1.e-4		# part 4: |hl - column depth| of a deposited particle, at most [m]
+DEPLO=0.93		# part 5: deposits of class 3 over the crossings at K = 0, at least
+DEPHI=1.07		# part 5: ... at most
+BANDLO=0.92		# part 5: flux over s C_bed (band 0.2 m), at least
+BANDHI=1.08		# part 5: ... at most
+DEPMIN=1000		# part 5: deposits (class 3 between 1 h and 5 h: at least this many too), at least
 
 PART="${1:-all}"
 case "$PART" in
-  all|1|2|3|4) ;;
-  *) echo "usage: $0 [all | 1 | 2 | 3 | 4]"; exit 2 ;;
+  all|1|2|3|4|5) ;;
+  *) echo "usage: $0 [all | 1 | 2 | 3 | 4 | 5]"; exit 2 ;;
 esac
 LABEL="BED"
 [ "$PART" = all ] || LABEL="BED part $PART"
@@ -314,6 +349,21 @@ mks() {
   done
   [ "$(grep -c 'ibtyp = 0' "$P/$1.str")" = 2 ] || return 1
   ! grep -q 'tilt\|wind\|qflux\|rain\|ibtyp = [13]' "$P/$1.str"
+}
+
+# mkq NAME IDT DIFTUR (part 5): NAME.str as part 2's (still water, ised = 1,
+# lgrseed = 1) with the model step IDT [s], diftur = DIFTUR, nbdy = 3000 of
+# ipvert = 40 (120120 particles), nbdymax = 400000, output every hour
+mkq() {
+  mks "$1" 1 || return 1
+  sed -i -e "s/idt = '300s'/idt = '$2s'/" \
+         -e "s/diftur = 0\.   vistur/diftur = $3   vistur/" \
+         -e 's/^\([[:space:]]*\)ilagr = 3   nbdymax = 50000/\1ilagr = 3   nbdymax = 400000/' \
+         -e 's/^\([[:space:]]*\)nbdy = 2000  idtl = 0 /\1nbdy = 3000  idtl = 0 /' \
+         -e 's/ipvert = 20/ipvert = 40/' "$P/$1.str" || return 1
+  for o in "idt = '$2s'" "diftur = $3   vistur" 'nbdymax = 400000' 'nbdy = 3000  idtl = 0' 'ipvert = 40' 'ised = 1'; do
+    grep -qF -- "$o" "$P/$1.str" || return 1
+  done
 }
 
 # mkp NAME (part 3): NAME.str as part 1's (lgrseed = 1), to 01:00: the
@@ -466,6 +516,11 @@ open(nfile, "w").write("%d\n" % len(act))
 EOF
   mkd bd_s1 bd_bed.lgr.shy || { fail "cannot make bd_s1.str"; finish; }
   RUNS="$RUNS bd_s1:1800"
+fi
+if want 5; then
+  mkq bd5_a 300 0. || { fail "cannot make bd5_a.str"; finish; }
+  mkq bd5_b 600 3.e-4 || { fail "cannot make bd5_b.str"; finish; }
+  RUNS="$RUNS bd5_a:1800 bd5_b:1800"
 fi
 for r in $RUNS; do
   c="${r%%:*}"; tmax="${r##*:}"
@@ -789,5 +844,24 @@ if nnan or nneg or nbeyond:
 sys.exit(0 if ok else 1)
 EOF
   fi
+fi
+
+#=============== part 5: deposition at the bed (#311, rule A) ==============
+if want 5; then
+  for c in bd5_a bd5_b; do
+    if [ $c = bd5_a ]; then
+      echo "=== $c: mm_hyd_41 in still water, ised = 1, ilagr = 3, idt = 300 s, K = 3.3e-7, 120120 particles, five hours"
+    else
+      echo "=== $c: as bd5_a with idt = 600 s and diftur = 3e-4 (K = 3e-4 m2/s)"
+    fi
+    ended $c || continue
+    loglines $c 1 "$LOST"
+    if [ $c = bd5_a ]; then
+      PYTHONDONTWRITEBYTECODE=1 python3 "$HERE/lgr_dep_check.py" "$P/$c.lgr.shy" "$P/$c.hydro.shy" \
+          cross "$DEPLO" "$DEPHI" "$DEPMIN" || fail "$c: the deposits of class 3 are not the crossings of the settling particles"
+    fi
+    PYTHONDONTWRITEBYTECODE=1 python3 "$HERE/lgr_dep_check.py" "$P/$c.lgr.shy" "$P/$c.hydro.shy" \
+        band "$BANDLO" "$BANDHI" "$DEPMIN" || fail "$c: the deposition flux is not sv times the near-bed concentration"
+  done
 fi
 finish
