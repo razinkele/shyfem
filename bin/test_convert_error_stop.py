@@ -95,6 +95,57 @@ end
 """ % ("long text " * 11))
 
 
+TRICKY = """\
+module kk
+	implicit none
+	integer a1, b1
+end module
+subroutine s1
+	implicit none
+	integer used
+	used = 0
+	stop 'error stop s1: used'
+end
+subroutine s2
+	use kk
+	implicit none
+	integer user, usevar
+	user = 3
+	usevar = 4
+	stop 'error stop s2: user'
+end
+subroutine s3
+	use kk, only: a1, &
+	   b1
+	implicit none
+	stop 'error stop s3: continued use'
+end
+subroutine s4
+	use kk, only: a1, & ! comment
+	   b1
+	implicit none
+	stop 'error stop s4: continued use with comment'
+end
+subroutine s5
+	implicit none
+	error stop 'error stop s5: f2008'
+end
+"""
+
+STUB = """\
+module mod_error_stop
+	implicit none
+	interface error_stop
+	  module procedure es2
+	end interface
+contains
+	subroutine es2(r,t)
+	character*(*) r, t
+	end subroutine
+end module
+"""
+
+
 def run(*args, cwd):
     p = subprocess.run([sys.executable, SCRIPT] + list(args), cwd=cwd,
                        capture_output=True, text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
@@ -207,6 +258,40 @@ class T(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("call error_stop('d1','some text')", src)
         self.assertIn("call error_stop('d1','bare')", src)
+
+    def test_tricky_use_lines_parse(self):
+        p = self.w("u.f90", TRICKY)
+        rc, out = run(p, cwd=self.d.name)
+        print("---- tricky: exit %d\n%s" % (rc, out))
+        src = self.r("u.f90")
+        self.assertEqual(rc, 1)                    # s5 is listed
+        self.assertNotIn("error call", src)
+        self.assertIn("error stop 'error stop s5: f2008'", src)
+        self.assertIn("[F2008 error stop statement: decide by hand]", out)
+        lines = src.split("\n")
+        def at(sub):
+            return [i for i, l in enumerate(lines) if sub in l][0]
+        # the import comes before any executable or declaration line
+        self.assertLess(at("only: error_stop"), at("used = 0"))
+        s2 = src.split("subroutine s2")[1].split("end\n")[0]
+        self.assertLess(s2.index("mod_error_stop"), s2.index("implicit none"))
+        # a continued use statement is not cut in two
+        for name in ("s3", "s4"):
+            body = src.split("subroutine " + name)[1].split("end\n")[0]
+            i = body.index("only: a1,")
+            self.assertTrue(body[i:].split("\n")[1].strip().startswith("b1"))
+        # and the whole file parses against a stub of the module
+        self.w("mod_error_stop.f90", STUB)
+        gf = subprocess.run(["gfortran", "-fsyntax-only", "mod_error_stop.f90"],
+                            cwd=self.d.name, capture_output=True, text=True)
+        self.assertEqual(gf.returncode, 0, gf.stderr)
+        # s5 (still the f2008 statement) is removed for the syntax check
+        ok = src.replace("\terror stop 'error stop s5: f2008'\n", "")
+        self.w("u2.f90", ok)
+        gf = subprocess.run(["gfortran", "-fsyntax-only", "u2.f90"],
+                            cwd=self.d.name, capture_output=True, text=True)
+        print("---- gfortran -fsyntax-only u2.f90: exit %d %s" % (gf.returncode, gf.stderr))
+        self.assertEqual(gf.returncode, 0, gf.stderr)
 
     def test_fixed_form_refused(self):
         p = self.w("f.f", "      stop 'error stop x: y'\n")

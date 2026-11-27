@@ -72,7 +72,7 @@ HEADER = re.compile(
     r"(?P<k>subroutine|function|program)\s+(?P<n>\w+)", re.I)
 MODPROC = re.compile(r"^module\s+procedure\s+(?P<n>\w+)", re.I)
 END = re.compile(r"^end\s*(?:subroutine|function|program|procedure)\b|^end$", re.I)
-USE = re.compile(r"^use\s*(?:,\s*\w+\s*)?(?:::)?\s*(?P<m>\w+)(?P<rest>.*)$", re.I)
+USE = re.compile(r"^use(?=[\s,:])\s*(?:,\s*\w+\s*)?(?:::)?\s*(?P<m>\w+)(?=\s*(?:,|&|$))(?P<rest>.*)$", re.I)
 
 
 def mask(line):
@@ -223,6 +223,9 @@ def convert(path, args, decisions):
             pos, j = sm.start(), sm.end()
             while j < len(line) and line[j] in " \t":
                 j += 1
+            if re.search(r"\berror\s*$", m[:pos], re.I):
+                say(i, "F2008 error stop statement: decide by hand")
+                break
             end, content = sm.end(), None
             if j < len(line) and line[j] in "'\"":
                 content, e2 = literal_at(line, j)
@@ -278,11 +281,13 @@ def convert(path, args, decisions):
     # the import lines
     for hs, (sc, use) in inserted.items():
         j = sc.start
-        while lines[j].rstrip().endswith("&"):
+        while mask(lines[j]).rstrip().endswith("&"):
             j += 1
         if sc.uses:
             last = max(u[0] for u in sc.uses)
             ind = re.match(r"[ \t]*", lines[last]).group(0) or "\t"
+            while mask(lines[last]).rstrip().endswith("&"):     # continued use
+                last += 1
         else:
             last = j
             k = j + 1
