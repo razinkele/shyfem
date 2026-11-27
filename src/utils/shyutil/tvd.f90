@@ -51,8 +51,73 @@
         integer, allocatable, save :: ltvdup(:,:,:)	!lmax of element
         integer, allocatable, save :: itvdup(:,:,:)	!index into array
 
+! error record of tvd_get_upwind_c (#317): a worker thread of the OpenMP
+! tasks of conz3d_omp may neither write nor abort, so an error is
+! recorded here (the first one in full) and checked on the main thread
+! after the parallel region by tvd_check_error (tvd_admin.f90)
+
+	integer, save :: tvd_err_n = 0		!number of errors recorded
+	integer, save :: tvd_err_ie = 0		!element of the flux
+	integer, save :: tvd_err_ienew = 0	!upwind element
+	integer, save :: tvd_err_l = 0		!layer
+	integer, save :: tvd_err_code = 0	!code of the first error
+	double precision, save :: tvd_err_x = 0.d0	!point of the first error
+	double precision, save :: tvd_err_y = 0.d0
+
+! test hook TVD_TEST_ERROR=K (read once in tvd_init, on the master
+! process only): K = 1 forces the error of xy2xi (code 1), K = 2 the
+! lremote error (code 4), in the first call of tvd_get_upwind_c that
+! reaches the check; inert (0) when not set
+
+	integer, save :: tvd_test_event = 0
+	integer, save :: tvd_test_left = 0	!1 until the hook has fired
+
 !==================================================================
 	contains
+!==================================================================
+
+        subroutine tvd_error_record(ie,ienew,l,code,x,y)
+
+! records an error of tvd_get_upwind_c; safe inside an OpenMP task
+
+        integer, intent(in) :: ie,ienew,l,code
+        double precision, intent(in) :: x,y
+
+!$OMP CRITICAL (tvd_error_record)
+        tvd_err_n = tvd_err_n + 1
+        if( tvd_err_n == 1 ) then
+          tvd_err_ie = ie
+          tvd_err_ienew = ienew
+          tvd_err_l = l
+          tvd_err_code = code
+          tvd_err_x = x
+          tvd_err_y = y
+        end if
+!$OMP END CRITICAL (tvd_error_record)
+
+        end subroutine tvd_error_record
+
+!==================================================================
+
+        function tvd_test_take(kind)
+
+! .true. once, for the call that fires the test hook of kind kind
+
+        logical :: tvd_test_take
+        integer, intent(in) :: kind
+
+        tvd_test_take = .false.
+        if( tvd_test_event /= kind ) return
+
+!$OMP CRITICAL (tvd_test_take)
+        if( tvd_test_left > 0 ) then
+          tvd_test_left = 0
+          tvd_test_take = .true.
+        end if
+!$OMP END CRITICAL (tvd_test_take)
+
+        end function tvd_test_take
+
 !==================================================================
 
         subroutine mod_tvd_init(nel)

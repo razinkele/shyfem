@@ -1607,6 +1607,8 @@
 	deallocate(cclp)
 	deallocate(ccle)
 
+	call tvd_check_error	!error of tvd_get_upwind_c, recorded (#317)
+
 	end
 
 !*****************************************************************

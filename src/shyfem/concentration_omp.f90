@@ -279,6 +279,9 @@
 !$OMP TASKWAIT       
 
        end do ! end loop over subset
+
+!	an error of tvd_get_upwind_c was only recorded in the tasks (#317)
+	if( btvd2 ) call tvd_check_error
        
        if( shympi_partition_on_elements() ) then
          !call shympi_comment('shympi_elem: exchange scalar')
