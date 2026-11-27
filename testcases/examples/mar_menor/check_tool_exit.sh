@@ -215,7 +215,7 @@ row 7 "error stop classify_files: cannot determine file type"    shyplot wrong.s
 row 7 "error stop grd_internal_init: cannot open file"           shyadj missing.grd
 row 7 "error stop grd_read: error reading grd file"              shyadj wrong.grd
 row 7 "error stop statgrd: element layout"                       shyadj square.grd
-row 7 "error stop checkarea: negative area"                      shyadj zero.grd
+row 7 "error stop checkarea: non-positive area"                      shyadj zero.grd
 row 7 "error stop shyelab: file not existing"                    lgrelab missing.lgr
 row 7 "error stop shyelab: not a valid shy file"                 lgrelab wrong.lgr
 row 7 "error stop extelab: cannot open file"                     extelab missing.ext

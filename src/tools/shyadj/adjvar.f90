@@ -406,7 +406,7 @@
 	    write(6,*) 'error while checking: ',trim(string)
 	    call wr0grd
 	    write(6,*) 'nkn,nel: ',nkn,nel
-	    call error_stop('checkarea','negative area')
+	    call error_stop('checkarea','non-positive area')
 	end if
 
 	end

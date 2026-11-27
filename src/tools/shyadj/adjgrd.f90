@@ -539,7 +539,6 @@
 ! **************************************************************
 
 	subroutine insgr(k,kafter,knew,ngrddi,ngrade,ngri)
-
 	use mod_error_stop, only: error_stop
 
 !  inserts grade in index (knew in index of node k after node kafter)
