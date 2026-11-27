@@ -52,6 +52,7 @@
 ! 06.07.2018	ggu	changed VERS_7_5_48
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 09.11.2021	ggu	eliminated arithmetic if
+! 27.11.2026	arb	pressure errors exit 7 through mod_error_stop (#319)
 !
 !*****************************************************************************
 
@@ -436,6 +437,8 @@
 
 ! computes wet bulb temperature from rel. hum.
 
+	use mod_error_stop, only : error_stop
+
         implicit none
 
         real t          !dry air temperature [C]
@@ -479,7 +482,7 @@
 	return
    99	continue
 	write(6,*) t,pp,rh
-	stop 'error stop rh2wb: erroneous pressure'
+	call error_stop('rh2wb','erroneous pressure')
         end
 
 !***********************************************************************
@@ -497,6 +500,8 @@
 !                   RH = Relative Humidity in percent (%)
 !                    D = Dewpoint in Centigrade (C) degrees
 
+	use mod_error_stop, only : error_stop
+
 	implicit none
 
         real t          !dry air temperature [C]
@@ -506,7 +511,10 @@
 
 	real es,ew,e,b,d,w,p
 
-	if( pp < 800 .or. pp > 1200 ) stop 'error stop wb2rh: pressure'
+	if( pp < 800 .or. pp > 1200 ) then
+	  write(6,*) 'pressure [mbar]: ',pp
+	  call error_stop('wb2rh','pressure')
+	end if
 
 	w = tw
 	p = 101.3
@@ -553,6 +561,8 @@
 
 ! computes dew point from rel. hum.
 
+	use mod_error_stop, only : error_stop
+
         implicit none
 
         real t          !dry air temperature [C]
@@ -565,7 +575,10 @@
 
         real p,taux,es,e,lne,gamma,delta,tw
 
-	if( pp < 800 .or. pp > 1200 ) stop 'error stop wb2rh: pressure'
+	if( pp < 800 .or. pp > 1200 ) then
+	  write(6,*) 'pressure [mbar]: ',pp
+	  call error_stop('rh2dp','pressure')
+	end if
 
         p = 100                 !pressure in kPa
 	p = pp/10.

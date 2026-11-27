@@ -44,10 +44,14 @@
 #   9. check_itlin.sh NP: the semi-Lagrangian option itlin = 1 (serial runs
 #      end and stay bounded; on NP processes and on a geographic grid it
 #      stops with a clear message) (#227); PASS line "ITLIN CHECK: PASS"
-#   Checks 6 to 9 are separate scripts in this folder; each counts as
+#  10. check_iheat8.sh NP: the MFS bulk heat flux (iheat = 8) runs six hours
+#      of mm_hyd_41, serial and on NP processes; before #319 it stopped at
+#      the first heat step (pressure in Pa given to rh2dp) with exit 0;
+#      PASS line "IHEAT8 CHECK: PASS"
+#   Checks 6 to 10 are separate scripts in this folder; each counts as
 #   passed only when it exits with 0 and prints its own PASS line (the
 #   whole line, anywhere in its output) (log: NAME.gate.log, with NAME = mpi_3d, setnod, flux_sections,
-#   itlin; the wall time of each is printed).  A failure of one makes
+#   itlin, iheat8; the wall time of each is printed).  A failure of one makes
 #   "MPI GATE: FAIL" and names the check.  They need what the scripts
 #   themselves need: shyelab and shypre on PATH, python3 (with netCDF4 only
 #   for the optional variable-by-variable report of check 6), git (check 7
@@ -217,6 +221,9 @@ sub_check 8 flux_sections "FLUX SECTIONS: PASS" check_flux_sections_mpi.sh "$NP"
 
 echo "=== 9. semi-Lagrangian advection of momentum (itlin = 1)"
 sub_check 9 itlin "ITLIN CHECK: PASS" check_itlin.sh "$NP"
+
+echo "=== 10. MFS bulk heat flux (iheat = 8)"
+sub_check 10 iheat8 "IHEAT8 CHECK: PASS" check_iheat8.sh "$NP"
 
 if [ "$rc" = 0 ]; then echo "MPI GATE: PASS"; else echo "MPI GATE: FAIL"; fi
 exit "$rc"
