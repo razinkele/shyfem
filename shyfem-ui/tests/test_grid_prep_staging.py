@@ -73,6 +73,20 @@ def test_run_again_after_editing_the_source_is_refused(dirs):
     assert (out / NAME).read_bytes() == b"grid one\n"
 
 
+def test_same_size_same_mtime_edit_is_not_mistaken_for_the_cached_identical_copy(dirs):
+    """filecmp caches by (type, size, mtime): a stale True must not reuse an old copy."""
+    import os
+
+    src, out = dirs
+    (out / NAME).write_bytes(b"grid one\n")
+    assert stage_for_shypre(src / NAME, out) == out / NAME  # identical: cached True
+    st = (src / NAME).stat()
+    (src / NAME).write_bytes(b"grid TWO\n")  # same length
+    os.utime(src / NAME, ns=(st.st_atime_ns, st.st_mtime_ns))
+    with pytest.raises(ValueError):
+        stage_for_shypre(src / NAME, out)
+
+
 # --- named_upload -----------------------------------------------------------
 
 
@@ -133,8 +147,8 @@ def test_upload_handler_loads_the_named_copy():
     body = src[
         src.index("async def _handle_file_upload(") : src.index("# Initialize child modules")
     ]
-    i_named = body.index("named_upload(")
+    i_named = body.index("asyncio.to_thread(named_upload,")
     assert i_named < body.index("GrdParser.parse_file")  # validated before parsing
-    assert "current_grd_path.set(named" in body.replace(" ", "") or "current_grd_path.set(" in body
+    assert "current_grd_path.set(named_path)" in body
     set_call = body[body.index("current_grd_path.set(") :].split("\n")[0]
     assert "temp_path" not in set_call

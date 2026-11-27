@@ -226,7 +226,7 @@ def grid_prep_server(
 
         try:
             # Shiny stores the upload as "0.grd"; shypre names its .bas after the grid.
-            named_path = named_upload(temp_path, file_info["name"])
+            named_path = await asyncio.to_thread(named_upload, temp_path, file_info["name"])
             grd = await asyncio.to_thread(GrdParser.parse_file, temp_path)
             current_grd.set(grd)
             current_grd_path.set(named_path)

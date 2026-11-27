@@ -72,6 +72,9 @@ def stage_grid(
         return grd_file, False
     staged = output_dir / grd_file.name
     if staged.exists():
+        # filecmp caches by (type, size, mtime): a source edited with the same size and
+        # mtime (cp -p, archive extraction) would get a stale "identical" answer.
+        filecmp.clear_cache()
         if staged.is_file() and filecmp.cmp(staged, grd_file, shallow=False):
             return staged, False
         raise ValueError(
