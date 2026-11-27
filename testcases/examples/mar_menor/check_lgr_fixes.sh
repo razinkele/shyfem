@@ -487,12 +487,12 @@
 #             and the TVD set-up called them, all but the larvae also on
 #             several processes; they now call the _ierr form and stop
 #             through shympi_abort_internal, exit code 33; no run reaches
-#             these errors), except exactly two known calls inside the
-#             OpenMP tasks of conz3d_omp (the upwind value of TVD,
-#             tvd_get_upwind_c: femintp_xi, issue #317, and a debug line
-#             under bdebug = .false.), where an abort through MPI_ABORT may
-#             not come from a worker either; each must be found once, by
-#             file, routine and line.  The code before #305 does not know
+#             these errors), except exactly one known call inside the
+#             OpenMP tasks of conz3d_omp: a debug line of tvd_get_upwind_c
+#             under bdebug = .false. (since #317 the upwind value itself
+#             calls femintp_xi_ierr, records an error and stops after the
+#             OpenMP tasks, so femintp_xi has no call of the model left); it
+#             must be found once, by file, routine and line.  The code before #305 does not know
 #             the hook; the code before #310 has no kind 26 (LGR_TEST_EVENT
 #             =26 is out of range there: no hook, no line), the code before
 #             #316 no kind 27.
@@ -2801,16 +2801,16 @@ EOF
   # the routines of the old name stop with a bare stop (exit code 0): none
   # may be called in the model (every Fortran file under src, src/tools
   # excepted: the tools run on one process), where they run on several
-  # processes; kept are exactly two known calls inside the OpenMP tasks
-  # of conz3d_omp (the upwind value of TVD, tvd_get_upwind_c: femintp_xi,
-  # issue #317, and a debug line under bdebug = .false.), where an abort
-  # through MPI_ABORT may not come from a worker either
+  # processes; kept is exactly one known call inside the OpenMP tasks of
+  # conz3d_omp, a debug line of tvd_get_upwind_c under bdebug = .false.,
+  # where an abort through MPI_ABORT may not come from a worker either
+  # (since #317 the upwind value calls femintp_xi_ierr, records an error
+  # and stops after the OpenMP tasks; femintp_xi has no model call left)
   PYTHONDONTWRITEBYTECODE=1 python3 - "$SRC" <<'EOF' || fail "calls of xi2xy, xy2xi, xi_dist or xit_start_end (bare stop) in the model, see above"
 import os, re, sys
 src = sys.argv[1]
 # the calls kept: (file under src, routine, the stripped line), each once
-KEEP = [("utils/shyutil/evgeom.f90", "femintp_xi", "call  xy2xi(ie,x,y,xi)"),
-        ("shyfem/tvd_admin.f90", "tvd_get_upwind_c", "call xy2xi(ienew,xd,yd,xi)")]
+KEEP = [("shyfem/tvd_admin.f90", "tvd_get_upwind_c", "call xy2xi(ienew,xd,yd,xi)")]
 EXT = (".f", ".F", ".f90", ".F90")
 unit = re.compile(r"^\s*(?:[a-z ()*0-9,=]*\s)?(?:subroutine|function)\s+(\w+)", re.I)
 call = re.compile(r"^[^!]*\bcall\s+(xi2xy|xy2xi|xi_dist|xit_start_end)\s*\(", re.I)
