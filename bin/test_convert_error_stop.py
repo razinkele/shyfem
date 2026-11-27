@@ -139,10 +139,50 @@ module mod_error_stop
 	  module procedure es2
 	end interface
 contains
+	subroutine success
+	end subroutine
 	subroutine es2(r,t)
 	character*(*) r, t
 	end subroutine
 end module
+"""
+
+
+ROUND3 = """\
+subroutine r1(bad)
+	use mod_error_stop, only: error_stop
+	implicit none
+	logical bad
+	if (bad) then; stop 'error stop r1: a'; else; stop 'error stop r1: b'; end if
+	if (bad) STOP
+	if (bad) STOP 'ERROR STOP r1: upper'
+end
+subroutine r2
+	use mod_error_stop, only: &
+	   es => error_stop
+	implicit none
+	stop 'error stop r2: alias'
+end
+subroutine r3
+	implicit none
+	stop 'error stop r3: a' // &
+	   'b'
+end
+subroutine r4
+	use mod_error_stop, only: success
+	implicit none
+	stop 'error stop r4: x'
+end
+subroutine r5(bad)
+	implicit none
+	logical bad
+	if (bad) STOP 'Error Stop r5: mixed' ; stop 'error stop r5: two'
+end
+SUBROUTINE r6
+	USE Mod_Error_Stop, ONLY: error_stop
+	IMPLICIT NONE
+	STOP 'error stop r6: caps'
+END SUBROUTINE
 """
 
 
@@ -292,6 +332,46 @@ class T(unittest.TestCase):
                             cwd=self.d.name, capture_output=True, text=True)
         print("---- gfortran -fsyntax-only u2.f90: exit %d %s" % (gf.returncode, gf.stderr))
         self.assertEqual(gf.returncode, 0, gf.stderr)
+
+    def test_round3_review_findings(self):
+        p = self.w("v.f90", ROUND3)
+        rc, out = run(p, cwd=self.d.name)
+        print("---- round 3: exit %d\n%s" % (rc, out))
+        src = self.r("v.f90")
+        self.assertEqual(rc, 1)
+        # every stop of a line is converted (r1 a and b, r5 both)
+        self.assertIn("then; call error_stop('r1','a'); else; call error_stop('r1','b'); end if", src)
+        self.assertIn("call error_stop('r5','mixed') ; call error_stop('r5','two')", src)
+        # upper case keywords: the stop with its text is converted, the bare
+        # STOP is listed, and the existing upper-case import is recognised
+        self.assertIn("call error_stop('r1','upper')", src)
+        self.assertRegex(out, r"if \(bad\) STOP +\[other stop")
+        self.assertIn("call error_stop('r6','caps')", src)
+        self.assertEqual(src.upper().count("USE MOD_ERROR_STOP"), 5)   # r1 r2 r4 r6 had one, r5 got one
+        # the alias of a continued existing import is used
+        self.assertIn("call es('r2','alias')", src)
+        # a stop code that is not one literal is listed, not half converted
+        self.assertIn("stop 'error stop r3: a' // &", src)
+        self.assertIn("[stop code is not a single literal", out)
+        # an existing import that does not import error_stop is listed
+        self.assertIn("stop 'error stop r4: x'", src)
+        self.assertIn("[an existing use mod_error_stop does not import error_stop]", out)
+        # the converted file parses against the stub
+        self.w("mod_error_stop.f90", STUB)
+        gf = subprocess.run(["gfortran", "-fsyntax-only", "mod_error_stop.f90"],
+                            cwd=self.d.name, capture_output=True, text=True)
+        self.assertEqual(gf.returncode, 0, gf.stderr)
+        gf = subprocess.run(["gfortran", "-fsyntax-only", "v.f90"],
+                            cwd=self.d.name, capture_output=True, text=True)
+        print("---- gfortran -fsyntax-only v.f90: exit %d %s" % (gf.returncode, gf.stderr))
+        self.assertEqual(gf.returncode, 0, gf.stderr)
+
+    def test_decision_text_with_apostrophe(self):
+        p = self.w("q.f90", "subroutine q1\n\timplicit none\n\tstop 'error stop q1'\nend\n")
+        dec = self.w("dq.txt", "q.f90:3 q1|can't read grid\n")
+        rc, out = run("--decide", dec, p, cwd=self.d.name)
+        self.assertEqual(rc, 0)
+        self.assertIn("call error_stop('q1','can''t read grid')", self.r("q.f90"))
 
     def test_fixed_form_refused(self):
         p = self.w("f.f", "      stop 'error stop x: y'\n")

@@ -156,20 +156,39 @@ def structure(masked):
             else:
                 u = USE.match(s)
                 if u and stack and not stack[-1].contains:
-                    stack[-1].uses.append((i, u.group("m").lower(), u.group("rest")))
+                    rest = u.group("rest")
+                    k = i
+                    while masked[k].rstrip().endswith("&") and k + 1 < len(masked):
+                        rest = rest.rstrip()[:-1] + " " + masked[k + 1].strip().lstrip("&")
+                        k += 1
+                    stack[-1].uses.append((i, u.group("m").lower(), rest))
         per_line.append(list(stack))
     return per_line
 
 
 def import_form(stack, force_rename):
-    """(alias, use text or None if already imported, why)"""
+    """(alias, use text or None if already imported, why); alias None = the
+    existing import is unclear, list the routine"""
     for sc in stack:
         for _, mod, rest in sc.uses:
-            if mod == "mod_error_stop":
-                m = re.search(r"(\w+)\s*=>\s*error_stop", rest, re.I)
-                if m:
-                    return m.group(1), None, "already imported as " + m.group(1)
+            if mod != "mod_error_stop":
+                continue
+            only = re.match(r"^\s*,\s*only\s*:(?P<l>.*)$", rest, re.I)
+            if only:
+                for item in only.group("l").split(","):
+                    item = item.strip()
+                    m = re.match(r"^(\w+)\s*=>\s*error_stop$", item, re.I)
+                    if m:
+                        return m.group(1), None, "already imported as " + m.group(1)
+                    if item.lower() == "error_stop":
+                        return "error_stop", None, "already imported"
+                return None, None, "an existing use mod_error_stop does not import error_stop"
+            m = re.search(r"(\w+)\s*=>\s*error_stop", rest, re.I)
+            if m:
+                return m.group(1), None, "already imported as " + m.group(1)
+            if rest.strip() == "":
                 return "error_stop", None, "already imported"
+            return None, None, "an existing use mod_error_stop is unclear"
     shympi = any(mod == "shympi" for sc in stack for _, mod, _ in sc.uses)
     if shympi or force_rename:
         why = "use shympi in the routine or its host" if shympi else "--rename"
@@ -212,29 +231,53 @@ def convert(path, args, decisions):
     def say(i, why):
         listed.append((i + 1, lines[i].strip(), why))
 
+    seen = set()
+
+    def say1(i, why):
+        if (i, why) not in seen:
+            seen.add((i, why))
+            say(i, why)
+
     for i, line in enumerate(lines):
         if line.lstrip().startswith("!"):
             continue
         m = masked[i]
+        stops = list(re.finditer(r"\bstop\b", m, re.I))
+        if not stops:
+            continue
         stack = per_line[i]
         rt = stack[-1] if stack and stack[-1].kind == "routine" else None
         dkey = (base, i + 1)
-        for sm in re.finditer(r"\bstop\b", m):
+        edits = []                  # (pos, end, name, text, alias, use, why)
+        for n, sm in enumerate(stops):
             pos, j = sm.start(), sm.end()
             while j < len(line) and line[j] in " \t":
                 j += 1
             if re.search(r"\berror\s*$", m[:pos], re.I):
-                say(i, "F2008 error stop statement: decide by hand")
-                break
+                say1(i, "F2008 error stop statement: decide by hand")
+                continue
             end, content = sm.end(), None
             if j < len(line) and line[j] in "'\"":
                 content, e2 = literal_at(line, j)
                 if content is not None:
                     end = e2
-            if dkey in decisions:
+            decided = n == 0 and dkey in decisions
+            iserr = content is not None and content.lower().startswith("error stop")
+            if not decided and not iserr:
+                say1(i, "other stop (normal end or error?)")
+                continue
+            # the whole stop code must be one literal (or none) and then the
+            # end of the statement, a ; or a comment
+            tailm = m[end:].strip()
+            if (content is None and j < len(line) and line[j] not in ";!") or \
+               (tailm != "" and not tailm.startswith(";")):
+                say1(i, "stop code is not a single literal (continued or concatenated)")
+                continue
+            if decided:
                 name, text = decisions[dkey]
+                text = text.replace("'", "''")
                 used.add(dkey)
-            elif content is not None and content.startswith("error stop"):
+            else:
                 rest = content[len("error stop"):]
                 c, nm, co = CANON.match(rest), NUMBERED.match(rest), COLON.match(rest)
                 if c:
@@ -244,37 +287,43 @@ def convert(path, args, decisions):
                 elif co and rt:
                     name, text = rt.name, co.group("t")
                 elif co:
-                    say(i, "error stop: enclosing routine not certain")
-                    break
+                    say1(i, "error stop: enclosing routine not certain")
+                    continue
                 else:
-                    say(i, "error stop in a form the script does not convert")
-                    break
+                    say1(i, "error stop in a form the script does not convert")
+                    continue
                 if line[j] == '"' and ("'" in text or '""' in text):
-                    say(i, "quote in the text of a double-quoted string")
-                    break
-            else:
-                continue
+                    say1(i, "quote in the text of a double-quoted string")
+                    continue
             if rt is None:
-                say(i, "no enclosing routine found")
-                break
+                say1(i, "no enclosing routine found")
+                continue
             alias, use, why_form = import_form(stack, args.rename)
-            call = "call %s('%s','%s')" % (alias, name, text)
-            one = line[:pos] + call + line[end:]
-            if len(one) <= MAXLEN:
-                new[i] = [one]
-            else:
-                ind = re.match(r"\s*", line).group(0)
-                head = line[:pos] + "call %s('%s', &" % (alias, name)
-                tail = ind + "\t'%s')" % text + line[end:]
-                if len(head) > MAXLEN or len(tail) > MAXLEN:
-                    say(i, "call longer than %d characters" % MAXLEN)
-                    break
-                new[i] = [head, tail]
-            done.append((i + 1, line.strip(), " / ".join(s.strip() for s in new[i])))
+            if alias is None:
+                say1(i, why_form)
+                continue
+            edits.append((pos, end, name, text, alias, use, why_form))
+        if not edits:
+            continue
+        cur = line
+        for pos, end, name, text, alias, use, why_form in reversed(edits):
+            cur = cur[:pos] + "call %s('%s','%s')" % (alias, name, text) + cur[end:]
+        if len(cur) <= MAXLEN:
+            new[i] = [cur]
+        else:
+            pos, end, name, text, alias, use, why_form = edits[0]
+            ind = re.match(r"\s*", line).group(0)
+            head = line[:pos] + "call %s('%s', &" % (alias, name)
+            tail = ind + "\t'%s')" % text + line[end:]
+            if len(edits) > 1 or len(head) > MAXLEN or len(tail) > MAXLEN:
+                say1(i, "call longer than %d characters" % MAXLEN)
+                continue
+            new[i] = [head, tail]
+        for pos, end, name, text, alias, use, why_form in edits:
+            done.append((i + 1, line.strip(), " / ".join(x.strip() for x in new[i])))
             forms[rt.name] = (alias, why_form)
             if use is not None:
                 inserted[rt.start] = (rt, use)
-            break
     for (fn, ln), _ in decisions.items():
         if fn == base and (fn, ln) not in used:
             listed.append((ln, "", "decision not applied: no stop on this line"))
@@ -295,15 +344,13 @@ def convert(path, args, decisions):
                 k += 1
             ind = (re.match(r"[ \t]*", lines[k]).group(0) if k < len(lines) else "") or "\t"
         after.setdefault(last, []).append((ind + use, crs[last]))
-    # what is left: every line that still mentions error stop, every other stop
+    # what is left: a line without a stop that still mentions error stop
     for i, line in enumerate(lines):
-        if line.lstrip().startswith("!") or any(l[0] == i + 1 for l in listed):
+        if line.lstrip().startswith("!") or re.search(r"\bstop\b", masked[i], re.I):
             continue
-        cur = new[i][0] if i in new else line
-        if re.search(r"error\s+stop", cur, re.I) and not re.search(r"\bcall\s+\w*error_stop", cur):
-            say(i, "mentions error stop, not converted")
-        elif re.search(r"\bstop\b", mask(cur)) or (i in new and re.search(r"\bstop\b", mask(new[i][-1]))):
-            say(i, "other stop (normal end or error?)")
+        code = line[:len(masked[i])]
+        if re.search(r"error\s+stop", code, re.I):
+            say1(i, "mentions error stop, not converted")
     listed.sort()
     out, ocr = [], []
     for i, line in enumerate(lines):
