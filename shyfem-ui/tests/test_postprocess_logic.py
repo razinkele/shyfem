@@ -5,6 +5,7 @@ from shyfem_ui.services.postprocess_logic import (
     discover_shy_files,
     format_size,
     parse_shyelab_info,
+    scan_command,
 )
 
 
@@ -177,3 +178,25 @@ class TestParseShyelabInfo:
         info = parse_shyelab_info(out)
         assert "Nodes" in info
         assert len(info) == 1
+
+
+class TestScanCommand:
+    """Scan runs shyelab in the file's folder on the bare name (#343): shyelab
+    reads at most 80 characters of a path."""
+
+    def test_bare_name_and_folder(self, tmp_path):
+        deep = tmp_path / ("a" * 50) / ("b" * 50)
+        f = deep / "run.hydro.shy"
+        args, wd = scan_command(f)
+        assert args == ["-info", "run.hydro.shy"]
+        assert wd == deep
+        assert len(str(f)) > 80
+
+    def test_page_uses_the_helper(self):
+        from pathlib import Path
+
+        import shyfem_ui.pages.postprocess as pp
+
+        src = Path(pp.__file__).read_text()
+        assert "scan_command(path)" in src
+        assert '["-info", str(path)]' not in src

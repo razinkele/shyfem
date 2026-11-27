@@ -29,6 +29,7 @@ from shyfem_ui.services.postprocess_logic import (
     parse_shyelab_info,
     preview_series_file,
     run_shyelab_and_name,
+    scan_command,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.timeseries_loader import load_timeseries
@@ -425,11 +426,8 @@ def postprocess_server(
         log_content.set(f"Scanning {path.name}...\n")
 
         try:
-            result = await wrapper.run_command(
-                "shyelab",
-                ["-info", str(path)],
-                path.parent,
-            )
+            scan_args, scan_dir = scan_command(path)
+            result = await wrapper.run_command("shyelab", scan_args, scan_dir)
 
             if result.success:
                 info = parse_shyelab_info(result.stdout)
