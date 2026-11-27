@@ -81,10 +81,7 @@ def main():
     lgr, hydro, mode = sys.argv[1], sys.argv[2], sys.argv[3]
     lo, hi, nmin = float(sys.argv[4]), float(sys.argv[5]), int(sys.argv[6])
     g = lv.read_geom(hydro)
-    hlv = np.asarray(g["hlv"], dtype=np.float64)
     hev = np.asarray(g["hev"], dtype=np.float64)
-    ilhv = np.asarray(g["ilhv"], dtype=np.int64)
-    hbot = np.where(ilhv >= 2, hev - hlv[np.maximum(ilhv - 2, 0)], hev)
     outs = outputs(lgr)
     times = [t for t, _ in outs]
     bt = dict(outs)
