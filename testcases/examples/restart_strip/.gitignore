@@ -3,3 +3,6 @@
 *.shy
 *.inf
 *.log
+# MPI partition files: mar_menor/check_mpi.sh step 4 runs
+# `mpirun -np N shyfem strip_rst.str` here, which writes partition.<N>.*
+partition.*
