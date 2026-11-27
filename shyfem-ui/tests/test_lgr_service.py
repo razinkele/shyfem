@@ -214,3 +214,32 @@ def test_lgr_service_no_output_files_returns_empty(tmp_path):
     # files are written to the internal tmpdir created by LgrService.load → returns []
     result = asyncio.run(svc.load(lgr))
     assert result == []
+
+
+def test_lgr_service_passes_short_name_for_long_path(tmp_path):
+    """lgrelab reads at most 80 characters of a path (#343): a .lgr in a deep
+    folder is passed by a short name that resolves to it in the working folder."""
+    deep = tmp_path / ("d" * 40) / ("e" * 40) / ("f" * 40)
+    deep.mkdir(parents=True)
+    lgr = deep / "particles.lgr.shy"
+    lgr.write_text("lgr")
+    assert len(str(lgr)) > 80
+
+    seen = {}
+
+    async def fake_run(cmd, args, working_dir=None, **kw):
+        seen["cmd"], seen["args"] = cmd, list(args)
+        wd = Path(working_dir)
+        seen["target"] = (wd / args[-1]).resolve()
+        seen["content"] = (wd / args[-1]).read_text()
+        return _make_ok_result(wd)
+
+    mock_wrapper = MagicMock()
+    mock_wrapper.run_command = fake_run
+    asyncio.run(LgrService(mock_wrapper).load(lgr))
+
+    assert seen["cmd"] == "lgrelab"
+    assert seen["args"][0] == "-lgmean"
+    assert len(seen["args"][-1]) <= 80
+    assert seen["target"] == lgr.resolve()
+    assert seen["content"] == "lgr"

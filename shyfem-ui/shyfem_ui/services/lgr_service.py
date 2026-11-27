@@ -13,6 +13,7 @@ depth(f10.3) age(f10.3) size(f10.3) [custom...].
 """
 
 import logging
+import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,10 +59,14 @@ class LgrService:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
+            # lgrelab reads at most 80 characters of a path (#343): give it
+            # a short name in its own working folder. It identifies the file
+            # by its header, so the name needs no extension.
+            os.symlink(lgr_path.resolve(), tmp_path / "in.lgr")
             try:
                 result = await self._wrapper.run_command(
                     "lgrelab",
-                    ["-lgmean", str(lgr_path.resolve())],
+                    ["-lgmean", "in.lgr"],
                     working_dir=tmp_path,
                 )
             except FileNotFoundError as e:

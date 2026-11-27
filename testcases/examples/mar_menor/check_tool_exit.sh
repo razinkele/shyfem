@@ -33,6 +33,11 @@
 #        shyelab mm_lgr.hydro.shy, shyplot -varid 1 mm_lgr.hydro.shy,
 #        lgrelab -lgmean mm_lgr.lgr.shy
 #      (the .shy files come from mm_lgr.str run for 6 hours with shyfem)
+#      and the same three tools on a path of over 80 characters (#343:
+#      shy_util2.f cut the file name at 80, and the tools stopped with
+#      "file not existing" for a file that exists): shyelab, shyplot -varid 1
+#      and lgrelab -lgmean on the .shy files in a folder nested 5 deep, with
+#      100 characters of folder names added to the mktemp -d path
 #
 # Needs shyfem and the seven tools on PATH. Leaves nothing in this folder.
 # Usage:  ./check_tool_exit.sh
@@ -118,6 +123,16 @@ row 0 "Successful completion" shyadj ../GRID/MM_coarse.grd
 row 0 "time records read" shyelab ../mm_lgr.hydro.shy
 row 0 "total number of plots" shyplot -varid 1 ../mm_lgr.hydro.shy
 row 0 "time records read" lgrelab -lgmean ../mm_lgr.lgr.shy
+
+# the same runs on a path over 80 characters, whatever the length of TMPDIR
+LONGDIR="$TMP"
+for i in 1 2 3 4 5; do LONGDIR="$LONGDIR/long_path_segment_$i"; done
+mkdir -p "$LONGDIR" && ln -s "$TMP/mm_lgr.hydro.shy" "$TMP/mm_lgr.lgr.shy" "$LONGDIR/" \
+  || { echo "FAIL: cannot make the long path"; verdict 1; exit 1; }
+[ "${#LONGDIR}" -gt 80 ] || { echo "FAIL: long path is not over 80 characters"; verdict 1; exit 1; }
+row 0 "time records read" shyelab "$LONGDIR/mm_lgr.hydro.shy"
+row 0 "total number of plots" shyplot -varid 1 "$LONGDIR/mm_lgr.hydro.shy"
+row 0 "time records read" lgrelab -lgmean "$LONGDIR/mm_lgr.lgr.shy"
 cd .. || exit 1
 
 echo "=== help and usage (exit 0)"

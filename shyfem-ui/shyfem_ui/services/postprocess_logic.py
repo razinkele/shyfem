@@ -167,6 +167,17 @@ def discover_shy_files(directory: str | Path) -> list[dict]:
     return result
 
 
+def scan_command(path: str | Path) -> tuple[list[str], Path]:
+    """Arguments and working folder of the Scan run (``shyelab -info``).
+
+    shyelab is run in the file's own folder and given the bare file name:
+    a long absolute path is not needed (#343). The name gets a "./" so that
+    one starting with "-" is not read as an option by clo.
+    """
+    p = Path(path)
+    return ["-info", "./" + p.name], p.parent
+
+
 _NODE_LIST = re.compile(r"^\d+(,\d+)*$")
 
 
