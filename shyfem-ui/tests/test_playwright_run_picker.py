@@ -17,7 +17,15 @@ from playwright.sync_api import expect
 from tests.conftest import expect_option
 
 _PICKERS = ("input_file", "working_dir")
-_WF_PICKERS = ("wf_input_str", "wf_input_grd", "wf_working_dir")
+# The grid picker is not here: it shows only for templates that use {input_grd}
+# (grid_only); the full simulation shows a note in its place (#352).
+_WF_PICKERS = ("wf_input_str", "wf_working_dir")
+_GRID_NOTE = "The grid is the one the STR's $title names"
+
+
+def _select_template(pw_page, key):
+    # The page is shared between tests, so never rely on the template left behind.
+    pw_page.locator("select#run-wf_template").select_option(key)
 
 
 def _open_run(pw_page):
@@ -89,6 +97,15 @@ class TestRunDropdownsNoProject:
             picker = pw_page.locator(f"#run-{name}_picker")
             expect(picker).to_contain_text("Open a project", timeout=10000)
             assert pw_page.locator(f"input#run-{name}").count() == 0, name
+        # full_simulation takes its grid from the STR: a note, no picker.
+        _select_template(pw_page, "full_simulation")
+        grid = pw_page.locator("#run-wf_input_grd_picker")
+        expect(grid).to_contain_text(_GRID_NOTE, timeout=10000)
+        assert pw_page.locator("select#run-wf_input_grd").count() == 0
+        # grid_only uses {input_grd}: its picker prompts like the others.
+        _select_template(pw_page, "grid_only")
+        expect(grid).to_contain_text("Open a project", timeout=10000)
+        assert pw_page.locator("input#run-wf_input_grd").count() == 0
 
 
 @pytest.mark.e2e
@@ -120,7 +137,14 @@ class TestRunDropdownsWithProject:
         s = pw_page.locator("select#run-wf_input_str")
         expect(s).to_be_attached(timeout=10000)
         expect_option(s, "sim.str")
+        # full_simulation takes its grid from the STR (#352): a note, no picker.
+        # The note is awaited first so the count check cannot pass before the render.
+        _select_template(pw_page, "full_simulation")
+        expect(pw_page.get_by_text(_GRID_NOTE)).to_be_visible(timeout=10000)
+        expect(pw_page.locator("select#run-wf_input_grd")).to_have_count(0)
+        _select_template(pw_page, "grid_only")
         g = pw_page.locator("select#run-wf_input_grd")
+        expect(g).to_be_attached(timeout=10000)
         expect_option(g, "mesh.grd")
         w = pw_page.locator("select#run-wf_working_dir")
         expect(w).to_have_value(str(tmp_path))

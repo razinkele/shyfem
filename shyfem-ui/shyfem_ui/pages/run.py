@@ -57,7 +57,11 @@ from shyfem_ui.services.run_logic import (  # re-exported for backward compat (t
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.str_validator import validate_str
-from shyfem_ui.services.workflow import WorkflowEngine, WorkflowStatus
+from shyfem_ui.services.workflow import (
+    WorkflowEngine,
+    WorkflowStatus,
+    template_uses_input_grd,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +358,20 @@ def run_server(
 
     @render.ui
     def wf_input_grd_picker():
+        # Reads the template, not its own value (re-rendering rule): the
+        # picker exists only for templates whose steps use {input_grd}.
+        try:
+            key = input.wf_template()
+        except Exception:
+            logger.debug("Workflow template selection unavailable")
+            key = None
+        if key is not None and not template_uses_input_grd(key):
+            if WorkflowEngine.list_templates().get(key, {}).get("grid_from_str"):
+                return ui.p(
+                    "The grid is the one the STR's $title names; the pipeline rewrites its .bas.",
+                    class_="text-muted small",
+                )
+            return None
         proj, usr = _ctx()
         return project_file_select(
             "wf_input_grd",
@@ -1553,7 +1571,6 @@ def run_server(
         template_key = input.wf_template()
         wf_name = input.wf_name() or None
         input_str = input.wf_input_str()
-        input_grd = input.wf_input_grd()
         working_dir = input.wf_working_dir()
         mpi_np = input.wf_mpi_np()
 
@@ -1577,8 +1594,13 @@ def run_server(
         try:
             if input_str:
                 params["input_str"] = str(config.confine_path(input_str, _usr, must_exist=True))
-            if input_grd:
-                params["input_grd"] = str(config.confine_path(input_grd, _usr, must_exist=True))
+            # Only for templates that use it: a hidden picker keeps its last
+            # value on the server, and the full simulation takes its grid
+            # from the STR (#352).
+            if template_uses_input_grd(template_key):
+                input_grd = input.wf_input_grd()
+                if input_grd:
+                    params["input_grd"] = str(config.confine_path(input_grd, _usr, must_exist=True))
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

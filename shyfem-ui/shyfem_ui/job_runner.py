@@ -170,7 +170,10 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
         error = error or "Unknown error"
     wrapper = ShyfemWrapper(spec.get("shyfem_dir") or ".")
     output_files = wrapper._find_output_files(
-        spec["tool_name"], Path(spec["cwd"]), spec.get("before_snapshot") or {}
+        spec["tool_name"],
+        Path(spec["cwd"]),
+        spec.get("before_snapshot") or {},
+        wrapper.spec_extra_dirs(spec["tool_name"], spec),
     )
     return {
         "status": status,

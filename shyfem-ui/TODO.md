@@ -146,7 +146,7 @@
 - [x] **5.3** Create `services/workflow.py` for job chaining
   - `WorkflowEngine` with sequential step execution and auto-chaining
   - `WorkflowStep`, `WorkflowInstance`, `WorkflowStatus` dataclasses
-  - 3 templates: full_simulation (shypre→shyparts→shyfem→shyelab),
+  - 3 templates: full_simulation (shypre→shyfem→shyelab; since #352 it prepares the STR's grid, no shyparts step),
     grid_only (shypre→shybas), simulation_postprocess (shyfem→shyelab)
   - Template argument resolution: `{param}`, `{step.output_files[N]}`, `{step.output_dir}`
   - `continue_on_failure` per-step, cancel propagation
