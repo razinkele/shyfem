@@ -268,7 +268,8 @@ class LocalJobQueue(JobQueue):
                 # Only the output snapshot (and, for shypre, the folder of its
                 # grid) comes from the file: where else to look and which tool
                 # ran come from the row, because the user can write the job's
-                # directory.
+                # directory. ``result_fields`` filters ``extra_dirs`` against
+                # the row's ``cwd``.
                 trusted = {
                     "cwd": row.working_dir,
                     "tool_name": row.job_type,

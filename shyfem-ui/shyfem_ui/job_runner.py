@@ -173,7 +173,7 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
         spec["tool_name"],
         Path(spec["cwd"]),
         spec.get("before_snapshot") or {},
-        wrapper.spec_extra_dirs(spec["tool_name"], spec),
+        wrapper.spec_extra_dirs(spec["tool_name"], spec, spec["cwd"]),
     )
     return {
         "status": status,
