@@ -628,43 +628,74 @@
 	if( ist /= 0 ) return
 	read(sval,*,iostat=ios) ir
 	if( ios /= 0 ) return
-	if( ir < 1 .or. ir > 2 ) return
+	if( ir < 1 .or. ir > 3 ) return
 	if( .not. shympi_is_master() ) return
 
 	tvd_test_event = ir
 	tvd_test_left = 1
 	write(6,'(a,i0,a)') ' test hook TVD_TEST_ERROR: an error of kind '	&
-     &		,tvd_test_event,' (1 xy2xi, 2 lremote) in the first'	&
-     &		//' upwind value'
+     &		,tvd_test_event,' (1 xy2xi, 2 lremote, 3 xy2xi always)'	&
+     &		//' in the first upwind value'
 
 	end
 
 !*****************************************************************
 
-	subroutine tvd_check_error
+	subroutine tvd_check_error(bmaster)
 
-! checks the error record of tvd_get_upwind_c (#317); to be called on the
-! main thread after the parallel region of the transport step: an error
-! is written once and ends the run through shympi_abort_internal
-! (exit code 33; every process checks its own record)
+! checks the error record of tvd_get_upwind_c (#317): an error is written
+! once and ends the run through shympi_abort_internal (exit code 33).
+! bmaster false (conz3d_omp, conz3d_orig): acts only outside a parallel
+! region (omp_in_parallel false); inside one the transport is a task, MPI
+! is initialised for the main thread only (MPI_THREAD_FUNNELED) and
+! other transports may still run tvd_get_upwind_c, so the record is left
+! for the call with bmaster true, made on the master thread after the
+! TASKWAIT that closes the transport tasks of the time step
+! (shyfem_subs.f90). The record is read under the lock, and only the
+! call that claims it (tvd_err_reported) writes and aborts. Every
+! process checks its own record.
 
 	use mod_tvd
 	use basin
 	use shympi
+!$	use omp_lib
 
         implicit none
 
-	character(len=300) :: text
+	logical, intent(in) :: bmaster
 
-	if( tvd_err_n == 0 ) return
+	character(len=300) :: text
+	logical :: binpar,bclaim
+	integer :: n,code,ie,ienew,l
+	double precision :: x,y
+
+	binpar = .false.
+!$	binpar = omp_in_parallel()
+	if( binpar .and. .not. bmaster ) return
+
+	bclaim = .false.
+!$OMP CRITICAL (tvd_error_record)
+	if( tvd_err_n > 0 .and. .not. tvd_err_reported ) then
+	  tvd_err_reported = .true.
+	  bclaim = .true.
+	  n = tvd_err_n
+	  code = tvd_err_code
+	  ie = tvd_err_ie
+	  ienew = tvd_err_ienew
+	  l = tvd_err_l
+	  x = tvd_err_x
+	  y = tvd_err_y
+	end if
+!$OMP END CRITICAL (tvd_error_record)
+	if( .not. bclaim ) return
 
 	write(text,'(a,i0,a,i0,a,i0,a,i0,a,2g14.6,a,i0,a)')		&
-     &		'error stop tvd_get_upwind_c: code ',tvd_err_code,	&
+     &		'error stop tvd_get_upwind_c: code ',code,		&
      &		' (1/3 wrong xi, -1 element out of range, 4 lremote)'	&
-     &		//' at element ',ipev(tvd_err_ie),			&
-     &		' level ',tvd_err_l,' upwind element ',			&
-     &		ipev(tvd_err_ienew),' point ',tvd_err_x,tvd_err_y,	&
-     &		' (',tvd_err_n,' errors in all)'
+     &		//' at element ',ipev(ie),				&
+     &		' level ',l,' upwind element ',				&
+     &		ipev(ienew),' point ',x,y,				&
+     &		' (',n,' errors in all)'
 	call shympi_abort_internal(trim(text))
 
 	end
@@ -712,8 +743,8 @@
         if( ienew .le. 0 ) return
 
 ! an error is recorded, not written or stopped on (#317: this runs inside
-! the OpenMP tasks of conz3d_omp, which check the record after the
-! parallel region, tvd_check_error); cu keeps the value the caller gave
+! the OpenMP tasks of conz3d_omp; tvd_check_error checks the record
+! outside the tasks); cu keeps the value the caller gave
 ! it (the local value, tvd_fluxes), a defined value that is used only
 ! until that check ends the run
 

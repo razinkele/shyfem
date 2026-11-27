@@ -1037,6 +1037,11 @@
 
 !$OMP TASKWAIT
 
+!	all transports (T/S, tracers, bfm) of this step are done here: an
+!	error of the TVD upwind value recorded in their tasks is checked on
+!	the master thread, once (#317)
+	call tvd_check_error(.true.)
+
 !$OMP END MASTER
 
 !$OMP END PARALLEL

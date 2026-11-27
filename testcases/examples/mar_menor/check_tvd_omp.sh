@@ -38,7 +38,13 @@
 #      the log shows NP processes.
 #   5. serial, 1 thread, TVD_TEST_ERROR=2 (the lremote check): the same
 #      as row 2.
-#   6. source: tvd_get_upwind_c in src/shyfem/tvd_admin.f90 has no stop
+#   6. serial, nomp = -1, OMP_NUM_THREADS = 4, T/S and two tracers (iconz =
+#      2: three transports run as concurrent sibling tasks, which share the
+#      error record), TVD_TEST_ERROR=3 (every call that reaches the check
+#      fails): exactly one error line and exit 33.  Before the fix of the
+#      review of #317 each transport that saw the error wrote a line and
+#      aborted from its own task (more than one line).
+#   7. source: tvd_get_upwind_c in src/shyfem/tvd_admin.f90 has no stop
 #      statement and calls femintp_xi_ierr, not femintp_xi (reads the
 #      text, not a run).
 #
@@ -70,10 +76,15 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
 
 # mkstr NAME [nomp] : scratch copy of mm_hyd_42.str with run name NAME, no
-# tilt lines, itvd = 2, three hours; "nomp" adds nomp = -1
+# tilt lines, itvd = 2, three hours; "nomp" adds nomp = -1, "conz" adds two
+# tracers (iconz = 2, as mm_hyd_conz.str)
 mkstr() {
-  local name="$1" extra=""
-  [ "${2:-}" = nomp ] && extra="\\1nomp = -1\\n"
+  local name="$1" extra="" a
+  shift
+  for a in "$@"; do
+    [ "$a" = nomp ] && extra="${extra}\\1nomp = -1\\n"
+    [ "$a" = conz ] && extra="${extra}\\1iconz = 2\\n\\1conref = 1.\\n\\1idecay = 1\\n\\1taupar = 0.5 1.\\n"
+  done
   [ "$(grep -c "^[[:space:]]*mm_hyd_42[[:space:]]*$" mm_hyd_42.str)" = 1 ] \
     || { fail "cannot find the run name line of mm_hyd_42.str"; return 1; }
   sed -e "s/^\([ \t]*\)mm_hyd_42[ \t]*\$/\1$name/" \
@@ -85,10 +96,12 @@ mkstr() {
 }
 ended() { [ "$1" = 0 ] && grep -q "simulation end" "$2"; }
 
-# stopcheck ROW LOG EXIT : exit code 33, one error line, no end, no signal
+# stopcheck ROW LOG EXIT CODE : exit code 33, one error line (with "code
+# CODE "), no end, no signal
 stopcheck() {
-  local row="$1" log="$2" r="$3" n1 nbad nend nhook ok=1
-  n1=$(grep -c "error stop tvd_get_upwind_c" "$log")
+  local row="$1" log="$2" r="$3" code="$4" n1 nbad nend nhook ok=1
+  n1=$(grep -c "error stop tvd_get_upwind_c: code $code " "$log")
+  [ "$(grep -c "error stop tvd_get_upwind_c" "$log")" = "$n1" ] || n1="$n1 (and other error lines)"
   nend=$(grep -c "simulation end" "$log")
   nhook=$(grep -c "test hook TVD_TEST_ERROR" "$log")
   nbad=$(grep -c 'SIGFPE\|SIGSEGV\|Fortran runtime' "$log")
@@ -115,7 +128,7 @@ echo "=== 2. serial, 1 thread, TVD_TEST_ERROR=1 (xy2xi): one message, exit 33"
 R2="${TAG}_t1"
 if mkstr "$R2"; then
   TVD_TEST_ERROR=1 OMP_NUM_THREADS=1 timeout 900 nice -n 10 shyfem "$R2.str" > "$SCR/2.log" 2>&1; r=$?
-  stopcheck 2 "$SCR/2.log" "$r"
+  stopcheck 2 "$SCR/2.log" "$r" 1
 fi
 
 echo "=== 3. serial, 4 threads (nomp = -1), TVD_TEST_ERROR=1: one message, exit 33"
@@ -126,7 +139,7 @@ if mkstr "$R3" nomp; then
     grep "used OMP threads" "$SCR/3.log"; fail "row 3: the log does not say 'used OMP threads: 4' (nomp = -1, OMP_NUM_THREADS = 4)"
   else
     echo "  $(grep 'for simulation used OMP threads' "$SCR/3.log" | sed 's/^ *//;s/  */ /g')"
-    stopcheck 3 "$SCR/3.log" "$r"
+    stopcheck 3 "$SCR/3.log" "$r" 1
   fi
 fi
 
@@ -136,29 +149,43 @@ if mkstr "$R4"; then
   TVD_TEST_ERROR=1 OMP_NUM_THREADS=1 timeout 900 nice -n 10 mpirun --oversubscribe -np "$NP" -x TVD_TEST_ERROR -x OMP_NUM_THREADS shyfem "$R4.str" > "$SCR/4.log" 2>&1; r=$?
   nr=$(grep -c 'shympi initialized:' "$SCR/4.log")
   if [ "$nr" != "$NP" ]; then fail "row 4: the log shows $nr 'shympi initialized:' lines, expected $NP"
-  else stopcheck 4 "$SCR/4.log" "$r"; fi
+  else stopcheck 4 "$SCR/4.log" "$r" 1; fi
 fi
 
 echo "=== 5. serial, 1 thread, TVD_TEST_ERROR=2 (lremote): one message, exit 33"
 R5="${TAG}_lr"
 if mkstr "$R5"; then
   TVD_TEST_ERROR=2 OMP_NUM_THREADS=1 timeout 900 nice -n 10 shyfem "$R5.str" > "$SCR/5.log" 2>&1; r=$?
-  stopcheck 5 "$SCR/5.log" "$r"
+  stopcheck 5 "$SCR/5.log" "$r" 4
 fi
 
-echo "=== 6. source: no stop in tvd_get_upwind_c, femintp_xi_ierr called"
-if [ ! -f "$SRC" ]; then fail "row 6: $SRC not found"
+echo "=== 6. serial, 4 threads, T/S and two tracers, TVD_TEST_ERROR=3 (every call fails): ONE message, exit 33"
+R7="${TAG}_cc"
+if mkstr "$R7" nomp conz; then
+  grep -q "iconz = 2" "$R7.str" || fail "row 6: no tracers in $R7.str"
+  TVD_TEST_ERROR=3 OMP_NUM_THREADS=4 timeout 900 nice -n 10 shyfem "$R7.str" > "$SCR/7.log" 2>&1; r=$?
+  if ! grep -q "for simulation used OMP threads: *4\$" "$SCR/7.log"; then
+    grep "used OMP threads" "$SCR/7.log"; fail "row 6: the log does not say 'used OMP threads: 4'"
+  else
+    stopcheck 6 "$SCR/7.log" "$r" 1
+  fi
+fi
+
+echo "=== 7. source: no stop in tvd_get_upwind_c, femintp_xi_ierr called"
+if [ ! -f "$SRC" ]; then fail "row 7: $SRC not found"
 else
+  # comment lines are left out of the stop count; a 'stop', an 'error stop' text
+  # and the stop' forms all count
   body=$(awk 'tolower($0) ~ /^[ \t]*subroutine[ \t]+tvd_get_upwind_c[ \t]*\(/ {f=1} f {print} f && tolower($0) ~ /^[ \t]*end[ \t]*$/ {exit}' "$SRC")
   nsub=$(printf '%s\n' "$body" | grep -ciE '^[[:space:]]*subroutine[[:space:]]+tvd_get_upwind_c[[:space:]]*\(')
-  nstop=$(printf '%s\n' "$body" | grep -ciE '^[[:space:]]*(if[[:space:]]*\(.*\)[[:space:]]*)?stop([[:space:]]|$)')
+  nstop=$(printf '%s\n' "$body" | grep -v '^[[:space:]]*!' | grep -ciE '(^|[^a-z_])stop([^a-z_]|$)|error[[:space:]]+stop')
   nxi=$(printf '%s\n' "$body" | grep -ciE 'call[[:space:]]+femintp_xi_ierr[[:space:]]*\(')
   nold=$(printf '%s\n' "$body" | grep -ciE '^[[:space:]]*call[[:space:]]+femintp_xi[[:space:]]*\(')
   nrec=$(printf '%s\n' "$body" | grep -ciE 'call[[:space:]]+tvd_error_record[[:space:]]*\(')
   if [ "$nsub" != 1 ]; then
-    fail "row 6: could not read tvd_get_upwind_c from $SRC (subroutine lines $nsub)"
+    fail "row 7: could not read tvd_get_upwind_c from $SRC (subroutine lines $nsub)"
   elif [ "$nstop" != 0 ] || [ "$nxi" != 1 ] || [ "$nold" != 0 ] || [ "$nrec" != 2 ]; then
-    fail "row 6: tvd_get_upwind_c has $nstop stop statements (expected 0), $nxi calls of femintp_xi_ierr (expected 1), $nold calls of femintp_xi (expected 0), $nrec calls of tvd_error_record (expected 2)"
+    fail "row 7: tvd_get_upwind_c has $nstop stop statements (expected 0), $nxi calls of femintp_xi_ierr (expected 1), $nold calls of femintp_xi (expected 0), $nrec calls of tvd_error_record (expected 2)"
   else echo "  no stop statement, one call of femintp_xi_ierr"; fi
 fi
 

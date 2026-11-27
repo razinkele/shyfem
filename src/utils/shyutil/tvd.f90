@@ -53,10 +53,17 @@
 
 ! error record of tvd_get_upwind_c (#317): a worker thread of the OpenMP
 ! tasks of conz3d_omp may neither write nor abort, so an error is
-! recorded here (the first one in full) and checked on the main thread
-! after the parallel region by tvd_check_error (tvd_admin.f90)
+! recorded here (the first one in full) and checked by tvd_check_error
+! (tvd_admin.f90): at the end of conz3d_omp when that runs outside a
+! parallel region, otherwise on the master thread after the TASKWAIT that
+! closes the transport tasks of the time step (tvd_check_error(.true.)
+! in shyfem_subs.f90). The record and the flag tvd_err_reported are
+! read and written under the critical section tvd_error_record, so that
+! only one check reports it (transports run concurrently as sibling
+! tasks and share the record).
 
 	integer, save :: tvd_err_n = 0		!number of errors recorded
+	logical, save :: tvd_err_reported = .false.	!claimed by one check
 	integer, save :: tvd_err_ie = 0		!element of the flux
 	integer, save :: tvd_err_ienew = 0	!upwind element
 	integer, save :: tvd_err_l = 0		!layer
@@ -67,7 +74,8 @@
 ! test hook TVD_TEST_ERROR=K (read once in tvd_init, on the master
 ! process only): K = 1 forces the error of xy2xi (code 1), K = 2 the
 ! lremote error (code 4), in the first call of tvd_get_upwind_c that
-! reaches the check; inert (0) when not set
+! reaches the check, K = 3 the xy2xi error in EVERY such call (several
+! transports then fail at once); inert (0) when not set
 
 	integer, save :: tvd_test_event = 0
 	integer, save :: tvd_test_left = 0	!1 until the hook has fired
@@ -107,6 +115,10 @@
         integer, intent(in) :: kind
 
         tvd_test_take = .false.
+        if( tvd_test_event == 3 .and. kind == 1 ) then	!every call
+          tvd_test_take = .true.
+          return
+        end if
         if( tvd_test_event /= kind ) return
 
 !$OMP CRITICAL (tvd_test_take)
