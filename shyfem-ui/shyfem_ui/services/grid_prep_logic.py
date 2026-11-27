@@ -9,6 +9,58 @@ the same names so test files don't need migration.
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
+
+from shyfem_ui.services.file_service import check_plain_file_name
+from shyfem_ui.services.partitioning_logic import stage_grid
+
+
+def stage_for_shypre(grd_path: Path, output_dir: Path) -> Path:
+    """The grid shypre runs on, inside ``output_dir``; never overwrites a grid.
+
+    Reuses an identical file of that name, copies when there is none, and
+    keeps the copy (it sits next to the ``.bas``).
+
+    Raises:
+        ValueError: ``output_dir`` holds a different file of that name. It
+            may be the copy an earlier run left there, which the page cannot
+            tell from a user's file.
+        OSError: the copy failed.
+    """
+    grd_path = Path(grd_path)
+    try:
+        staged, _ = stage_grid(grd_path, output_dir, folder="output directory")
+    except ValueError:
+        raise ValueError(
+            f"The output directory already has a different {grd_path.name}. "
+            "It may be the copy an earlier run left there: remove or rename it, "
+            "or choose another output directory."
+        ) from None
+    return staged
+
+
+def named_upload(temp_path: Path, uploaded_name: str) -> Path:
+    """Copy an upload (Shiny stores it as ``0.grd``) under its own name.
+
+    The copy goes to ``<temp folder>/named/<uploaded_name>``; ``temp_path`` is
+    left alone. shypre names its ``.bas`` after the grid, so the name matters.
+
+    Raises:
+        ValueError: the name is empty, has a path separator (``/`` or
+            ``\\``) or ``..``, or does not end in ``.grd``.
+    """
+    temp_path = Path(temp_path)
+    try:
+        check_plain_file_name(uploaded_name)
+    except ValueError:
+        raise ValueError(f"Invalid grid file name: {uploaded_name!r}") from None
+    if "\\" in uploaded_name or not uploaded_name.endswith(".grd"):
+        raise ValueError(f"Invalid grid file name: {uploaded_name!r}")
+    dest = temp_path.parent / "named" / uploaded_name
+    dest.parent.mkdir(exist_ok=True)
+    shutil.copy2(temp_path, dest)
+    return dest
 
 
 def grid_stats_to_json(stats: dict, grid_name: str) -> str:

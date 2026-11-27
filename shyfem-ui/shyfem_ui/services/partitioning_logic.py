@@ -55,8 +55,9 @@ def stage_grid(
     shyparts writes ``<grd>.<np>.node.grd``/``.elem.grd`` next to its INPUT.
     The input is only read-checked (a shared project, a bundled sample), so
     it must never be partitioned in place: when it is not already in the
-    write-checked ``output_dir`` it is copied there, and the caller removes
-    the copy afterwards (``created`` is True).
+    write-checked ``output_dir`` it is copied there (``created`` is True).
+    What happens to the copy is the caller's: Partitioning removes it when
+    shyparts is done, Grid Prep keeps it next to the ``.bas`` it makes.
 
     ``folder`` names ``output_dir`` in the error text for the caller's page.
 
