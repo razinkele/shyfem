@@ -33,6 +33,18 @@ _upload_locks_guard = threading.Lock()
 _upload_locks: defaultdict[int, threading.Lock] = defaultdict(threading.Lock)
 
 
+def check_plain_file_name(filename: str) -> None:
+    """Refuse an empty name, a path separator (``/``) or ``..`` in a file name.
+
+    The rule ``upload_file`` applies, shared with the Grid Prep upload.
+
+    Raises:
+        ValueError: ``Invalid filename: ...``
+    """
+    if PurePosixPath(filename).name != filename or not filename or ".." in filename:
+        raise ValueError(f"Invalid filename: {filename!r}")
+
+
 def _upload_lock(project_id: int) -> threading.Lock:
     with _upload_locks_guard:
         return _upload_locks[project_id]
@@ -144,9 +156,8 @@ class FileService:
             ValueError: On invalid filename, missing project, or quota exceeded.
         """
         # Validate filename — no path separators, no traversal
-        safe_name = PurePosixPath(filename).name
-        if safe_name != filename or not filename or ".." in filename:
-            raise ValueError(f"Invalid filename: {filename!r}")
+        check_plain_file_name(filename)
+        safe_name = filename
         if _JOB_FILE_NAME.match(filename):
             # A job's log and bookkeeping files (J-01) belong to the server.
             raise ValueError(f"Reserved filename: {filename!r}")

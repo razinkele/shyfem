@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +23,8 @@ from shyfem_ui.services.grid_prep_logic import (  # re-exported for backward com
     compute_boundary_summary,
     format_element_shape,
     grid_stats_to_json,
+    named_upload,
+    stage_for_shypre,
 )
 from shyfem_ui.services.mesh_builder import (  # re-exported for backward compat (test_grid_inspect)
     _get_triangle_vertices,  # noqa: F401
@@ -224,9 +225,11 @@ def grid_prep_server(
         temp_path = Path(file_info["datapath"])
 
         try:
+            # Shiny stores the upload as "0.grd"; shypre names its .bas after the grid.
+            named_path = await asyncio.to_thread(named_upload, temp_path, file_info["name"])
             grd = await asyncio.to_thread(GrdParser.parse_file, temp_path)
             current_grd.set(grd)
-            current_grd_path.set(temp_path)
+            current_grd_path.set(named_path)
             log_content.set(
                 f"Loaded grid: {file_info['name']}\n"
                 f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}"
@@ -332,21 +335,22 @@ def grid_prep_server(
             return
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Copy grid file to output directory if needed
-        if grd_path.parent != output_path:
-            try:
-                dest_grd = output_path / grd_path.name
-                shutil.copy2(grd_path, dest_grd)
-                grd_path = dest_grd
-            except OSError as e:
-                logger.exception("Failed to copy GRD file to output directory %s", output_path)
-                log_content.set(f"Error copying grid file: {e}")
-                ui.notification_show(
-                    f"Cannot copy grid to output directory: {e}",
-                    type="error",
-                    duration=5,
-                )
-                return
+        # Stage the grid in the output directory: never over a different grid
+        try:
+            grd_path = stage_for_shypre(grd_path, output_path)
+        except ValueError as e:
+            log_content.set(f"Error: {e}")
+            ui.notification_show(str(e), type="error", duration=8)
+            return
+        except OSError as e:
+            logger.exception("Failed to copy GRD file to output directory %s", output_path)
+            log_content.set(f"Error copying grid file: {e}")
+            ui.notification_show(
+                f"Cannot copy grid to output directory: {e}",
+                type="error",
+                duration=5,
+            )
+            return
 
         # Build options
         options = []

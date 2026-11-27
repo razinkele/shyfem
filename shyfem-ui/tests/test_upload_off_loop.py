@@ -33,6 +33,7 @@ def _dotted(node: ast.AST) -> str:
     [
         ("pages/files.py", "_handle_upload", "persist_upload"),
         ("pages/grid_prep.py", "_handle_file_upload", "GrdParser.parse_file"),
+        ("pages/grid_prep.py", "_handle_file_upload", "named_upload"),
     ],
 )
 def test_upload_work_runs_in_a_thread(path, handler, blocking):

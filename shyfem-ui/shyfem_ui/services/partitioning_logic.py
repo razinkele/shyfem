@@ -55,8 +55,9 @@ def stage_grid(
     shyparts writes ``<grd>.<np>.node.grd``/``.elem.grd`` next to its INPUT.
     The input is only read-checked (a shared project, a bundled sample), so
     it must never be partitioned in place: when it is not already in the
-    write-checked ``output_dir`` it is copied there, and the caller removes
-    the copy afterwards (``created`` is True).
+    write-checked ``output_dir`` it is copied there (``created`` is True).
+    What happens to the copy is the caller's: Partitioning removes it when
+    shyparts is done, Grid Prep keeps it next to the ``.bas`` it makes.
 
     ``folder`` names ``output_dir`` in the error text for the caller's page.
 
@@ -71,6 +72,9 @@ def stage_grid(
         return grd_file, False
     staged = output_dir / grd_file.name
     if staged.exists():
+        # filecmp caches by (type, size, mtime): a source edited with the same size and
+        # mtime (cp -p, archive extraction) would get a stale "identical" answer.
+        filecmp.clear_cache()
         if staged.is_file() and filecmp.cmp(staged, grd_file, shallow=False):
             return staged, False
         raise ValueError(
