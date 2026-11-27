@@ -241,27 +241,46 @@ def basin_grid_for_str(str_path: "str | Path | None", working_dir: Path) -> Path
         )
     basin = lines[2]
 
-    ext = Path(basin).suffix
-    if ext == ".grd":
+    # The core takes everything after the LAST '.' of the whole name as the
+    # extension, whatever folder it is in (defnames.f90 parse_file_name).
+    head, dot, tail = basin.rpartition(".")
+    ext = tail if dot else ""
+    in_folder = "/" in ext  # the last '.' is in a folder part
+    if not in_folder and ext == "grd":
         raise ValueError(
             f"{str_name} names the basin {basin} with the .grd extension, so the "
             "simulation would read the .grd and not the prepared basin. Name it "
             "without an extension, or use Simulate + Post-process."
         )
-    if ext not in ("", ".bas"):
+    if not in_folder and dot and ext != "bas":
         raise ValueError(f"{str_name} names the basin {basin}; the extension must be .bas or none.")
 
     root = os.path.abspath(working_dir)
-    grd = os.path.normpath(os.path.join(root, (basin[: -len(ext)] if ext else basin) + ".grd"))
-    if not Path(grd).resolve().is_relative_to(Path(root).resolve()):
+    stem = head if (dot and not in_folder) else basin
+    grd = os.path.normpath(os.path.join(root, stem + ".grd"))
+    real_root = Path(root).resolve()
+    if not Path(grd).resolve().is_relative_to(real_root):
         raise ValueError(
             f"The grid {basin} that {str_name} names is outside the working folder. "
             "Move it into the working folder, or use Simulate + Post-process."
+        )
+    if in_folder:
+        raise ValueError(
+            f"{str_name} names the basin {basin}; SHYFEM reads everything after its last "
+            "'.' as the extension, so no folder in the basin name may contain a dot."
         )
     if not os.path.isfile(grd):
         raise ValueError(
             f"The grid {os.path.relpath(grd, root)} that {str_name} names "
             "does not exist in the working folder."
+        )
+    # shypre writes <grid>.bas through a link, wherever it points.
+    bas = grd[: -len(".grd")] + ".bas"
+    if os.path.lexists(bas) and not Path(os.path.realpath(bas)).is_relative_to(real_root):
+        raise ValueError(
+            f"The basin file {os.path.relpath(bas, root)} that Grid Prep would write is a "
+            "link to a file outside the working folder. Remove the link, or use "
+            "Simulate + Post-process."
         )
     return Path(grd)
 

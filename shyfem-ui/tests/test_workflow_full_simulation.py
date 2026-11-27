@@ -238,6 +238,88 @@ def test_a_missing_grd_is_refused(work):
     )
 
 
+DOTTED = (
+    "{str} names the basin {basin}; SHYFEM reads everything after its last '.' as the "
+    "extension, so no folder in the basin name may contain a dot."
+)
+
+
+@pytest.mark.parametrize("basin", ["./GRID/mm", "GRID.v1/mm", "ABS"])
+def test_a_dot_in_a_folder_of_the_basin_name_is_refused(work, basin):
+    (work / "GRID.v1").mkdir()
+    (work / "GRID.v1" / "mm.grd").write_text("g\n")
+    if basin == "ABS":
+        basin = str(work / "GRID.v1" / "mm")
+    strf = _write_str(work / "p.str", "t", "r", basin)
+    assert _refusal(strf, work) == DOTTED.format(str="p.str", basin=basin)
+
+
+def test_a_dotted_name_outside_still_gets_the_outside_message(work, tmp_path):
+    strf = _write_str(work / "q.str", "t", "r", "../x")
+    assert _refusal(strf, work) == OUTSIDE.format(basin="../x", str="q.str")
+
+
+@pytest.mark.asyncio
+async def test_a_dotted_folder_refusal_stores_nothing(shyfem_dir, session_factory, work):
+    strf = _write_str(work / "run.str", "title", "run", "./GRID/mm")
+    engine, queue = _engine(shyfem_dir, session_factory)
+    with pytest.raises(ValueError) as e:
+        await engine.create_workflow(
+            "full_simulation", working_dir=work, params={"input_str": str(strf)}
+        )
+    assert str(e.value) == DOTTED.format(str="run.str", basin="./GRID/mm")
+    assert session_factory().query(Workflow).count() == 0
+    assert queue._jobs == {}
+
+
+LINKED = (
+    "The basin file {bas} that Grid Prep would write is a link to a file outside the "
+    "working folder. Remove the link, or use Simulate + Post-process."
+)
+
+
+def test_a_bas_linked_to_an_outside_file_is_refused(work, tmp_path):
+    outside = tmp_path / "precious.bas"
+    outside.write_text("keep me\n")
+    (work / "GRID" / "mm.bas").symlink_to(outside)
+    assert _refusal(_write_str(work / "r.str", "t", "r", "GRID/mm"), work) == LINKED.format(
+        bas="GRID/mm.bas"
+    )
+    assert outside.read_text() == "keep me\n"
+
+
+@pytest.mark.asyncio
+async def test_a_linked_bas_refusal_stores_nothing(shyfem_dir, session_factory, work, tmp_path):
+    outside = tmp_path / "precious.bas"
+    outside.write_text("keep me\n")
+    (work / "GRID" / "mm.bas").symlink_to(outside)
+    strf = _write_str(work / "run.str", "title", "run", "GRID/mm")
+    engine, queue = _engine(shyfem_dir, session_factory)
+    with pytest.raises(ValueError) as e:
+        await engine.create_workflow(
+            "full_simulation", working_dir=work, params={"input_str": str(strf)}
+        )
+    assert str(e.value) == LINKED.format(bas="GRID/mm.bas")
+    assert outside.read_text() == "keep me\n"
+    assert session_factory().query(Workflow).count() == 0
+    assert queue._jobs == {}
+
+
+def test_a_dangling_bas_link_to_an_outside_path_is_refused(work, tmp_path):
+    (work / "GRID" / "mm.bas").symlink_to(tmp_path / "not_there.bas")
+    assert _refusal(_write_str(work / "s.str", "t", "r", "GRID/mm"), work) == LINKED.format(
+        bas="GRID/mm.bas"
+    )
+
+
+def test_a_bas_linked_to_a_file_inside_is_accepted(work):
+    (work / "real.bas").write_text("x\n")
+    (work / "GRID" / "mm.bas").symlink_to(work / "real.bas")
+    assert _basin(_write_str(work / "t.str", "t", "r", "GRID/mm"), work) == (
+        work / "GRID" / "mm.grd"
+    )
+
+
 # --- the template ------------------------------------------------------------
 
 
