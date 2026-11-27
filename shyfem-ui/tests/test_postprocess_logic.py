@@ -188,9 +188,16 @@ class TestScanCommand:
         deep = tmp_path / ("a" * 50) / ("b" * 50)
         f = deep / "run.hydro.shy"
         args, wd = scan_command(f)
-        assert args == ["-info", "run.hydro.shy"]
+        assert args == ["-info", "./run.hydro.shy"]
         assert wd == deep
         assert len(str(f)) > 80
+
+    def test_name_starting_with_dash_is_not_an_option(self, tmp_path):
+        # clo reads a bare "-x.shy" as an option ("no such option: x.shy")
+        args, wd = scan_command(tmp_path / "-x.shy")
+        assert args == ["-info", "./-x.shy"]
+        assert not args[-1].startswith("-")
+        assert wd == tmp_path
 
     def test_page_uses_the_helper(self):
         from pathlib import Path
