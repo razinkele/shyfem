@@ -44,7 +44,13 @@
 #      fails): exactly one error line and exit 33.  Before the fix of the
 #      review of #317 each transport that saw the error wrote a line and
 #      aborted from its own task (more than one line).
-#   7. source: tvd_get_upwind_c in src/shyfem/tvd_admin.f90 has no stop
+#   7. serial, nomp = -1, OMP_NUM_THREADS = 4, the sediment module (mm_hyd_01
+#      with a $sedtr section, itvd = 2, no T/S and no tracer: run_scalar
+#      transports nothing), a ONE-step run, TVD_TEST_ERROR=1: sedi transports
+#      in a parallel region of its own, where conz3d_omp does not check, so
+#      the error of the last step must be reported by the check in the time
+#      loop: one error line and exit 33.  (Before: exit 0, no line.)
+#   8. source: tvd_get_upwind_c in src/shyfem/tvd_admin.f90 has no stop
 #      statement and calls femintp_xi_ierr, not femintp_xi (reads the
 #      text, not a run).
 #
@@ -171,8 +177,43 @@ if mkstr "$R7" nomp conz; then
   fi
 fi
 
-echo "=== 7. source: no stop in tvd_get_upwind_c, femintp_xi_ierr called"
-if [ ! -f "$SRC" ]; then fail "row 7: $SRC not found"
+echo "=== 7. sediment module (own parallel region), 1 step, TVD_TEST_ERROR=1: the error of the LAST step is reported"
+R8="${TAG}_sd"
+if [ "$(grep -c "^[[:space:]]*mm_hyd_01[[:space:]]*$" mm_hyd_01.str)" != 1 ]; then
+  fail "row 7: cannot find the run name line of mm_hyd_01.str"
+else
+  # mm_hyd_01 (closed basin) with itvd = 2, nomp = -1, one 300 s step and
+  # the sediment module: ibarcl = 0 and iconz = 0, so run_scalar transports
+  # nothing and the only transport is that of sedi (scal_adv_fact)
+  sed -e "s/^\([ \t]*\)mm_hyd_01[ \t]*\$/\1$R8/" -e "/idtext/d" \
+      -e "s/^\([ \t]*\)ilin = 1/\1ilin = 1\n\1itvd = 2\n\1nomp = -1/" \
+      -e "s/itend = '[^']*'/itend = '2009-01-01::00:05:00'/" mm_hyd_01.str > "$R8.str"
+  cat >> "$R8.str" <<'SEDEOF'
+
+$sedtr
+        isedi = 1
+        sedgrs = 0.1 0.2
+        tauin = 0.1
+        percin = 0.5 0.5
+        sedref = 0.1
+        idtsed = '1h'
+$end
+SEDEOF
+  if ! grep -q "itvd = 2" "$R8.str" || ! grep -q "isedi = 1" "$R8.str"; then fail "row 7: the sed expressions made no itvd = 2 sediment case"
+  else
+    TVD_TEST_ERROR=1 OMP_NUM_THREADS=4 timeout 900 nice -n 10 shyfem "$R8.str" > "$SCR/8.log" 2>&1; r=$?
+    if ! grep -q "for simulation used OMP threads: *4\$" "$SCR/8.log"; then
+      grep "used OMP threads" "$SCR/8.log"; fail "row 7: the log does not say 'used OMP threads: 4'"
+    elif ! grep -q "itend = '2009-01-01::00:05:00'" "$R8.str" || ! grep -q "idt = '300s'" "$R8.str"; then
+      fail "row 7: the run is not one 300 s step long"
+    else
+      stopcheck 7 "$SCR/8.log" "$r" 1
+    fi
+  fi
+fi
+
+echo "=== 8. source: no stop in tvd_get_upwind_c, femintp_xi_ierr called"
+if [ ! -f "$SRC" ]; then fail "row 8: $SRC not found"
 else
   # comment lines are left out of the stop count; a 'stop', an 'error stop' text
   # and the stop' forms all count
@@ -183,9 +224,9 @@ else
   nold=$(printf '%s\n' "$body" | grep -ciE '^[[:space:]]*call[[:space:]]+femintp_xi[[:space:]]*\(')
   nrec=$(printf '%s\n' "$body" | grep -ciE 'call[[:space:]]+tvd_error_record[[:space:]]*\(')
   if [ "$nsub" != 1 ]; then
-    fail "row 7: could not read tvd_get_upwind_c from $SRC (subroutine lines $nsub)"
+    fail "row 8: could not read tvd_get_upwind_c from $SRC (subroutine lines $nsub)"
   elif [ "$nstop" != 0 ] || [ "$nxi" != 1 ] || [ "$nold" != 0 ] || [ "$nrec" != 2 ]; then
-    fail "row 7: tvd_get_upwind_c has $nstop stop statements (expected 0), $nxi calls of femintp_xi_ierr (expected 1), $nold calls of femintp_xi (expected 0), $nrec calls of tvd_error_record (expected 2)"
+    fail "row 8: tvd_get_upwind_c has $nstop stop statements (expected 0), $nxi calls of femintp_xi_ierr (expected 1), $nold calls of femintp_xi (expected 0), $nrec calls of tvd_error_record (expected 2)"
   else echo "  no stop statement, one call of femintp_xi_ierr"; fi
 fi
 
