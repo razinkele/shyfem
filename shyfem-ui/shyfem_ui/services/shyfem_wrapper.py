@@ -230,7 +230,10 @@ class ShyfemWrapper:
         # partition.<np>.txt here; the .grd results go next to the input grid
         # (collected by partitioning_logic.collect_shyparts_outputs).
         "shyparts": [".txt", ".grd"],
-        "shyfem": [".shy", ".ext", ".flx", ".ts"],
+        # The order is the priority: output_files[0] of a shyfem job is what the
+        # workflow templates' post-process step splits, so the hydrodynamic
+        # file comes first, then any other .shy (by name), then .ext, .flx, .ts.
+        "shyfem": [".hydro.shy", ".shy", ".ext", ".flx", ".ts"],
         # out.shy/out.nc/out.fem (-out, -outformat), <var>.shy (-split),
         # <var>.0d.0 (-averbas), <var>.2d.<n>/.3d.<n> per node (-node).
         "shyelab": [".nc", ".txt", ".dat", ".shy", ".fem", ".0d.0", ".2d.[0-9]*", ".3d.[0-9]*"],
@@ -869,9 +872,12 @@ class ShyfemWrapper:
         """
         extensions = self.OUTPUT_EXTENSIONS.get(tool_name, [])
         before = before or {}
-        output_files = []
+        output_files: list[str] = []
         for ext in extensions:
-            for f in working_dir.glob(f"*{ext}"):
+            # By name within an extension: glob order is the filesystem's.
+            for f in sorted(working_dir.glob(f"*{ext}"), key=lambda p: p.name):
+                if str(f) in output_files:
+                    continue  # x.hydro.shy is listed once, under ".hydro.shy"
                 try:
                     mtime_ns = f.stat().st_mtime_ns
                 except OSError:

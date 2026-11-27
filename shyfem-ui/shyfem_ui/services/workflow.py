@@ -728,7 +728,12 @@ class WorkflowEngine:
                 # Inside the try: an unresolvable argument (a previous step
                 # produced no output) must fail the step and the workflow,
                 # not escape the driver task and leave the row RUNNING.
-                args = self._resolve_args(step.args_template, params, wf.step_results)
+                args = self._resolve_args(
+                    step.args_template,
+                    params,
+                    wf.step_results,
+                    step_tools={s.name: s.tool_name for s in wf.steps},
+                )
 
                 # The owner and project ride on every step job exactly as on a
                 # directly submitted job (run_logic._get_job_metadata): job
@@ -837,8 +842,12 @@ class WorkflowEngine:
         templates: list[str],
         params: dict[str, str],
         step_results: dict[str, dict[str, Any]],
+        step_tools: dict[str, str] | None = None,
     ) -> list[str]:
         """Resolve template argument strings.
+
+        ``step_tools`` maps step name to tool name; it lets an unresolved
+        reference to a completed shyfem step say why (#353).
 
         Supports:
         - {param_name} - direct parameter substitution
@@ -871,6 +880,21 @@ class WorkflowEngine:
         _STEP_REF = re.compile(r"\{[A-Za-z_]\w*\.output_(?:dir|files(?:\[\d+\])?)\}")
         unresolved = sorted({m for v in resolved for m in _STEP_REF.findall(v)})
         if unresolved:
+            for ref in unresolved:
+                step_name = ref[1:].split(".", 1)[0]
+                result = step_results.get(step_name)
+                if (
+                    (step_tools or {}).get(step_name) == "shyfem"
+                    and result is not None
+                    and result.get("status") == JobStatus.COMPLETED.value
+                    and not result.get("output_files")
+                ):
+                    raise ValueError(
+                        f"Step '{step_name}' completed but wrote no output files for this "
+                        "step to use. SHYFEM writes its .shy output only when the STR file "
+                        "sets an output interval, such as idtout (hydrodynamics) or idtcon "
+                        "(tracers) in $para."
+                    )
             raise ValueError(
                 "Unresolved workflow step reference(s): "
                 + ", ".join(unresolved)
