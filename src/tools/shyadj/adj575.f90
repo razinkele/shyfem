@@ -83,6 +83,7 @@
 
 	use mod_adj_grade
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -109,7 +110,7 @@
 !  make list
 
         n = ngrade(k)
-	if( n > ngrdi ) stop 'error stop elim575: ngrdi'
+	if( n > ngrdi ) call error_stop('elim575','ngrdi')
 	do i=1,n
 	  ngav(i) = ngri(i,k)
 	end do

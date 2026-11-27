@@ -83,6 +83,7 @@
 
 	use mod_adj_grade
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -189,7 +190,7 @@
 	ie2 = ifindel(k,ngav(ip-1),ngav(ip))
 
 	if( ie1 .eq. 0 .or. ie2 .eq. 0 ) then
-	  stop 'error stop elim55: internal error (2)'
+	  call error_stop('elim55','internal error (2)')
 	end if
 
 	if( bdebug ) then

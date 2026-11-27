@@ -163,6 +163,7 @@
 	use mod_adj_grade
 	use mod_adj_static
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -203,7 +204,7 @@
 	if( bstop ) then
 		call wr0grd
 		write(6,*) 'nkn,nel: ',nkn,nel
-		stop 'error stop chkgrd (1)'
+		call error_stop('chkgrd','(1)')
 	end if
 
 ! --------------------------------------------------
@@ -223,7 +224,7 @@
 	if( bstop ) then
 		call wr0grd
 		write(6,*) 'nkn,nel: ',nkn,nel
-		stop 'error stop chkgrd (2)'
+		call error_stop('chkgrd','(2)')
 	end if
 
 ! --------------------------------------------------
@@ -246,7 +247,7 @@
 	if( bstop ) then
 		call wr0grd
 		write(6,*) 'nkn,nel: ',nkn,nel
-		stop 'error stop chkgrd (3)'
+		call error_stop('chkgrd','(3)')
 	end if
 
 ! --------------------------------------------------
@@ -274,7 +275,7 @@
 	if( bstop ) then
 		call wr0grd
 		write(6,*) 'nkn,nel: ',nkn,nel
-		stop 'error stop chkgrd (4)'
+		call error_stop('chkgrd','(4)')
 	end if
 
 ! --------------------------------------------------
@@ -316,7 +317,7 @@
 	if( bstop ) then
 		call wr0grd
 		write(6,*) 'nkn,nel: ',nkn,nel
-		stop 'error stop chkgrd (5)'
+		call error_stop('chkgrd','(5)')
 	end if
 
 ! --------------------------------------------------
@@ -366,6 +367,7 @@
 !  check if area is positive
 
 	use basin
+	use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -404,7 +406,7 @@
 	    write(6,*) 'error while checking: ',trim(string)
 	    call wr0grd
 	    write(6,*) 'nkn,nel: ',nkn,nel
-	    stop 'error stop checkarea'
+	    call error_stop('checkarea','negative area')
 	end if
 
 	end

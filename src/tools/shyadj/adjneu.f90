@@ -92,6 +92,7 @@
 	use mod_adj_grade
 	use mod_depth
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -106,7 +107,7 @@
 	end do
 
 	nel = nel + 1
-	if( nel .gt. neldi ) stop 'error stop newele: neldi'
+	if( nel .gt. neldi ) call error_stop('newele','neldi')
 
 	ipev(nel) = iemax + 1
 	iarv(nel) = 0
@@ -220,6 +221,7 @@
 	use mod_adj_grade
 	use mod_depth
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -232,7 +234,7 @@
 	end do
 
 	nkn = nkn + 1
-	if( nkn .gt. nkndi ) stop 'error stop newnod: nkndi'
+	if( nkn .gt. nkndi ) call error_stop('newnod','nkndi')
 
 	ipv(nkn) = kmax + 1
 	iarnv(nkn) = 0

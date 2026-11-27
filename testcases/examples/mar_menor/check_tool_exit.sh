@@ -21,6 +21,7 @@
 #        shyelab   missing.shy, wrong.shy       (shyelab.f90)
 #        shyplot   missing.shy, wrong.shy       (plotutil.f90)
 #        shyadj    missing.grd, wrong.grd       (grd.f90)
+#        shyadj    square.grd, zero.grd         (adjgrd.f90, adjvar.f90, #338)
 #        lgrelab   missing.lgr, wrong.lgr       (shy_util2.f)
 #        extelab   missing.ext                  (extelab1.f90, #355)
 #        flxelab   missing.flx                  (flxelab1.f90, #355)
@@ -109,6 +110,14 @@ cp "$HERE/GRID/MM_coarse.grd" "$HERE/GRID/MM_coarse.bas" "$HERE/GRID/MM_geo.grd"
   || { echo "FAIL: cannot copy the inputs"; verdict 1; exit 1; }
 for e in grd bas shy lgr; do printf 'junk line\n1 2 3\n' > "wrong.$e"; done
 rm -f missing.grd missing.bas missing.shy missing.lgr
+# two grids shyadj cannot adjust (#338): a square of two triangles (too few
+# nodes, the grades do not add up: "element layout") and MM_coarse.grd with
+# node 3 of element 100 moved onto node 1 of it (an element of zero area)
+printf '1 1 0 0.0 0.0\n1 2 0 1000.0 0.0\n1 3 0 1000.0 1000.0\n1 4 0 0.0 1000.0\n2 1 0 3 1 2 3 5.0\n2 2 0 3 1 3 4 5.0\n' > square.grd
+awk 'NR == FNR { if ($1 == 1) { x[$2] = $4; y[$2] = $5 }
+                 if ($1 == 2 && $2 == 100) { a = $5; c = $7 }; next }
+     $1 == 1 && $2 == c { print $1, $2, $3, x[a], y[a]; next }
+     { print }' "$HERE/GRID/MM_coarse.grd" "$HERE/GRID/MM_coarse.grd" > zero.grd
 
 echo "=== good runs (exit 0)"
 cd GRID || exit 1
@@ -205,6 +214,8 @@ row 7 "error stop classify_files: file not existing: missing.shy" shyplot missin
 row 7 "error stop classify_files: cannot determine file type"    shyplot wrong.shy
 row 7 "error stop grd_internal_init: cannot open file"           shyadj missing.grd
 row 7 "error stop grd_read: error reading grd file"              shyadj wrong.grd
+row 7 "error stop statgrd: element layout"                       shyadj square.grd
+row 7 "error stop checkarea: negative area"                      shyadj zero.grd
 row 7 "error stop shyelab: file not existing"                    lgrelab missing.lgr
 row 7 "error stop shyelab: not a valid shy file"                 lgrelab wrong.lgr
 row 7 "error stop extelab: cannot open file"                     extelab missing.ext
