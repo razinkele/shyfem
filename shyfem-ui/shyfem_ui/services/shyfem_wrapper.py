@@ -581,8 +581,10 @@ class ShyfemWrapper:
         }
         for stale in (files.pid, files.exit):
             stale.unlink(missing_ok=True)
-        # A copy for a later worker. Only the output snapshot is ever read
-        # back from it: the user can write this directory, so the copy the
+        # A copy for a later worker. Only the output snapshot and
+        # ``extra_dirs`` are read back from it, and ``extra_dirs`` only after
+        # ``spec_extra_dirs`` has filtered it against the trusted working
+        # folder: the user can write this directory, so the copy the
         # supervisor acts on comes over stdin.
         write_json_atomic(files.spec, spec)
 
@@ -746,7 +748,7 @@ class ShyfemWrapper:
                 tool_name,
                 cwd,
                 spec.get("before_snapshot") or {},
-                self.spec_extra_dirs(tool_name, spec),
+                self.spec_extra_dirs(tool_name, spec, working_dir),
             ),
         )
 
@@ -859,16 +861,38 @@ class ShyfemWrapper:
         if not grids:
             return []
         folder = Path(os.path.abspath(Path(working_dir) / grids[-1])).parent
-        if folder.resolve() == Path(working_dir).resolve():
+        root = Path(working_dir).resolve()
+        if folder.resolve() == root or not folder.resolve().is_relative_to(root):
             return []
         return [folder]
 
     @staticmethod
-    def spec_extra_dirs(tool_name: str, spec: dict) -> list[Path]:
-        """``extra_output_dirs`` as recorded in a job's launch record."""
-        if tool_name != "shypre":
+    def spec_extra_dirs(tool_name: str, spec: dict, working_dir: Path | str | None) -> list[Path]:
+        """``extra_output_dirs`` as recorded in a job's launch record.
+
+        The user can write a job's directory, so the record is not trusted:
+        ``working_dir`` is the TRUSTED working folder (the job row's, never
+        the record's own ``cwd``). Only a string that resolves inside it, and
+        is not the folder itself, is returned; anything else (a non-list
+        value, other types, a path outside, a link leading out) is dropped.
+        """
+        if tool_name != "shypre" or working_dir is None:
             return []
-        return [Path(d) for d in spec.get("extra_dirs") or []]
+        recorded = spec.get("extra_dirs")
+        if not isinstance(recorded, list):
+            return []
+        root = Path(working_dir).resolve()
+        folders: list[Path] = []
+        for d in recorded:
+            if not isinstance(d, str) or not d:
+                continue
+            try:
+                real = Path(d).resolve()
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if real != root and real.is_relative_to(root):
+                folders.append(Path(d))
+        return folders
 
     def _snapshot_output_files(
         self, tool_name: str, working_dir: Path, extra_dirs: list[Path] | None = None
