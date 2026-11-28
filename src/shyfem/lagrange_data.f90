@@ -98,8 +98,11 @@
 	!back on the node every step, #315). Every step starts with
 	!lgr_ncross_max crossings left; when lgr_ncross_extra are left
 	!track_body_xi ends a step that converges onto a node (a node sink,
-	!#310) and lets every other one go on. The crossings left are the
-	!only state, and they travel in the hand-over. Not STR parameters
+	!#310) and lets every other one go on, comparing the end of the base
+	!with the distance from the nearest vertex at the start of the step.
+	!That distance and the crossings left are the state of the budget;
+	!both travel with a particle handed over at a side (d_start is
+	!hand-over field 9 since #315). Not STR parameters
 	integer, parameter :: lgr_ncross_base = 100
 	integer, parameter :: lgr_ncross_extra = 1500
 	integer, parameter :: lgr_ncross_max = lgr_ncross_base		&
