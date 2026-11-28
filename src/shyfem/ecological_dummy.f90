@@ -59,14 +59,14 @@
 	  write(6,*) 'BFM module has not been linked'
 	  write(6,*) 'ibfm = ',ibfm
 	  write(6,*) 'You must enable this feature in Rules.make'
-	  stop 'error stop ecological_module: ibfm'
+	  call shympi_abort_internal('error stop ecological_module: ibfm')
 	end if
 
 	if( ibio .gt. 0 ) then
 	  write(6,*) 'No ecological module has been linked'
 	  write(6,*) 'ibio = ',ibio
 	  write(6,*) 'You must enable this feature in Rules.make'
-	  stop 'error stop ecological_module: ibio'
+	  call shympi_abort_internal('error stop ecological_module: ibio')
 	end if
 
 	icall = -1
