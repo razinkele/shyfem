@@ -35,6 +35,7 @@
 ! 24.01.2018	ggu	changed VERS_7_5_41
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 13.03.2019	ggu	changed VERS_7_5_61
+! 28.11.2026	arb	transfer speed is the 10 m wind, not the current (#364)
 
       !!------------------------------------------------------------------------
       !!
@@ -69,9 +70,13 @@
       !!   - dew: 2m Dew point Temperature   (C)-->(Kelvin)
       !!   Other variables:
       !!   - pa: Mean Sea Level Pressure     (coverted in hPa in submeteo2.f) 
-      !!   - uuv,vvw: 10m Wind Velocities    (m/s)
+      !!   - uuw,vvw: 10m Wind Velocities    (m/s)
       !!   - uub,vvb: sea surface velocities (m/s) 
       !!   - cc: total cloud cover           (0-1)
+      !!   - norspeed: transfer speed |V| of the bulk formulae (m/s):
+      !!     the 10m wind speed sqrt(uuw**2+vvw**2), at least 0.01
+      !!     (as wndm in NEMO's sbcblk_mfs; the floor is that of
+      !!     areg_fluxes), also used by the drag coefficient (#364)
       !!
       !!   Computes:
       !!   - Solar Radiation using Reed formula (1975, 1977)
@@ -103,6 +108,7 @@
 
         real dew,sstk,tairk,norspeed
         real, parameter  :: ckelv = 273.15
+        real, parameter  :: wsmin = 0.01	!floor of the wind speed [m/s]
 
         if( pa > 10000 ) stop 'error stop heatmfsbulk: p not in mbar'
 
@@ -110,7 +116,11 @@
         sstk = tm + ckelv      
         tairk = ta + ckelv   
         dew = dp + ckelv    
-        norspeed =sqrt (uub*uub + vvb*vvb)   
+
+        ! transfer speed of the bulk formulae: the 10 m wind speed, not
+        ! the current speed (#364); the floor keeps a calm record from
+        ! dividing by zero in S and from 0**p_h(1) in ch and ce
+        norspeed = max( sqrt(uuw*uuw + vvw*vvw), wsmin )
 
         call mfs_qfluxes(ddlon,ddlat, &
      &                   days,ih,im, &
@@ -208,7 +218,9 @@
 
         ! WIND INPUT ---------------------------------
 
-        !norspeed = speed
+        ! norspeed is the 10 m wind speed (see heatmfsbulk); the wind
+        ! relative to the surface current (rspeed) is not used by the
+        ! heat fluxes: in NEMO's sbcblk_mfs it serves only the stress
         rel_u = uuw - uub !true stress - u
         rel_v = vvw - vvb !true stress - v
         rspeed = sqrt( rel_u*rel_u + rel_v *rel_v)

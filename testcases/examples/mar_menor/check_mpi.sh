@@ -47,6 +47,9 @@
 #  10. check_iheat8.sh NP: the MFS bulk heat flux (iheat = 8) runs six hours
 #      of mm_hyd_41, serial and on NP processes; before #319 it stopped at
 #      the first heat step (pressure in Pa given to rh2dp) with exit 0;
+#      the sensible and latent heat flux of the first step at node 868
+#      are those of the 10 m wind (before #364: of the surface current,
+#      and 0), and a run through a calm wind record ends;
 #      PASS line "IHEAT8 CHECK: PASS"
 #  11. check_tvd_omp.sh NP: an error of the TVD upwind value (itvd = 2),
 #      forced with the test hook TVD_TEST_ERROR, inside the OpenMP tasks of
@@ -227,7 +230,7 @@ sub_check 8 flux_sections "FLUX SECTIONS: PASS" check_flux_sections_mpi.sh "$NP"
 echo "=== 9. semi-Lagrangian advection of momentum (itlin = 1)"
 sub_check 9 itlin "ITLIN CHECK: PASS" check_itlin.sh "$NP"
 
-echo "=== 10. MFS bulk heat flux (iheat = 8)"
+echo "=== 10. MFS bulk heat flux (iheat = 8): runs, fluxes at node 868, calm record"
 sub_check 10 iheat8 "IHEAT8 CHECK: PASS" check_iheat8.sh "$NP"
 
 echo "=== 11. TVD upwind error (itvd = 2) inside the OpenMP tasks: one message, exit 33"
