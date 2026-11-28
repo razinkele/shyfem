@@ -35,6 +35,10 @@
 ! 24.01.2018	ggu	changed VERS_7_5_41
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 13.03.2019	ggu	changed VERS_7_5_61
+! 28.11.2026	arb	transfer speed is the 10 m wind, not the current (#364)
+! 28.11.2026	arb	Reed's noon altitude in degrees in qshort1 (#364)
+! 28.11.2026	arb	speed from metws (iwtype = 2), floor in mfs_qfluxes (#364)
+! 28.11.2026	arb	dead pressure check removed, rh2dp checks it (#364)
 
       !!------------------------------------------------------------------------
       !!
@@ -69,9 +73,16 @@
       !!   - dew: 2m Dew point Temperature   (C)-->(Kelvin)
       !!   Other variables:
       !!   - pa: Mean Sea Level Pressure     (coverted in hPa in submeteo2.f) 
-      !!   - uuv,vvw: 10m Wind Velocities    (m/s)
+      !!   - uuw,vvw: 10m Wind Velocities    (m/s)
       !!   - uub,vvb: sea surface velocities (m/s) 
       !!   - cc: total cloud cover           (0-1)
+      !!   - uw: 10m wind speed (m/s), metws of the meteo forcing, which
+      !!     is the wind speed for every iwtype (uuw,vvw are not with a
+      !!     wind stress file, iwtype = 2: there they are the wind times
+      !!     rho_air/rho_water); mfs_qfluxes uses it, at least 0.01, as
+      !!     the transfer speed |V| of the bulk formulae (as wndm in
+      !!     NEMO's sbcblk_mfs; the floor is that of areg_fluxes) and in
+      !!     the drag coefficient (#364)
       !!
       !!   Computes:
       !!   - Solar Radiation using Reed formula (1975, 1977)
@@ -82,7 +93,7 @@
       !!
       !!-----------------------------------------------------------------------
 
-        subroutine heatmfsbulk(days,im,ih,ddlon,ddlat,ta,pa,uuw,vvw,dp, &
+        subroutine heatmfsbulk(days,im,ih,ddlon,ddlat,ta,pa,uuw,vvw,uw,dp, &
      &                   cc,tm,uub,vvb,qsens,qlat,qlong,evap,qswa, &
      &                   cd)  
 
@@ -93,6 +104,7 @@
         real ta 
         real pa
         real uuw,vvw 
+        real, intent(in) :: uw		!10 m wind speed [m/s] (metws)
         real dp 
         real cc 
         real tm  
@@ -101,22 +113,24 @@
         real qswa  
         real cd 
 
-        real dew,sstk,tairk,norspeed
+        real dew,sstk,tairk
         real, parameter  :: ckelv = 273.15
 
-        if( pa > 10000 ) stop 'error stop heatmfsbulk: p not in mbar'
+        ! pa is in mbar: rh2dp (heat_util.f90) checks it before this call
 
         ! convert in units needed by MFS-bulk-formulae!  
         sstk = tm + ckelv      
         tairk = ta + ckelv   
         dew = dp + ckelv    
-        norspeed =sqrt (uub*uub + vvb*vvb)   
+
+        ! transfer speed of the bulk formulae: the 10 m wind speed uw,
+        ! not the current speed (#364), floored in mfs_qfluxes
 
         call mfs_qfluxes(ddlon,ddlat, &
      &                   days,ih,im, &
      &                   sstk,uuw,vvw, &
      &                   tairk,dew,cc, &
-     &                   uub,vvb,norspeed,pa, &
+     &                   uub,vvb,uw,pa, &
      &                   qswa, &
      &                   qsens,qlat,qlong,evap, &
      &                   cd)
@@ -130,12 +144,15 @@
      &                   days,ih,im,               &
      &                   sstk,uuw,vvw,             &
      &                   tairk,dew,cc,             &
-     &                   uub,vvb,norspeed,pa,      &
+     &                   uub,vvb,wspeed,pa,        &
      &                   qswa,                     &
      &                   qsens,qlat,qlong,evap,    &
      &                   cd)
 
         implicit none
+
+       real, intent(in) :: wspeed	!10 m wind speed [m/s]
+       real, parameter  :: wsmin = 0.01	!floor of the wind speed [m/s]
 
        ! surface air pressure, expsi, dry air gas constant
        real, parameter  :: ps = 1013.25
@@ -208,7 +225,12 @@
 
         ! WIND INPUT ---------------------------------
 
-        !norspeed = speed
+        ! norspeed, the transfer speed of the bulk formulae and of cd, is
+        ! the 10 m wind speed (#364), floored so that a calm record does
+        ! not divide by zero in S or give 0**p_h(1) in ch and ce; the wind
+        ! relative to the surface current (rspeed) is not used by the
+        ! heat fluxes: in NEMO's sbcblk_mfs it serves only the stress
+        norspeed = max( wspeed, wsmin )
         rel_u = uuw - uub !true stress - u
         rel_v = vvw - vvb !true stress - v
         rspeed = sqrt( rel_u*rel_u + rel_v *rel_v)
@@ -408,18 +430,21 @@
        sunbet=sin(alat)*sin(eclips*sin(tjul)) + &
      &        cos(alat)*cos(eclips*sin(tjul))
 
-       !solar noon altitude in degrees :
+       !solar noon altitude in degrees (sunbet = cos(lat-decl) can round
+       !above 1 where the latitude is close to the declination):
 
-       sunbetd = degradr*asin(sunbet)
+       sunbetd = degradr*asin(min(1.,max(-1.,sunbet)))
 
        !correction for cloud less than 0.3 according to Reed
+       !(the noon altitude of Reed's cloud formula is in degrees, as in
+       !NEMO's sbcblk_mfs; it was the sine sunbet before #364)
 
        albedo = alpham(im)
 
        if (cc.lt.0.3) then
           qswa = qtot*(1.-albedo)
        else
-          qswa  = qtot*(1-0.62*cc + .0019*sunbet)*(1.-albedo)
+          qswa  = qtot*(1-0.62*cc + .0019*sunbetd)*(1.-albedo)
        endif
 
 
