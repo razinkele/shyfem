@@ -373,6 +373,38 @@ class T(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("call error_stop('q1','can''t read grid')", self.r("q.f90"))
 
+    def test_leading_space_literal(self):
+        p = self.w("ls.f90", "subroutine ls1\n\timplicit none\n\tstop ' error stop ls1: lead'\n\tstop ' error stop ls1 (2)'\nend\n")
+        rc, out = run(p, cwd=self.d.name)
+        src = self.r("ls.f90")
+        self.assertEqual(rc, 0)
+        self.assertIn("call error_stop('ls1','lead')", src)
+        self.assertIn("call error_stop('ls1','(2)')", src)
+
+    def test_decided_continued_stop(self):
+        text = ("subroutine dc1(b)\n\timplicit none\n\tlogical b\n\tif( b ) then\n"
+                "\t  stop 'error stop dc1: ' // &\n     &\t\t\t'second part'\n\tend if\n"
+                "\tif( b ) then\n\t  stop 'error stop dc1: ' // &\n\t    'a ' // &\n\t    'b'\n\tend if\nend\n")
+        p = self.w("dc.f90", text)
+        # without a decision both are listed, nothing is half converted
+        rc, out = run("--check", p, cwd=self.d.name)
+        self.assertEqual(rc, 1)
+        self.assertEqual(out.count("[stop code is not a single literal"), 2)
+        dec = self.w("ddc.txt", "dc.f90:5 dc1|first\ndc.f90:9 dc1|second\n")
+        rc, out = run("--decide", dec, p, cwd=self.d.name)
+        src = self.r("dc.f90")
+        print("---- decided continued: exit %d\n%s\n%s" % (rc, out, src))
+        self.assertEqual(rc, 0)
+        self.assertIn("call error_stop('dc1','first')", src)
+        self.assertIn("call error_stop('dc1','second')", src)
+        self.assertNotIn("second part", src)
+        self.assertNotIn("&", src)
+        self.w("mod_error_stop.f90", STUB)
+        for f in ("mod_error_stop.f90", "dc.f90"):
+            gf = subprocess.run(["gfortran", "-fsyntax-only", f], cwd=self.d.name,
+                                capture_output=True, text=True)
+            self.assertEqual(gf.returncode, 0, gf.stderr)
+
     def test_fixed_form_refused(self):
         p = self.w("f.f", "      stop 'error stop x: y'\n")
         rc, out = run(p, cwd=self.d.name)

@@ -262,15 +262,30 @@ def convert(path, args, decisions):
                 if content is not None:
                     end = e2
             decided = n == 0 and dkey in decisions
-            iserr = content is not None and content.lower().startswith("error stop")
+            iserr = content is not None and content.lstrip().lower().startswith("error stop")
             if not decided and not iserr:
                 say1(i, "other stop (normal end or error?)")
                 continue
             # the whole stop code must be one literal (or none) and then the
             # end of the statement, a ; or a comment
             tailm = m[end:].strip()
-            if (content is None and j < len(line) and line[j] not in ";!") or \
-               (tailm != "" and not tailm.startswith(";")):
+            multi = None
+            if decided and m.rstrip().endswith("&") and \
+               re.match(r"^\s*(?://)?\s*&\s*$", m[end:]):
+                # a decided stop whose code goes over continuation lines of
+                # string literals: the whole statement is replaced
+                k = i
+                piece = r"(?:'x*'|\"x*\")"
+                while k + 1 < len(lines) and masked[k].rstrip().endswith("&") and \
+                      (k == i or re.match(r"^&?\s*" + piece + r"\s*(?://)?\s*&\s*$", masked[k].strip())):
+                    k += 1
+                if re.match(r"^&?\s*" + piece + r"(?:\s*//\s*" + piece + r")*\s*$", masked[k].strip()):
+                    multi = k
+                    end = len(line)
+                    tailm = ""
+            if multi is None and (
+               (content is None and j < len(line) and line[j] not in ";!") or
+               (tailm != "" and not tailm.startswith(";"))):
                 say1(i, "stop code is not a single literal (continued or concatenated)")
                 continue
             if decided:
@@ -278,7 +293,7 @@ def convert(path, args, decisions):
                 text = text.replace("'", "''")
                 used.add(dkey)
             else:
-                rest = content[len("error stop"):]
+                rest = content.lstrip()[len("error stop"):]
                 c, nm, co = CANON.match(rest), NUMBERED.match(rest), COLON.match(rest)
                 if c:
                     name, text = c.group("n"), c.group("t")
@@ -302,16 +317,23 @@ def convert(path, args, decisions):
             if alias is None:
                 say1(i, why_form)
                 continue
-            edits.append((pos, end, name, text, alias, use, why_form))
+            edits.append((pos, end, name, text, alias, use, why_form, multi))
         if not edits:
             continue
         cur = line
-        for pos, end, name, text, alias, use, why_form in reversed(edits):
+        for pos, end, name, text, alias, use, why_form, multi in reversed(edits):
             cur = cur[:pos] + "call %s('%s','%s')" % (alias, name, text) + cur[end:]
-        if len(cur) <= MAXLEN:
+        if edits[0][7] is not None:
+            if len(edits) > 1 or len(cur) > MAXLEN:
+                say1(i, "decided continued stop: call over one line not possible")
+                continue
+            new[i] = [cur]
+            for kk in range(i + 1, edits[0][7] + 1):
+                new[kk] = []
+        elif len(cur) <= MAXLEN:
             new[i] = [cur]
         else:
-            pos, end, name, text, alias, use, why_form = edits[0]
+            pos, end, name, text, alias, use, why_form, multi = edits[0]
             ind = re.match(r"\s*", line).group(0)
             head = line[:pos] + "call %s('%s', &" % (alias, name)
             tail = ind + "\t'%s')" % text + line[end:]
@@ -319,7 +341,7 @@ def convert(path, args, decisions):
                 say1(i, "call longer than %d characters" % MAXLEN)
                 continue
             new[i] = [head, tail]
-        for pos, end, name, text, alias, use, why_form in edits:
+        for pos, end, name, text, alias, use, why_form, multi in edits:
             done.append((i + 1, line.strip(), " / ".join(x.strip() for x in new[i])))
             forms[rt.name] = (alias, why_form)
             if use is not None:
