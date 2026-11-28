@@ -37,6 +37,19 @@
 #      formulae divide by zero (S = dT/U**2) and the build of the gates
 #      (-ffpe-trap=zero,invalid,overflow) stops with a floating-point
 #      exception.
+#   4. serial, one hour, the wind given as wind stress (iwtype = 2): the
+#      file ${TAG}_ws.txt is made from INPUT/wind09.txt with
+#      tau = rho_air * dragco * W * (u,v), rho_air = roluft = 1.225 and
+#      dragco = 2.5e-3 of mm_hyd_41 (the values with which the model turns
+#      a stress back into a wind speed, W = sqrt(|tau|/(dragco*rho_air)),
+#      so that W is the file's speed at every record).  The first record
+#      at node 868 has qsens -3.356 and qlat 4.385 W/m**2, within 0.01:
+#      the MFS formulae with W = 3.213 m/s, the speed of the stress
+#      interpolated in time to 00:05 (row 1 interpolates the speed: 3.168).
+#      Before the fix of #364 they were 0: the transfer speed was the
+#      current; and taken from the wind components wxv/wyv it would be 0
+#      too, since with a stress file they hold the wind times
+#      rho_air/rho_water (about 0.004 m/s, floored to 0.01).
 #
 # Needs shyfem, shyelab and mpirun on PATH (an OpenMPI build) and
 # `make init` done.
@@ -54,6 +67,8 @@ fail() { echo "IHEAT8 CHECK FAIL: $*"; rc=1; }
 NODE=868			# external node ("center of lagoon" in $extra)
 QSENS_REF=-3.258		# W/m**2, first time step, MFS with the 10 m wind
 QLAT_REF=4.258
+QSENS_REF4=-3.356		# the same, wind stress file (row 4)
+QLAT_REF4=4.385
 TOL=0.01
 
 for t in shyfem shyelab mpirun; do
@@ -72,7 +87,8 @@ trap 'cleanup; exit 130' INT TERM
 
 [ "$(grep -c '^        mm_hyd_41$' mm_hyd_41.str)" = 1 ] \
   || { echo "IHEAT8 CHECK FAIL: cannot find the run name line of mm_hyd_41.str"; exit 1; }
-# make_str NAME ITANF ITEND: the scratch copy NAME.str of mm_hyd_41.str
+# make_str NAME ITANF ITEND [stress]: the scratch copy NAME.str of
+# mm_hyd_41.str; with "stress" the wind is the stress file ${TAG}_ws.txt
 make_str() {
   sed -e '/^[[:space:]]*ztilt[[:space:]]*=/d' -e '/^[[:space:]]*ktilt[[:space:]]*=/d' \
       -e "s/^        mm_hyd_41\$/        $1/" \
@@ -82,19 +98,33 @@ make_str() {
       mm_hyd_41.str > "$1.str"
   [ "$(grep -c "^        iheat = 8      imetout = 10000      idtmet = '300s'\$" "$1.str")" = 1 ] \
     || { echo "IHEAT8 CHECK FAIL: the sed expression set no iheat in $1.str"; exit 1; }
+  [ "${4:-}" = stress ] || return 0
+  sed -i -e 's/^        iwtype = 3     dragco = 2\.5e-3$/        iwtype = 2     dragco = 2.5e-3/' \
+         -e "s#^        wind='INPUT/wind09.txt'\$#        wind='${TAG}_ws.txt'#" "$1.str"
+  [ "$(grep -c '^        iwtype = 2     dragco = 2\.5e-3$' "$1.str")" = 1 ] \
+    && [ "$(grep -c "^        wind='${TAG}_ws.txt'\$" "$1.str")" = 1 ] \
+    || { echo "IHEAT8 CHECK FAIL: the sed expression set no wind stress in $1.str"; exit 1; }
 }
 make_str "$TAG" 2009-01-01 2009-01-01::06:00:00
 make_str "${TAG}c" 2009-01-02::06:00:00 2009-01-02::10:00:00
+make_str "${TAG}s" 2009-01-01 2009-01-01::01:00:00 stress
+# the wind of INPUT/wind09.txt (speed, direction it blows from) as stress
+awk -v rho=1.225 -v cd=2.5e-3 'BEGIN { pi = atan2(0, -1) }
+  NF >= 3 { w = $2; d = (270 - $3) * pi / 180
+            printf "%s %.9e %.9e\n", $1, rho*cd*w*w*cos(d), rho*cd*w*w*sin(d) }' \
+  INPUT/wind09.txt > "${TAG}_ws.txt"
+[ "$(wc -l < "${TAG}_ws.txt")" = "$(wc -l < INPUT/wind09.txt)" ] \
+  || { echo "IHEAT8 CHECK FAIL: cannot make the wind stress file ${TAG}_ws.txt"; exit 1; }
 
 ended() { [ "$1" = 0 ] && grep -q "simulation end" "$2" && ! grep -q "STOP" "$2"; }
 
-# fluxes ROW: qsens and qlat of node NODE at the first record of
-# $TAG.meteo.shy against the references
+# fluxes ROW RUN QSENS QLAT: qsens and qlat of node NODE at the first
+# record of RUN.meteo.shy against QSENS and QLAT
 fluxes() {
-  local d="$SCR/nodes$1" qs ql
+  local d="$SCR/nodes$1" qs ql run="$2" QSENS_REF="$3" QLAT_REF="$4"
   mkdir "$d" || { fail "row $1: cannot make $d"; return; }
-  ( cd "$d" && shyelab -node "$NODE" "$HERE/$TAG.meteo.shy" > shyelab.log 2>&1 ) \
-    || { tail -3 "$d/shyelab.log"; fail "row $1: shyelab -node $NODE failed on $TAG.meteo.shy"; return; }
+  ( cd "$d" && shyelab -node "$NODE" "$HERE/$run.meteo.shy" > shyelab.log 2>&1 ) \
+    || { tail -3 "$d/shyelab.log"; fail "row $1: shyelab -node $NODE failed on $run.meteo.shy"; return; }
   qs=$(awk '$1 == "2009-01-01::00:05:00" { print $2; exit }' "$d/qsens.2d.1" 2> /dev/null)
   ql=$(awk '$1 == "2009-01-01::00:05:00" { print $2; exit }' "$d/qlat.2d.1" 2> /dev/null)
   if [ -z "$qs" ] || [ -z "$ql" ]; then
@@ -108,19 +138,24 @@ fluxes() {
 
 echo "=== 1. serial: mm_hyd_41 with iheat = 8, six hours"
 timeout 600 nice -n 10 shyfem "$TAG.str" > "$SCR/1.log" 2>&1; r=$?
-if ended "$r" "$SCR/1.log"; then echo "  ended"; fluxes 1
+if ended "$r" "$SCR/1.log"; then echo "  ended"; fluxes 1 "$TAG" "$QSENS_REF" "$QLAT_REF"
 else grep "STOP" "$SCR/1.log" | head -3; tail -2 "$SCR/1.log"; fail "row 1: the serial run did not end (exit $r)"; fi
 
 echo "=== 2. $NP processes: the same run"
 for f in "$HERE/$TAG".*; do [ "$f" = "$HERE/$TAG.str" ] || rm -f "$f"; done
 timeout 600 nice -n 10 mpirun --oversubscribe -np "$NP" shyfem "$TAG.str" > "$SCR/2.log" 2>&1; r=$?
-if ended "$r" "$SCR/2.log"; then echo "  ended"; fluxes 2
+if ended "$r" "$SCR/2.log"; then echo "  ended"; fluxes 2 "$TAG" "$QSENS_REF" "$QLAT_REF"
 else grep "STOP\|error stop" "$SCR/2.log" | head -3; tail -2 "$SCR/2.log"; fail "row 2: the run did not end on $NP processes (exit $r)"; fi
 
 echo "=== 3. serial: 2009-01-02 06:00 to 10:00, through the calm wind record of 09:00"
 timeout 600 nice -n 10 shyfem "${TAG}c.str" > "$SCR/3.log" 2>&1; r=$?
 if ended "$r" "$SCR/3.log"; then echo "  ended"
 else grep "STOP\|Floating-point\|SIGFPE" "$SCR/3.log" | head -3; tail -2 "$SCR/3.log"; fail "row 3: the run through a calm record did not end (exit $r)"; fi
+
+echo "=== 4. serial: one hour with the wind given as wind stress (iwtype = 2)"
+timeout 600 nice -n 10 shyfem "${TAG}s.str" > "$SCR/4.log" 2>&1; r=$?
+if ended "$r" "$SCR/4.log"; then echo "  ended"; fluxes 4 "${TAG}s" "$QSENS_REF4" "$QLAT_REF4"
+else grep "STOP" "$SCR/4.log" | head -3; tail -2 "$SCR/4.log"; fail "row 4: the run with the wind stress file did not end (exit $r)"; fi
 
 if [ "$rc" = 0 ]; then
   echo "IHEAT8 CHECK: PASS"

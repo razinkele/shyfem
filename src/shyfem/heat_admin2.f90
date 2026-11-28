@@ -102,6 +102,7 @@
 ! 26.11.2026    arb     brun_heat: the heat flag of the restart (#304)
 ! 26.11.2026    arb     heat_flux_active(): qflux3d and the restart (#304)
 ! 28.11.2026    arb     warning for iheat = 8 on a non-geographic basin (#364)
+! 28.11.2026    arb     heatmfsbulk gets the wind speed uw (metws) (#364)
 !
 ! notes :
 !
@@ -559,7 +560,7 @@
             uub = uprv(lmin,k)  
             vvb = vprv(lmin,k)  
 	    call meteo_get_heat_extra(k,dp,uuw,vvw)
-       call heatmfsbulk(days,im,ih,ddlon,ddlat,ta,p,uuw,vvw,dp,          &
+       call heatmfsbulk(days,im,ih,ddlon,ddlat,ta,p,uuw,vvw,uw,dp,       &
            &                   cc,tm,uub,vvb,qsens,qlat,qlong,evap,qswa,cd)   
             qss= fice_free*qswa  !albedo (monthly) already in qshort1 -> qswa  
             if ( bwind ) windcd(k) = cd   
