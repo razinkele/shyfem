@@ -13,11 +13,23 @@
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
+
+# clean_case NAME...: delete every output of these cases before the run, so the
+# gate cannot pass on a file an earlier run (another build) left behind. Inputs
+# (STR, GRID/, INPUT/) are never touched. need FILE...: the run must have written them.
+clean_case() { local n; for n in "$@"; do
+  rm -f "$n".{eutro,hydro,fvl,lcz,merc}.shy "$n".{inf,run.log,rst,ext,flx}; done; }
+need() { local f; for f in "$@"; do [ -s "$f" ] || {
+  echo "FAIL: $f was not written by this run (no stale output is accepted; is the ecology module linked?)"; exit 1; }; done; }
 rc=0
 
+clean_case eco_2d eco_2d_mt
 OMP_NUM_THREADS=1 timeout 300 shyfem eco_2d.str    > eco_2d.run.log    2>&1 || { echo "FAIL: 1-thread run crashed"; exit 1; }
 OMP_NUM_THREADS=4 timeout 300 shyfem eco_2d_mt.str > eco_2d_mt.run.log 2>&1 || { echo "FAIL: 4-thread run crashed (race?)"; exit 1; }
+
+need eco_2d.eutro.shy eco_2d_mt.eutro.shy
 
 fr(){ shyelab -write "$1" 2>/dev/null | grep "l,ivar,min,aver,max" \
         | awk '$3==1 && $4>=701 && $4<=709 {print $4,$6}' | tail -9; }

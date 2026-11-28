@@ -13,11 +13,23 @@
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
+
+# clean_case NAME...: delete every output of these cases before the run, so the
+# gate cannot pass on a file an earlier run (another build) left behind. Inputs
+# (STR, GRID/, INPUT/) are never touched. need FILE...: the run must have written them.
+clean_case() { local n; for n in "$@"; do
+  rm -f "$n".{eutro,hydro,fvl,lcz,merc}.shy "$n".{inf,run.log,rst,ext,flx}; done; }
+need() { local f; for f in "$@"; do [ -s "$f" ] || {
+  echo "FAIL: $f was not written by this run (no stale output is accepted; is the ecology module linked?)"; exit 1; }; done; }
 MARGIN=1e-4    # required (PHYT_surface - PHYT_deep)
 
+clean_case eco_3d_light
 timeout 400 shyfem eco_3d_light.str > eco_3d_light.run.log 2>&1 \
   || { echo "FAIL: eco_3d_light did not complete"; exit 1; }
+
+need eco_3d_light.eutro.shy
 
 # final-record PHYT (var 704) aver at surface (layer 1) and deepest layer
 prof() { shyelab -write eco_3d_light.eutro.shy 2>/dev/null \

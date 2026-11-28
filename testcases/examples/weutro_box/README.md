@@ -17,7 +17,7 @@ the hardcoded `einit` defaults in `bio3d.f90` (NH3 NO3 OPO4 PHYT CBOD DO ON OP Z
 
 ## Build (required first)
 ```
-cd /home/razinka/shyfem && make fem ECOLOGICAL=EUTRO
+cd ../../.. && make fem ECOLOGICAL=EUTRO      # from this folder: the repository root
 ```
 
 ## Run / gate
@@ -25,6 +25,9 @@ cd /home/razinka/shyfem && make fem ECOLOGICAL=EUTRO
 make init      # build GRID/MM_coarse.bas
 make check     # run both cases + validate (no-NaN, positivity, DO in [0,25])
 ```
+The gates and `make init` use this tree's own `bin/` (`../../../bin`); set
+`SHYFEM_BIN=<bin dir>` (gates) or `make init BIN=<bin dir>` to test another build.
+
 `check_eco.sh` is the gate: it fails on NaN/Inf, any pelagic state < -1e-6, or DO
 out of physical range, and prints a baseline min/aver/max summary per variable.
 
