@@ -29,8 +29,11 @@
 #      surface current (about 0.01 m/s here) as the transfer speed, so
 #      qsens and qlat were exactly 0 whenever the air was warmer than the
 #      water, as at this step (air 10.2 C, water 9.0 C, wind 3.2 m/s).
+#      The log has exactly one line "warning qflux3d: iheat = 8 ...": the
+#      basin is UTM, not longitude and latitude, so the solar radiation of
+#      iheat = 8 is wrong there (before #364 there was no warning).
 #   2. NP processes: the same run ends on every process, with the same
-#      fluxes at node 868.
+#      fluxes at node 868 and exactly one warning line (master process).
 #   3. serial, 2009-01-02 06:00 to 10:00: the wind file has a calm record
 #      (0 m/s) at 09:00, which a time step meets exactly; the run ends.
 #      The transfer speed has a floor (0.01 m/s); without it the bulk
@@ -136,15 +139,23 @@ fluxes() {
     || fail "row $1: qsens/qlat at node $NODE are $qs/$ql, not $QSENS_REF/$QLAT_REF within $TOL (the transfer speed is not the 10 m wind?)"
 }
 
+# warned ROW LOG: exactly one warning line for the UTM basin in LOG
+warned() {
+  local n
+  n=$(grep -c '^ *warning qflux3d: iheat = 8 ' "$2")
+  echo "  warning lines for the non-geographic basin: $n (expected 1)"
+  [ "$n" = 1 ] || fail "row $1: $n lines 'warning qflux3d: iheat = 8 ...' in the log, not 1"
+}
+
 echo "=== 1. serial: mm_hyd_41 with iheat = 8, six hours"
 timeout 600 nice -n 10 shyfem "$TAG.str" > "$SCR/1.log" 2>&1; r=$?
-if ended "$r" "$SCR/1.log"; then echo "  ended"; fluxes 1 "$TAG" "$QSENS_REF" "$QLAT_REF"
+if ended "$r" "$SCR/1.log"; then echo "  ended"; fluxes 1 "$TAG" "$QSENS_REF" "$QLAT_REF"; warned 1 "$SCR/1.log"
 else grep "STOP" "$SCR/1.log" | head -3; tail -2 "$SCR/1.log"; fail "row 1: the serial run did not end (exit $r)"; fi
 
 echo "=== 2. $NP processes: the same run"
 for f in "$HERE/$TAG".*; do [ "$f" = "$HERE/$TAG.str" ] || rm -f "$f"; done
 timeout 600 nice -n 10 mpirun --oversubscribe -np "$NP" shyfem "$TAG.str" > "$SCR/2.log" 2>&1; r=$?
-if ended "$r" "$SCR/2.log"; then echo "  ended"; fluxes 2 "$TAG" "$QSENS_REF" "$QLAT_REF"
+if ended "$r" "$SCR/2.log"; then echo "  ended"; fluxes 2 "$TAG" "$QSENS_REF" "$QLAT_REF"; warned 2 "$SCR/2.log"
 else grep "STOP\|error stop" "$SCR/2.log" | head -3; tail -2 "$SCR/2.log"; fail "row 2: the run did not end on $NP processes (exit $r)"; fi
 
 echo "=== 3. serial: 2009-01-02 06:00 to 10:00, through the calm wind record of 09:00"

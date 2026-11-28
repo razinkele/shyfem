@@ -834,7 +834,8 @@
 !		latitude in degrees, and the column srad of the file
 !		is not used: use a basin in longitude and latitude.
 !		On a cartesian basin (e.g. UTM) a warning is written
-!		at set-up and the solar radiation is wrong.
+!		at the first heat flux step and the solar radiation
+!		is wrong.
 !		\end{description}
 !		Except when |iheat| is 7, the time series file has
 !		the columns "time srad airt rhum cc".

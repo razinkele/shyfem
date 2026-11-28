@@ -49,7 +49,8 @@
 #      the first heat step (pressure in Pa given to rh2dp) with exit 0;
 #      the sensible and latent heat flux of the first step at node 868
 #      are those of the 10 m wind (before #364: of the surface current,
-#      and 0), also with the wind given as wind stress (iwtype = 2), and
+#      and 0), also with the wind given as wind stress (iwtype = 2), the
+#      UTM basin gives one warning line (serial and NP processes), and
 #      a run through a calm wind record ends;
 #      PASS line "IHEAT8 CHECK: PASS"
 #  11. check_tvd_omp.sh NP: an error of the TVD upwind value (itvd = 2),
