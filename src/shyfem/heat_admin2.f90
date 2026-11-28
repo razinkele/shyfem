@@ -101,6 +101,7 @@
 ! 08.02.2025    ggu     some new debug code
 ! 26.11.2026    arb     brun_heat: the heat flag of the restart (#304)
 ! 26.11.2026    arb     heat_flux_active(): qflux3d and the restart (#304)
+! 28.11.2026    arb     warning for iheat = 8 on a non-geographic basin (#364)
 !
 ! notes :
 !
@@ -227,6 +228,7 @@
         use mod_hydro_print  
 	use heat_const
 	use meteo_forcing_module, only : iatm
+	use shympi, only : shympi_is_master
 
 	use para
 	implicit none
@@ -298,6 +300,7 @@
 	integer ifemopa,ipext
 	logical is_dry_node
 	logical heat_flux_active
+	logical is_spherical
 ! save
 	integer, save :: icall = 0
 	integer, save :: n93 = 0
@@ -400,6 +403,21 @@
               stop 'error stop qflux3d: itdrag'
             end if
           end if
+
+	  !the solar radiation of iheat = 8 (qshort1) reads the node
+	  !coordinates as longitude and latitude in degrees (#364)
+	  if( iheat == 8 .and. .not. is_spherical() ) then
+	    if( shympi_is_master() ) then
+!$OMP CRITICAL
+	      write(6,'(a)') 'warning qflux3d: iheat = 8 computes the solar' &
+     &				//' radiation from the node coordinates'
+	      write(6,'(a)') '  as longitude and latitude in degrees, but'    &
+     &				//' the basin is not geographic'
+	      write(6,'(a)') '  (cartesian, e.g. UTM): the solar radiation'   &
+     &				//' of this run is wrong'
+!$OMP END CRITICAL
+	    end if
+	  end if
 
 	  call shyice_init_output
 	  call meteo_get_ice_usage(aice)	!use ice (1) or not (0)

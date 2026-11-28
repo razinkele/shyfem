@@ -828,7 +828,13 @@
 !		\item[6] Using the COARE3.0 module
 !		\item[7] Read heat fluxes directly from file. The columns
 !		in the data file must be "time srad qsens qlat qlong".
-!		\item[8] MFS heat fluxes as Pettenuzzo et al., 2010
+!		\item[8] MFS heat fluxes as Pettenuzzo et al., 2010.
+!		The solar radiation is computed (Reed) from the
+!		coordinates of the nodes, read as longitude and
+!		latitude in degrees, and the column srad of the file
+!		is not used: use a basin in longitude and latitude.
+!		On a cartesian basin (e.g. UTM) a warning is written
+!		at set-up and the solar radiation is wrong.
 !		\end{description}
 !		Except when |iheat| is 7, the time series file has
 !		the columns "time srad airt rhum cc".
