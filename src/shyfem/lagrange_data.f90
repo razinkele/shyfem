@@ -91,10 +91,27 @@
 	!values in lgr_orec_base+1 ... lgr_orec_base+ncust
 	integer, parameter :: lgr_orec_base = 10
 
+	!budget of element crossings of one time step of a particle (#315):
+	!lgr_ncross_base, and lgr_ncross_extra more for a step that used up
+	!the base with time left and is not a node sink (a particle circling
+	!a node outward, which the re-snap of x, y in single precision puts
+	!back on the node every step, #315). Every step starts with
+	!lgr_ncross_max crossings left; when lgr_ncross_extra are left
+	!track_body_xi ends a step that converges onto a node (a node sink,
+	!#310) and lets every other one go on, comparing the end of the base
+	!with the distance from the nearest vertex at the start of the step.
+	!That distance and the crossings left are the state of the budget;
+	!both travel with a particle handed over at a side (d_start is
+	!hand-over field 9 since #315). Not STR parameters
+	integer, parameter :: lgr_ncross_base = 100
+	integer, parameter :: lgr_ncross_extra = 1500
+	integer, parameter :: lgr_ncross_max = lgr_ncross_base		&
+     &					+ lgr_ncross_extra
+
 	!element crossings used in the last time step, one per slot of lgr_ar
 	!(set to 0 by track_single and to the count by track_body_xi, on the
 	!process where the particle ends its step the count of the whole
-	!step; read by the debug dump)
+	!step, at most lgr_ncross_max; read by the debug dump)
         integer, save, allocatable :: lgr_ncross(:)
 
 	!hand-over mark, one per slot of lgr_ar (several processes only):
@@ -225,11 +242,17 @@
 	! 4    lgr_diff_vert: a layer below the bottom of the element, stops
 	!      (diff_get_vert until #286)
 	! 5    track_body_xi: the element crossings used up with time left
-	!      ("warning particle adv")
+	!      ("warning particle adv"); since #315 the whole budget, the
+	!      extra crossings included (lgr_ncross_max)
 	! 6    track_body_xi: out of the domain with time left ("loosing
 	!      particle adv")
 	! 7    track_body_xi: time left, the cause unknown ("unknown error
 	!      adv")
+	!      (kinds 5 to 7 report the crossings left on the scale of before
+	!      #315: within the base budget lgr_ncross_base ... 1, in the extra
+	!      crossings lgr_ncross_extra ... 1, so a value of lgr_ncross_base
+	!      or less does not tell which of the two; a step that stays in
+	!      the base writes the line it wrote before #315)
 	! 8    track_xi_get_flux: a flux over a wall side, set to 0
 	!      ("material boundary:")
 	! 9    track_xi: a negative velocity ("vel < 0")
@@ -258,7 +281,11 @@
 	!      flux reconstruction of the layer makes the particle spiral into
 	!      the node, the time to each side shrinking geometrically; #310,
 	!      track_xi_node_sink tells it from the other steps of kind 5,
-	!      which it counted as until then); the step ends as for kind 5
+	!      which it counted as until then); the step ends as for kind 5.
+	!      Since #315 the test is made when the base budget is used up
+	!      (lgr_ncross_base): a node sink ends there, any other step gets
+	!      the extra crossings, and a step that uses those up too is
+	!      tested again (kind 26 or 5)
 	! 27   track_xi: all the time left spent moving off a vertex (a vertex
 	!      hold: the th = 0 path from a vertex pushes the particle at most
 	!      5e-6 in internal coordinates into the next element and ends its
@@ -696,6 +723,8 @@
           case default
             ctext = 'advection ended with time left, cause unknown'
           end select
+          !crossings left: lgr_ncross_base ... 1 within the base budget,
+          !lgr_ncross_extra ... 1 in the extra crossings (#315)
           if( kind >= lgr_ev_adv_cross ) cname(3) = 'crossings left'
           if( kind == lgr_ev_adv_node ) cname(3) = 'layer'
         case( lgr_ev_vertex_hold )		!#316

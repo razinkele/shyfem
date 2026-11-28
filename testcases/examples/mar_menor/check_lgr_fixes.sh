@@ -267,7 +267,9 @@
 #             particles of that output (only advection takes a particle out
 #             here), the first id of a step is one of the particles that
 #             exited by the next output and not by the one before, its
-#             element is negative and it had time and crossings left; the
+#             element is negative and it had time and crossings left (1 to
+#             100 within the base budget, up to 1500 in the extra crossings
+#             of #315); the
 #             flux lines must exist.  The runs on 1 and 4 threads must write
 #             the same summary lines and byte-identical particle files
 #             (cmp); on 4 processes the counts of each kind and step summed
@@ -574,6 +576,52 @@
 #             M, and the first id, element, layer, node and time spent), and
 #             a build without #316 none.  The code before #316 fails this
 #             mode: no vertex-hold line.
+#   cross-budget (#315) a step that used up its base budget of crossings
+#             (100) with time left and is not a node sink goes on with 1500
+#             extra crossings, so a particle that circles a node outward
+#             and that the re-snap of x, y puts back on the node every step
+#             leaves it.  ../venice_lagoon/venlag_smoke.str (the 3D
+#             Venice lagoon, basin venlag62 made here with shypre) until
+#             03:32 with 50 surface particles (ilagr = 1, lgrseed = 1)
+#             released at 03:00 in a 20 m square around node 392, where
+#             particle 1356 of the full release was held: serially with 1
+#             and with 4 OpenMP threads (nomp = 4), on 4 processes (METIS)
+#             and on 3 processes with a partition made here that puts node
+#             392 alone on rank 2 and splits the five elements around it
+#             between ranks 0 (the nodes north of it) and 1 (south).  The
+#             4-process run cannot show a hand-over during the extra
+#             crossings: METIS keeps the elements around node 392 on one
+#             rank, and a rank holds every element with one of its nodes,
+#             so a particle circling the node never meets a cut-off side.
+#             On the hand-cut partition the circling particles are handed
+#             over between ranks 0 and 1, so the decision between the
+#             node-sink stop and the extra crossings is made on a process
+#             that continues a step: it needs the distance from the vertex
+#             at the start of the step, which travels in the hand-over
+#             (field 9); the code that took the arrival point instead
+#             (2d6f0d0f, not merged) gave 9 particles that differ from the
+#             serial run, 9 events of the first kind below instead of 24
+#             and 193 node-sink events instead of 136.  The used-up lines
+#             of the hand-cut run must come from at least two ranks, so a
+#             change that keeps the circling particles on one rank fails
+#             here instead of passing without a hand-over.  The node is a sink for the particles from about
+#             03:07 (kind 26) and then turns into a source; 8 of them sit
+#             exactly on it.  Required (measured 2026-11-28): CB_CROSS = 24
+#             events "element crossings used up with time left" in the run
+#             (8 particles in each of the 3 steps to 03:26:01, 03:26:38 and
+#             03:27:15, each line with crossings left 0 and time left > 0, no
+#             line after 03:27:15), CB_SINK = 136 node-sink events and
+#             CB_HOLD = 91 vertex-hold events (#316), both as before #315,
+#             and no particle exactly on node 392 (the float32 of its
+#             coordinates in venlag62.grd) at the last output (12720 s); with
+#             4 threads, on 4 processes and on the 3 hand-cut processes the
+#             particle file byte-identical to the serial one, and on the
+#             processes the N of each step of the three kinds summed over
+#             the ranks the serial N.  The code before #315 fails it: 101
+#             events of the first kind (the 8 particles in every step from
+#             03:26:01 on) and the 8 particles still on the node at 12720 s
+#             (ids 9 10 17 20 25 30 47 53).  The numbers are exact: a change
+#             of the flow or of the tracker needs them measured again.
 #   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
 #             (its list of parked particles grows) on 4 MPI processes with
 #             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
@@ -707,8 +755,10 @@
 # modes vdiff-dt, walk-fold, bed-w and node-sink also gfortran on PATH and
 # the source tree three levels up (../../../src/shyfem/lagrange_dif.f90,
 # for bed-w and node-sink lagrange_vertical.f90, as in a checkout); mode
-# events that source tree too (all of ../../../src).  Mode node-sink-run
-# takes an optional second argument, REF_BIN_DIR.
+# events that source tree too (all of ../../../src); mode cross-budget
+# ../venice_lagoon (GRID/venlag62.grd, INPUT, venlag_smoke.str) and shypre
+# on PATH.  Mode node-sink-run takes an optional second argument,
+# REF_BIN_DIR.
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
@@ -718,11 +768,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | bed-w | node-sink | node-sink-run [REF_BIN_DIR] | grow-fail | int-fail | events | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | walk-fold | bed-w | node-sink | node-sink-run [REF_BIN_DIR] | cross-budget | grow-fail | int-fail | events | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|bed-w|node-sink|node-sink-run|grow-fail|int-fail|events|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|walk-fold|bed-w|node-sink|node-sink-run|cross-budget|grow-fail|int-fail|events|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
 # the reference binary of node-sink-run (optional; no other mode reads one)
@@ -1586,7 +1636,9 @@ for s, n, ntot, first in lost:
     i = int(first["id"])
     if not after or i not in after[0] or (before and i in before[-1]):
         bad("step %r: first id %d did not exit between the outputs around the step" % (s, i))
-    if int(first["element"]) >= 0 or not 0 < int(first["crossings left"]) <= 100 \
+    # crossings left (#315): 100 ... 1 within the base budget, 1500 ... 1 in
+    # the extra crossings of a step that used up its base
+    if int(first["element"]) >= 0 or not 0 < int(first["crossings left"]) <= 1500 \
             or not float(first["time left [s]"]) > 0:
         bad("step %r: first %r: not out of the domain with time and crossings left" % (s, first))
     nchk += 1
@@ -2226,7 +2278,10 @@ if [ "$MODE" = node-sink ]; then
 	  as = cshift(xis,is)
 	  do ie = 0,2
 	    ae = cshift(xie,ie)
-	    if( track_xi_node_sink(as,ae) .neqv. bwant ) nbad = nbad + 1
+	    ! since #315 the classifier takes d at the start (track_body_xi
+	    ! computes it once per step and it travels in the hand-over)
+	    if( track_xi_node_sink(min(as(1)+as(2),as(2)+as(3),as(1)+as(3)),ae)	&
+     &		.neqv. bwant ) nbad = nbad + 1
 	  end do
 	end do
 	ncase = ncase + 1
@@ -2458,6 +2513,179 @@ if "ref/ns_t1" in L:
 sys.exit(0 if ok else 1)
 EOF
   [ "$rc" = 0 ] && [ -z "$REF" ] && echo "  (PASS without the comparison with a reference binary: give REF_BIN_DIR for it)"
+  finish
+fi
+
+#=============================== cross-budget (#315) =======================
+if [ "$MODE" = cross-budget ]; then
+  # venlag_smoke until 03:32, 50 surface particles released at 03:00 around
+  # node 392 (Venice lagoon)
+  VEN="$HERE/../venice_lagoon"
+  for f in GRID/venlag62.grd INPUT venlag_smoke.str; do
+    [ -e "$VEN/$f" ] || { fail "$VEN/$f is missing"; finish; }
+  done
+  command -v shypre > /dev/null 2>&1 || { fail "shypre is not on PATH"; finish; }
+  V="$SCR/ven"
+  mkdir -p "$V/GRID" && cp "$VEN/GRID/venlag62.grd" "$V/GRID/" && ln -s "$VEN/INPUT" "$V/INPUT" \
+    || { fail "cannot make the folder of the Venice runs"; finish; }
+  ( cd "$V/GRID" && shypre venlag62.grd > shypre.log 2>&1 ) && [ -s "$V/GRID/venlag62.bas" ] \
+    || { fail "shypre venlag62.grd failed ($V/GRID/shypre.log)"; finish; }
+  sed -e "s/itend  = '2014-08-01::06:00'/itend  = '2014-08-01::03:32'/" \
+      -e "s/^\([[:space:]]*\)venlag_smoke[[:space:]]*\$/\1cb_t1/" "$VEN/venlag_smoke.str" > "$V/cb_t1.str"
+  printf '\n$lagrg\n        ilagr = 1   nbdymax = 1000\n        nbdy = 50  idtl = 0  idtlgr = 60\n        itlanf = %s\n        lgrlin = %s\n        rwhpar = 0\n        lgrseed = 1\n$end\n' \
+      "'2014-08-01::03:00:00'" "'node392.txt'" >> "$V/cb_t1.str"
+  printf '26698.2 11387.6 1\n26718.2 11387.6 0\n26718.2 11407.6 0\n26698.2 11407.6 0\n26698.2 11387.6 0\n' > "$V/node392.txt"
+  sed "s/^\([[:space:]]*\)cb_t1[[:space:]]*\$/\1cb_np/" "$V/cb_t1.str" > "$V/cb_np.str"
+  sed "s/^\([[:space:]]*\)cb_t1[[:space:]]*\$/\1cb_p3/" "$V/cb_t1.str" > "$V/cb_p3.str"
+  awk '/^&para[ \t\r]*$/ { print; print "        nomp = 4"; next }
+       /^[[:space:]]*cb_t1[[:space:]]*$/ { sub(/cb_t1/, "cb_t4") } { print }' "$V/cb_t1.str" > "$V/cb_t4.str"
+  grep -q "nomp = 4" "$V/cb_t4.str" || fail "cb_t4.str: no 'nomp = 4'"
+  # the hand-cut partition: node 392 alone on rank 2 (node type 3), the
+  # nodes north of it (y > its y) on rank 0, the others on rank 1; nodes
+  # and elements of venlag62.grd, stored in a basin of its own folder
+  mkdir -p "$V/p3/GRID" && cp "$VEN/GRID/venlag62.grd" "$V/p3/GRID/" && ln -s "$VEN/INPUT" "$V/p3/INPUT" \
+    && cp "$V/cb_p3.str" "$V/node392.txt" "$V/p3/" || { fail "cannot make the folder of the hand-cut runs"; finish; }
+  awk '$1 == 1 { yn[$2] = $5; line[++n] = $0; next } $1 == 2 { el[++m] = $0 }
+       END { y0 = yn[392]; for( i = 1; i <= n; i++ ) { split(line[i], f)
+               t = ( f[2] == 392 ) ? 3 : ( ( f[5] + 0 > y0 + 0 ) ? 1 : 2 )
+               print "1", f[2], t, f[4], f[5] }
+             for( j = 1; j <= m; j++ ) print el[j] }' "$V/p3/GRID/venlag62.grd" > "$V/p3/GRID/part392.grd"
+  ( cd "$V/p3/GRID" && shypre -partition part392.grd venlag62.grd > shypre.log 2>&1 ) \
+    && grep -q "reading partitioning file part392.grd" "$V/p3/GRID/shypre.log" && [ -s "$V/p3/GRID/venlag62.bas" ] \
+    || { fail "shypre -partition part392.grd venlag62.grd failed ($V/p3/GRID/shypre.log)"; finish; }
+  # each listed node present once, with the node type of its rank + 1
+  for k in 392:3 90:2 91:2 92:1 367:1 391:1; do
+    awk -v k="${k%%:*}" -v t="${k##*:}" '$1 == 1 && $2 == k { n++; if( $3 != t ) bad = 1 }
+      END { exit ( bad || n != 1 ) }' \
+      "$V/p3/GRID/part392.grd" || fail "part392.grd: node ${k%%:*} missing, twice, or not of type ${k##*:}"
+  done
+  for o in "itend  = '2014-08-01::03:32'" 'ilagr = 1' "itlanf = '2014-08-01::03:00:00'" "lgrlin = 'node392.txt'"; do
+    grep -qF -- "$o" "$V/cb_t1.str" || fail "no '$o' in cb_t1.str"
+  done
+  grep -q "^[[:space:]]*cb_t1[[:space:]]*\$" "$V/cb_t1.str" || fail "cb_t1.str: run name not set"
+  grep -q "^[[:space:]]*cb_np[[:space:]]*\$" "$V/cb_np.str" || fail "cb_np.str: run name not set"
+  [ "$rc" = 0 ] || finish
+  echo "=== venlag_smoke until 03:32, 50 particles released at 03:00 around node 392: serially (1 and 4 threads), on $NP processes, on 3 hand-cut processes"
+  W0="$W"; W="$V"
+  run cb_t1 cb_t1.log shyfem || fail "cb_t1: the run did not end"
+  run cb_t4 cb_t4.log shyfem || fail "cb_t4: the run did not end"
+  run cb_np cb_np.log mpirun --oversubscribe -np $NP shyfem || fail "cb_np: the run did not end"
+  W="$V/p3"
+  run cb_p3 cb_p3.log mpirun --oversubscribe -np 3 shyfem || fail "cb_p3: the run did not end"
+  W="$V"
+  threads cb_t1.log 1
+  threads cb_t4.log 4
+  W="$W0"
+  grep -q "using these partitiones" "$V/p3/cb_p3.log" || fail "cb_p3: the log does not say 'using these partitiones' (the hand-cut partition was not used)"
+  cp "$V/p3/cb_p3.log" "$V/cb_p3.log" 2>/dev/null
+  for v in t4:"4 threads" np:"$NP processes" p3:"3 hand-cut processes"; do
+    a="$V/cb_t1.lgr.shy"; b="$V/cb_${v%%:*}.lgr.shy"; [ "${v%%:*}" = p3 ] && b="$V/p3/cb_p3.lgr.shy"
+    if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "particle file serially or with ${v#*:} missing"
+    elif cmp -s "$a" "$b"; then echo "  particle file with ${v#*:} identical to the serial one ($(stat -c %s "$a") bytes)"
+    else fail "particle file with ${v#*:} differs from the serial one"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+    fi
+  done
+  [ "$rc" = 0 ] || finish
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$V" "$W" <<'EOF' || fail "see above"
+import os, re, struct, sys
+
+v, w = sys.argv[1], sys.argv[2]
+sys.path.insert(0, w)
+import lgr_compare as lc
+
+ok = True
+def bad(msg):
+    global ok
+    print("  FAIL: " + msg)
+    ok = False
+
+CB_CROSS, CB_SINK, CB_HOLD, CB_NODE = 24, 136, 91, 392	# measured 2026-11-28
+CB_LASTSTEP = "2014-08-01::03:27:15"
+CROSS = "element crossings used up with time left"
+SINK = "stopped at a node the layer flow converges on (node sink) with time left"
+HOLD = "all the time left spent moving off a vertex (vertex hold)"
+HEAD = r"^ lgr advection:(?: rank (?P<rank>\d+):)? "
+STEP = r": (?P<n>\d+) in the step to (?P<t>\S+?), (?P<ntot>\d+) in the run "
+RXC = re.compile(HEAD + re.escape(CROSS) + STEP + r"\([\d.]+ events per 100 of the \d+ particles"
+                 r" released\); first: id (?P<id>\d+), element (?P<el>-?\d+), crossings left (?P<nl>-?\d+),"
+                 r" time left \[s\] (?P<tl>\S+)$")
+
+def kind(tag, text, rx=None):
+    """(rank, step) -> match of the lines of kind text in TAG.log"""
+    out = {}
+    with open(os.path.join(v, tag + ".log"), errors="replace") as fh:
+        for l in fh:
+            if text not in l:
+                continue
+            m = (rx or re.compile(HEAD + re.escape(text) + STEP)).match(l)
+            if not m:
+                bad("%s: a line of '%s' not as documented: %r" % (tag, text, l.rstrip()))
+                continue
+            out[(m.group("rank"), m.group("t"))] = m
+    return out
+
+def per_step(d):
+    s = {}
+    for (_, t), m in d.items():
+        s[t] = s.get(t, 0) + int(m.group("n"))
+    return s
+
+res = {}
+for tag in ("cb_t1", "cb_t4", "cb_np", "cb_p3"):
+    c, s_, h = kind(tag, CROSS, RXC), kind(tag, SINK), kind(tag, HOLD)
+    res[tag] = (c, s_, h)
+    nc, ns, nh = (sum(per_step(d).values()) for d in (c, s_, h))
+    print("  %s: '%s' %d (%d lines), node sink %d, vertex hold %d" % (tag, CROSS, nc, len(c), ns, nh))
+    if nc != CB_CROSS:
+        bad("%s: %d events '%s' in the run, expected %d (the code before #315: 101)" % (tag, nc, CROSS, CB_CROSS))
+    if ns != CB_SINK:
+        bad("%s: %d node-sink events, expected %d (as before #315)" % (tag, ns, CB_SINK))
+    if nh != CB_HOLD:
+        bad("%s: %d vertex-hold events, expected %d (as before #315)" % (tag, nh, CB_HOLD))
+    for (r, t), m in c.items():
+        if int(m.group("nl")) != 0 or not float(m.group("tl")) > 0.0 or int(m.group("id")) < 1:
+            bad("%s: line '%s' at %s: crossings left %s, time left %s, id %s" % (tag, CROSS, t, m.group("nl"),
+                m.group("tl"), m.group("id")))
+        if t > CB_LASTSTEP:
+            bad("%s: a line '%s' in the step to %s, after %s: a particle still used up its crossings"
+                % (tag, CROSS, t, CB_LASTSTEP))
+        if tag in ("cb_t1", "cb_t4") and r is not None:
+            bad("%s: a serial line with rank %s" % (tag, r))
+# the hand-cut run is a test of the hand-over only if the particles at
+# node 392 are handed over: its used-up lines must come from at least two
+# ranks (the ranks that share the elements around the node)
+r5 = sorted(set(r for (r, t) in res["cb_p3"][0]), key=str)
+print("  cb_p3: ranks with lines '%s': %s" % (CROSS, r5))
+if len(r5) < 2:
+    bad("cb_p3: the lines '%s' come from %d rank(s) %s, expected at least 2: the particles circling node 392"
+        " were not handed over between ranks" % (CROSS, len(r5), r5))
+for tag in ("cb_t4", "cb_np", "cb_p3"):
+    for i in range(3):
+        if per_step(res[tag][i]) != per_step(res["cb_t1"][i]):
+            bad("%s: the events '%s' of a step (summed over the ranks) differ from the serial ones"
+                % (tag, (CROSS, SINK, HOLD)[i]))
+
+# no particle exactly on node 392 at the last output
+xn = yn = None
+with open(os.path.join(v, "GRID", "venlag62.grd")) as fh:
+    for l in fh:
+        p = l.split()
+        if len(p) >= 5 and p[0] == "1" and p[1] == str(CB_NODE):
+            xn, yn = float(p[3]), float(p[4])
+            break
+if xn is None:
+    bad("node %d not found in venlag62.grd" % CB_NODE)
+else:
+    f32 = lambda x: struct.unpack("f", struct.pack("f", x))[0]
+    _, recs = lc.read_file(os.path.join(v, "cb_t1.lgr.shy"))
+    t_last, blocks, _ = recs[-1]
+    on = sorted(k for k, q in blocks[0].items() if f32(q["x"]) == f32(xn) and f32(q["y"]) == f32(yn))
+    print("  cb_t1: last output %s, %d particles in it, on node %d: %d %s" % (t_last, len(blocks[0]),
+          CB_NODE, len(on), on))
+    if on:
+        bad("cb_t1: %d particles exactly on node %d at the last output (the code before #315: 8)" % (len(on), CB_NODE))
+sys.exit(0 if ok else 1)
+EOF
   finish
 fi
 

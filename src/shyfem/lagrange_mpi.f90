@@ -99,7 +99,11 @@
 	!  1 global element left   2, 3 global end nodes of the side
 	!  4, 5 the particle's weights (xi) at the two end nodes
 	!  6 t_left   7 n_left   8 phase (0: advection goes on)
-	integer, parameter :: lgr_hand_extra = 8
+	!  9 d_start: the distance from the nearest vertex at the start of the
+	!    step, which the node-sink test of track_body_xi compares with the
+	!    end of the base budget (#315: so the process across decides as a
+	!    serial run; until then it took its arrival point)
+	integer, parameter :: lgr_hand_extra = 9
 	integer, parameter :: lgr_hand_tag = 21706  !message tag
 
 	! marks of the hand-over (lgr_mpi_mark_side), n_export of them; the
@@ -114,6 +118,7 @@
 	integer, save, allocatable :: export_side(:)    !side of that element
 	integer, save, allocatable :: export_nleft(:)   !crossings left
 	real, save, allocatable :: export_tleft(:)      !time left
+	double precision, save, allocatable :: export_dstart(:) !d_start (#315)
 
 	! totals of the hand-over on this process (lgr_mpi_handover_stats)
 	integer, save :: lgr_nhand = 0       !particles sent at a cut-off side
@@ -165,6 +170,8 @@
 	! lgr_hand_extra values too (phase 1 or 2 in the last one):
 	!  1 global element found   2, 3 old x, y   4, 5 new x, y
 	!  6 crossings used in the step (lgr_ncross)   7 unused (0)   8 phase
+	!  9 unused (0): the advection of the step is over, d_start has no
+	!    reader after a parking
 
 	! counts of the re-location of this process, at levdbg >= 3 (OMP
 	! atomic inside the particle loop): lgr_nreloc(1:4) by class (1 in the
@@ -594,7 +601,7 @@
 
 	allocate(export_dest(ndim), export_idx(ndim), export_elem(ndim)	&
      &		, export_side(ndim), export_nleft(ndim), export_tleft(ndim)	&
-     &		, stat=ierr)
+     &		, export_dstart(ndim), stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_init: allocation')
 	allocate(park_idx(ndim), park_class(ndim), stat=ierr)
@@ -1959,10 +1966,12 @@
 
 !*******************************************************************
 
-	subroutine lgr_mpi_mark_side(i, ie, iside, t_left, n_left)
+	subroutine lgr_mpi_mark_side(i, ie, iside, t_left, n_left, d_start)
 
 ! records that particle i stopped on side iside of local element ie, a
-! cut-off side, with the time t_left and the crossings n_left still to do;
+! cut-off side, with the time t_left and the crossings n_left still to do
+! and the distance d_start from the nearest vertex at the start of its step
+! (#315, for the node-sink test of the process across);
 ! it goes to rank -lgr_ieltv(iside,ie) - 1000. Sets lgr_marked(i) (the
 ! particle's own slot); the shared lists are read and written only inside
 ! the critical section lgr_export and grow when full (the argument test
@@ -1983,6 +1992,7 @@
 	integer, intent(in) :: iside		!side of ie (1..3)
 	real, intent(in) :: t_left		!time still to advect
 	integer, intent(in) :: n_left		!crossings still allowed
+	double precision, intent(in) :: d_start	!d at the start of the step
 
 	integer :: r
 	logical :: bok
@@ -2008,6 +2018,7 @@
 	    export_side(n_export) = iside
 	    export_nleft(n_export) = n_left
 	    export_tleft(n_export) = t_left
+	    export_dstart(n_export) = d_start
 	  end if
 	end if
 !$OMP END CRITICAL (lgr_export)
@@ -2038,6 +2049,7 @@
 	integer, allocatable :: idest(:), iidx(:), ielem(:), iside(:)
 	integer, allocatable :: inleft(:)
 	real, allocatable :: rtleft(:)
+	double precision, allocatable :: rdstart(:)
 
 	nnew = 2*max(size(export_idx), 1)
 
@@ -2046,7 +2058,7 @@
 	  ierr = -1
 	else
 	  allocate(idest(nnew), iidx(nnew), ielem(nnew), iside(nnew)	&
-     &		, inleft(nnew), rtleft(nnew), stat=ierr)
+     &		, inleft(nnew), rtleft(nnew), rdstart(nnew), stat=ierr)
 	end if
 	if( ierr /= 0 ) then
 	  call lgr_mpi_list_fail(1,i,nnew,ierr,size(export_idx),0)
@@ -2060,6 +2072,8 @@
 	iside(1:n_export) = export_side(1:n_export)
 	inleft(1:n_export) = export_nleft(1:n_export)
 	rtleft(1:n_export) = export_tleft(1:n_export)
+	rdstart(1:n_export) = export_dstart(1:n_export)
+	call move_alloc(rdstart,export_dstart)
 	call move_alloc(idest,export_dest)
 	call move_alloc(iidx,export_idx)
 	call move_alloc(ielem,export_elem)
@@ -4222,13 +4236,14 @@
 ! park in the Stokes step, one resumed from the Stokes step finishes.
 !
 ! Bound: every hand-over at a side uses one crossing of the particle's
-! budget for the step (100, n_left), so a particle is handed over at a
-! side at most 100 times in a step; it parks at most twice (once in each
+! budget for the step (lgr_ncross_max, n_left; #315: the base budget and
+! the extra crossings), so a particle is handed over at a side at most
+! lgr_ncross_max times in a step; it parks at most twice (once in each
 ! step, and a resumed particle does no more advection, so no side mark
 ! follows a park). A round takes every marked particle one event
-! further, so after 102 rounds nothing is marked; a 103rd round is an
-! internal error, decided alike on every process (the counts are
-! global), and every process aborts.
+! further, so after lgr_ncross_max + 2 rounds nothing is marked; one
+! round more is an internal error, decided alike on every process (the
+! counts are global), and every process aborts.
 !
 ! called after drogue, outside any parallel region, on every process
 !
@@ -4250,7 +4265,7 @@
 
 	double precision, intent(in) :: dtime
 
-	integer, parameter :: nround_cap = 102	!100 crossings, 2 parks
+	integer, parameter :: nround_cap = lgr_ncross_max + 2 !crossings, 2 parks
 	integer :: nloc(3), nglob(3), nround, nround_side, nchg, ie, ierr
 
 	if( n_threads <= 1 ) return
@@ -4318,7 +4333,8 @@
 ! 2. each particle to send is packed, per destination in slot order: its
 !    record and the hand-over fields (layout at the top of the module):
 !    at a side the element it is leaving, the end nodes of the side and
-!    its weights there, t_left, n_left, phase 0; by position the element
+!    its weights there, t_left, n_left, phase 0 and d_start (#315); by
+!    position the element
 !    found, both points of the parked move, the crossings used in the
 !    step and the phase of the parking (1 or 2); the messages are sent and
 !    received, their lengths checked
@@ -4340,7 +4356,7 @@
 !    3 moved them, and the arrivals by position), and each is finished
 !    from where it was parked (track_finish with phase 1 or 2), in slot
 !    order. Then each arrival at a side goes on with track_advect, with
-!    the time and crossings that travelled (the start-of-step tests of
+!    the time, crossings and d_start that travelled (the start-of-step tests of
 !    track_single were applied where the step began) and, unless it is
 !    marked again, track_finish (phase 0) once. Marks made here (at a
 !    side, or a parking) go in the next round.
@@ -4359,11 +4375,12 @@
 	logical, intent(in) :: bres		!resolve parked particles first
 
 	interface
-	  subroutine track_advect(i,t_left,n_left,dtime)
+	  subroutine track_advect(i,t_left,n_left,d_start,dtime)
 	    implicit none
 	    integer, intent(in) :: i
 	    real, intent(inout) :: t_left
 	    integer, intent(inout) :: n_left
+	    double precision, intent(in) :: d_start
 	    double precision, intent(in) :: dtime
 	  end subroutine track_advect
 	  subroutine track_finish(i,phase,dtime)
@@ -4394,6 +4411,7 @@
 	integer, allocatable :: key(:), iord(:), islot(:), inleft(:)
 	integer, allocatable :: ckind(:), cj(:), cdest(:)
 	real, allocatable :: rtleft(:)
+	double precision, allocatable :: rdstart(:)	!d_start (#315)
 	double precision, allocatable :: sbuf(:), rbuf(:)
 	double precision :: w1, w2, zz
 	double precision :: xi(3)
@@ -4517,6 +4535,7 @@
 	    sbuf(ip+6) = dble(export_tleft(j))
 	    sbuf(ip+7) = dble(export_nleft(j))
 	    sbuf(ip+8) = 0.d0			!phase 0: advection goes on
+	    sbuf(ip+9) = export_dstart(j)	!d_start (#315)
 	  else					!by position
 	    if( lgr_marked(i) /= 2 .and. lgr_marked(i) /= 3 ) then
 	      write(6,*) 'lgr_mpi_handover_round: i,mark: ',i,lgr_marked(i)
@@ -4537,6 +4556,7 @@
 	    sbuf(ip+6) = dble(lgr_ncross(i))
 	    sbuf(ip+7) = 0.d0
 	    sbuf(ip+8) = dble(phase)		!1 diffusion, 2 Stokes drift
+	    sbuf(ip+9) = 0.d0			!no advection after a parking
 	  end if
 	end do
 
@@ -4613,7 +4633,7 @@
 	end if
 
 	allocate(islot(max(nrtot,1)), inleft(max(nrtot,1))		&
-     &		, rtleft(max(nrtot,1)), stat=ierr)
+     &		, rtleft(max(nrtot,1)), rdstart(max(nrtot,1)), stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_handover_round: allocation')
 
@@ -4664,6 +4684,7 @@
 	  nside_in = nside_in + 1
 	  rtleft(nside_in) = real(rbuf(ip+6))
 	  inleft(nside_in) = nint(rbuf(ip+7))
+	  rdstart(nside_in) = rbuf(ip+9)	!d_start, unchanged (#315)
 
 	  ! local element across: both end nodes, not the element left
 	  kl1 = lgr_mpi_find_node(kg1)
@@ -4706,7 +4727,7 @@
 	  call track_xi_adjust_layer(lgr_ar(i)%id,0,ieb,lb,zz)
 	  lgr_ar(i)%actual%l = lb
 	  lgr_ar(i)%actual%z = real(zz)
-	  lgr_ncross(i) = 100 - inleft(nside_in)	!crossings so far
+	  lgr_ncross(i) = lgr_ncross_max - inleft(nside_in) !crossings so far
 	  lgr_marked(i) = 0
 	  islot(nside_in) = i
 	end do
@@ -4726,11 +4747,12 @@
 
 	do j = 1, nside_in
 	  i = islot(j)
-	  call track_advect(i,rtleft(j),inleft(j),dtime)
+	  call track_advect(i,rtleft(j),inleft(j),rdstart(j),dtime)
 	  if( lgr_marked(i) == 0 ) call track_finish(i,0,dtime)
 	end do
 
 	deallocate(key,iord,ckind,cj,cdest,sbuf,rbuf,islot,inleft,rtleft)
+	deallocate(rdstart)
 
 	end subroutine lgr_mpi_handover_round
 

@@ -864,40 +864,47 @@
 
 !************************************************************
 
-	logical function track_xi_node_sink(xis,xie)
+	logical function track_xi_node_sink(ds,xie)
 
 ! true if a particle that used up its element crossings with time left
 ! did so converging onto a node of the mesh, a node sink (#310; called by
-! track_body_xi only for such a particle). The flux reconstruction of a
+! track_body_xi only for such a particle: since #315 when the base budget
+! lgr_ncross_base is used up, and again when the extra crossings are
+! used up too). The flux reconstruction of a
 ! layer (track_xi_get_flux, xit_start_end) maps the distance from a node
 ! on the side a particle enters to the side it leaves by a fixed factor
 ! per element, so where the layer flow converges around an interior node
 ! the particle spirals into it, the time to each side shrinking
-! geometrically, until its 100 crossings are used up (Zeno). With d the
-! distance from the nearest vertex in internal coordinates, the sum of
-! the two smallest of the three, it is a sink if at the end (xie, after
-! the crossings) d < 1e-3 and d is no larger than at the start of the
-! step (xis: lgr_ar%actual%xi, which track_advect replaces only after
-! track_body_xi returns; on the process that continues a particle handed
-! over on several processes, its arrival point on the side), or d <
-! 1e-15 (the floating-point floor, where the spiral stops shrinking).
+! geometrically, until its base budget of crossings (lgr_ncross_base) is
+! used up (Zeno). With d the distance from the nearest vertex in internal
+! coordinates, the sum of the two smallest of the three
+! (track_xi_vertex_dist), it is a sink if at the end (xie, after the
+! crossings) d < 1e-3 and d is no larger than at the start of the step
+! (ds: track_single takes it from lgr_ar%actual%xi before the advection,
+! and on several processes it travels with a particle handed over at a
+! side, so the process that continues the step tests what a serial run
+! tests; #315, until then that process took its arrival point on the
+! side, and the test, then only the kind of an event, could differ), or
+! d < 1e-15 (the floating-point floor, where the spiral stops shrinking).
 ! The two d need not be to the same vertex (the start and the end lie in
-! different elements). A particle that circles a node outward (a
+! different elements). Nothing else of the start of the step enters. A
+! particle that circles a node outward (a
 ! source, or one held at a node by the single-precision position kept
-! between steps, #315) or that is far from a vertex is not one: its step
-! keeps the kind "element crossings used up" (lgr_ev_adv_cross).
-! The particle is not changed: only the kind of its event.
+! between steps, #315) or that is far from a vertex is not one: since
+! #315 its step goes on with the extra crossings, and only a step that
+! uses those up too keeps the kind "element crossings used up"
+! (lgr_ev_adv_cross). A node sink is not changed: only the kind of its
+! event.
 ! Self-contained (no use): check_lgr_fixes.sh node-sink cuts it out and
 ! tests it on its own (it needs this end line)
 
 	implicit none
 
-	double precision, intent(in) :: xis(3)	!start of the step
+	double precision, intent(in) :: ds	!d at the start of the step
 	double precision, intent(in) :: xie(3)	!end of the crossings
 
-	double precision ds,de
+	double precision de
 
-	ds = min(xis(1)+xis(2),xis(2)+xis(3),xis(1)+xis(3))
 	de = min(xie(1)+xie(2),xie(2)+xie(3),xie(1)+xie(3))
 
 	track_xi_node_sink = .false.
@@ -906,6 +913,21 @@
 	end if
 
 	end function track_xi_node_sink
+
+!************************************************************
+
+	double precision function track_xi_vertex_dist(xi)
+
+! distance from the nearest vertex in internal coordinates, the sum of
+! the two smallest coordinates (the d of track_xi_node_sink, #315)
+
+	implicit none
+
+	double precision, intent(in) :: xi(3)	!internal coordinates
+
+	track_xi_vertex_dist = min(xi(1)+xi(2),xi(2)+xi(3),xi(1)+xi(3))
+
+	end function track_xi_vertex_dist
 
 !************************************************************
 
@@ -1079,7 +1101,13 @@
 ! time step number and the crossings the particle has left in this
 ! time step: every run and every number of MPI processes makes the
 ! same pick, and two vertex events of one particle in one time step
-! get different values, so the particle cannot cycle.
+! get different values, so the particle cannot cycle. (#315: while the
+! base budget lasts track_body_xi gives the crossings left of the base,
+! lgr_ncross_base ... 1, as before the extra crossings existed; then
+! the extra crossings left, lgr_ncross_extra ... 1. A count of the base
+! and the same count among the last lgr_ncross_base extra crossings give
+! the same value, so two vertex events of one step get different values
+! within the base and within the extra crossings, not across the two.)
 !
 ! Integer arithmetic modulo the prime m = 2**31-1 in integer*8: all
 ! products stay below 2**62, so no overflow and no floating point trap.
