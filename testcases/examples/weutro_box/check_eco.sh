@@ -19,6 +19,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
 export PATH="$BIN:/usr/bin:$PATH"
+
+# clean_case NAME...: delete every output of these cases before the run, so the
+# gate cannot pass on a file an earlier run (another build) left behind. Inputs
+# (STR, GRID/, INPUT/) are never touched. need FILE...: the run must have written them.
+clean_case() { local n; for n in "$@"; do
+  rm -f "$n".{eutro,hydro,fvl,lcz,merc}.shy "$n".{inf,run.log,rst,ext,flx}; done; }
+need() { local f; for f in "$@"; do [ -s "$f" ] || {
+  echo "FAIL: $f was not written by this run (no stale output is accepted; is the ecology module linked?)"; exit 1; }; done; }
 TOL=0.0           # strict positivity: Phase 1 added a cmin=1e-5 floor in euler()
 DO_MAX=25.0
 rc=0
@@ -28,6 +36,7 @@ run_case() {
   echo "=================================================================="
   echo "CASE: $tag  ($str)"
   echo "=================================================================="
+  clean_case "${str%.str}"; rm -f "${tag}.run.log"
   if ! timeout 600 shyfem "$str" > "${tag}.run.log" 2>&1; then
     echo "FAIL[$tag]: shyfem did not complete (see ${tag}.run.log)"; rc=1; return
   fi

@@ -22,13 +22,22 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 BIN="${SHYFEM_BIN:-$HERE/../../../bin}"
 export PATH="$BIN:/usr/bin:$PATH"
+
+# clean_case NAME...: delete every output of these cases before the run, so the
+# gate cannot pass on a file an earlier run (another build) left behind. Inputs
+# (STR, GRID/, INPUT/) are never touched. need FILE...: the run must have written them.
+clean_case() { local n; for n in "$@"; do
+  rm -f "$n".{eutro,hydro,fvl,lcz,merc}.shy "$n".{inf,run.log,rst,ext,flx}; done; }
+need() { local f; for f in "$@"; do [ -s "$f" ] || {
+  echo "FAIL: $f was not written by this run (no stale output is accepted; is the ecology module linked?)"; exit 1; }; done; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/check_nc.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 rc=0
 
 command -v ncdump >/dev/null || { echo "FAIL: ncdump not found"; exit 1; }
 
-run(){ timeout 600 shyfem "$1" > "$TMP/${1%.str}.run.log" 2>&1 \
+run(){ clean_case "${1%.str}"
+  timeout 600 shyfem "$1" > "$TMP/${1%.str}.run.log" 2>&1 \
         || { echo "FAIL: $1 did not complete"; exit 1; }; }
 
 # ivar -> expected nc name, per file
@@ -124,6 +133,7 @@ check_file(){
 
 run eco_2d.str
 run merc_2d.str
+need eco_2d.eutro.shy merc_2d.merc.shy
 check_file eco_2d.eutro.shy EUTRO
 check_file merc_2d.merc.shy MERC
 

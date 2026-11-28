@@ -17,9 +17,19 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
 BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
 export PATH="$BIN:/usr/bin:$PATH"
+
+# clean_case NAME...: delete every output of these cases before the run, so the
+# gate cannot pass on a file an earlier run (another build) left behind. Inputs
+# (STR, GRID/, INPUT/) are never touched. need FILE...: the run must have written them.
+clean_case() { local n; for n in "$@"; do
+  rm -f "$n".{eutro,hydro,fvl,lcz,merc}.shy "$n".{inf,run.log,rst,ext,flx}; done; }
+need() { local f; for f in "$@"; do [ -s "$f" ] || {
+  echo "FAIL: $f was not written by this run (no stale output is accepted; is the ecology module linked?)"; exit 1; }; done; }
 TOL=0      # restart must reproduce the continuous run bit-for-bit
 
-run() { timeout 300 shyfem "$1" > "${1%.str}.run.log" 2>&1 || { echo "FAIL: $1 did not complete"; exit 1; }; }
+run() { clean_case "${1%.str}"
+  timeout 300 shyfem "$1" > "${1%.str}.run.log" 2>&1 || { echo "FAIL: $1 did not complete"; exit 1; }
+  need "${1%.str}.eutro.shy"; }
 final_rec() {  # last time-record, layer1, vars 701-709 -> "varid min aver max"
   shyelab -write "$1" 2>/dev/null | grep "l,ivar,min,aver,max" \
     | awk '$3==1 && $4>=701 && $4<=709 {print $4, $5, $6, $7}' | tail -9
@@ -27,6 +37,7 @@ final_rec() {  # last time-record, layer1, vars 701-709 -> "varid min aver max"
 
 run eco_2d.str            # full reference (0->2d)
 run eco_rst_part1.str     # 0->1d, writes eco_rst_part1.rst
+need eco_rst_part1.rst
 run eco_rst_part2.str     # 1->2d, reads the restart
 
 echo "=== restart round-trip: full vs part2 final state (min/aver/max, bit-for-bit) ==="
