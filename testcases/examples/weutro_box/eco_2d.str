@@ -6,7 +6,7 @@
 # come from the hardcoded einit defaults in bio3d.f90. Build with
 #   make fem ECOLOGICAL=EUTRO
 # Run with
-#   PATH=/home/razinka/shyfem/bin:$PATH shyfem eco_2d.str
+#   PATH=<repository>/bin:$PATH shyfem eco_2d.str
 #------------------------------------------------------------------------
 
 $title

@@ -5,7 +5,7 @@
 
 DIR  = weutro_box
 GRID = MM_coarse
-BIN  = /home/razinka/shyfem/bin
+BIN ?= $(abspath ../../../bin)
 
 .PHONY: default init run run2d run3d check clean cleanall
 
@@ -17,7 +17,7 @@ default:
 	@echo "  clean  remove run artifacts"
 	@echo ""
 	@echo "NOTE: needs an ECOLOGICAL=EUTRO build:"
-	@echo "      (cd /home/razinka/shyfem && make fem ECOLOGICAL=EUTRO)"
+	@echo "      (cd ../../.. && make fem ECOLOGICAL=EUTRO), or make init BIN=<bin dir>"
 
 init:
 	cd GRID; PATH=$(BIN):/usr/bin:$$PATH shypre $(GRID).grd

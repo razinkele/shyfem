@@ -10,7 +10,8 @@
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
 
 timeout 400 shyfem eco_3d_settle.str > eco_3d_settle.run.log 2>&1 \
   || { echo "FAIL: eco_3d_settle did not complete"; exit 1; }

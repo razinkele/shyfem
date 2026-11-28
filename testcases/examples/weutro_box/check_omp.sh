@@ -13,7 +13,8 @@
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
 rc=0
 
 OMP_NUM_THREADS=1 timeout 300 shyfem eco_2d.str    > eco_2d.run.log    2>&1 || { echo "FAIL: 1-thread run crashed"; exit 1; }

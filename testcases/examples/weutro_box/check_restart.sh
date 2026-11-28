@@ -15,7 +15,8 @@
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
 TOL=0      # restart must reproduce the continuous run bit-for-bit
 
 run() { timeout 300 shyfem "$1" > "${1%.str}.run.log" 2>&1 || { echo "FAIL: $1 did not complete"; exit 1; }; }

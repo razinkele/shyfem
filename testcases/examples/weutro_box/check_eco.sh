@@ -17,7 +17,8 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
 TOL=0.0           # strict positivity: Phase 1 added a cmin=1e-5 floor in euler()
 DO_MAX=25.0
 rc=0

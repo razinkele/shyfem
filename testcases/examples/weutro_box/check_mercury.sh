@@ -8,7 +8,8 @@
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
 run(){ timeout 400 shyfem "$1" > "${1%.str}.run.log" 2>&1 || { echo "FAIL: $1 did not complete (run-blocker?)"; exit 1; }; }
 fr(){ shyelab -write "$1" 2>/dev/null | grep "l,ivar,min,aver,max" \
         | awk '$3==1{v[$4]=$6} END{for(k in v) print k,v[k]}' | sort -n; }

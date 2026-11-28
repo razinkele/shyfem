@@ -13,7 +13,8 @@
 #------------------------------------------------------------------------
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
+BIN="${SHYFEM_BIN:-$HERE/../../../bin}"   # SHYFEM_BIN=<bin dir> to use another build
+export PATH="$BIN:/usr/bin:$PATH"
 MARGIN=1e-4    # required (PHYT_surface - PHYT_deep)
 
 timeout 400 shyfem eco_3d_light.str > eco_3d_light.run.log 2>&1 \
