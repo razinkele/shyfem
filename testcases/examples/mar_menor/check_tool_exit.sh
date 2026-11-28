@@ -64,7 +64,8 @@ done
 echo "binaries: $(dirname "$(command -v shypre)")"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/check_tool_exit.XXXXXX")" || exit 1
-trap 'rm -rf "$TMP"' EXIT
+# the unwritable-folder rows run with a-w on a folder: restore u+w before rm
+trap 'chmod -R u+w "$TMP" 2> /dev/null; rm -rf "$TMP"' EXIT
 cd "$TMP" || exit 1
 rc=0
 n=0
