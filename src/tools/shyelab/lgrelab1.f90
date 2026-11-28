@@ -54,6 +54,7 @@
         use evgeom
         use levels
         use shympi
+        use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -167,7 +168,7 @@
 
         if( blg2d .and. .not. blgdens ) then
           write(6,*) '-lg2d option only in combination with -lgdens'
-          stop 'error stop lgrelab: -lg2d output'
+          call tool_error_stop('lgrelab','-lg2d output')
         end if
 
 	!--------------------------------------------------------------
@@ -250,14 +251,14 @@
 	      write(6,*) 'using total number of types: ',nvar
 	    end if
             allocate(ivars(nvar),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
 	    do i=1,nvar
 	      ivars(i) = 1000 + i
 	    end do
 	  else
             nvar = 2
             allocate(ivars(nvar),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
             ivars(1) = 84		!custom, density in this case
             ivars(2) = 81		!age
 	  end if
@@ -341,22 +342,22 @@
           ! Store information and compute particle age
           !----------------------------------------------------------------
           allocate(agea(n_act),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
           n_old = n_init
           n_init = n_init + n_new
 	  if ( n_new > 0 ) then
             if( n_init == n_new ) then
                allocate(ttstore(n_init),stat=ierr)
-               if( ierr /= 0 ) stop 'error stop: allocation failed'
+               if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
                allocate(idstore(n_init),stat=ierr)
-               if( ierr /= 0 ) stop 'error stop: allocation failed'
+               if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
                ttstore = ttn
                idstore = idn
             else
                allocate(paux(n_init),stat=ierr)
-               if( ierr /= 0 ) stop 'error stop: allocation failed'
+               if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
                allocate(iaux(n_init),stat=ierr)
-               if( ierr /= 0 ) stop 'error stop: allocation failed'
+               if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
                paux(1:n_old) = ttstore(1:n_old)
                call move_alloc(paux,ttstore)
                ttstore(n_old+1:n_init) = ttn(1:n_new)
@@ -389,7 +390,7 @@
           if ( blgmean ) then
             if (n_typ > 0 ) then
               allocate(agem(n_typ),stat=ierr)
-              if( ierr /= 0 ) stop 'error stop: allocation failed'
+              if( ierr /= 0 ) call tool_error_stop('lgrelab','allocation failed')
               call lgr_alloc(n_typ,ncust &
      &          ,idm,tym,ttm,sm,iem,xm,ym,zm,lbm,hlm,cm)
               call lgr_mean_posit(n_act,ncust,tya,agea,sa,xa,ya,hla,ca, &
@@ -448,18 +449,18 @@
 	return
    85	continue
 	write(6,*) 'it,itvar,i '
-	stop 'error stop extelab: time mismatch'
+	call tool_error_stop('extelab','time mismatch')
    91	continue
 	write(6,*) 'error reading first data record'
 	write(6,*) 'maybe the file is empty'
-	stop 'error stop extelab: empty record'
+	call tool_error_stop('extelab','empty record')
    93	continue
 	write(6,*) 'error reading header of file'
 	write(6,*) 'maybe the file is empty'
-	stop 'error stop extelab: empty header'
+	call tool_error_stop('extelab','empty header')
    99	continue
 	write(6,*) 'error writing to file unit: '
-	stop 'error stop extelab: write error'
+	call tool_error_stop('extelab','write error')
   100   format(i5,a22,5i10)
 	end
 
@@ -487,6 +488,7 @@
 
         subroutine lgr_write_mean_posit(nm,nc,aline, &
      &                       agem,sm,xm,ym,hlm,cm)
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -514,7 +516,7 @@
 !       ------------------------------------------------------
         if( icall .eq. 0 ) then
           allocate(ium(nm),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('lgr_write_mean_posit','allocation failed')
           do i = 1,nm
             write(numb,'(i5)') i
             numb = adjustl(numb)
@@ -524,7 +526,7 @@
      &			,iostat=ierr)
 	    if( ierr /= 0 ) then
 	      write(6,*) 'error opening file: ',trim(name)
-	      stop 'error stop lgr_write_mean_posit: cannot open file'
+	      call error_stop('lgr_write_mean_posit','cannot open file')
 	    end if
             ium(i) = iu
           end do
@@ -537,7 +539,7 @@
 !       ------------------------------------------------------
         if ( nm > nty ) then
           allocate(iaux(nm),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('lgr_write_mean_posit','allocation failed')
           iaux(1:nty) = ium(1:nty)
           call move_alloc(iaux,ium)
           do i = nty+1,nm
@@ -549,7 +551,7 @@
      &			,iostat=ierr)
 	    if( ierr /= 0 ) then
 	      write(6,*) 'error opening file: ',trim(name)
-	      stop 'error stop lgr_write_mean_posit: cannot open file'
+	      call error_stop('lgr_write_mean_posit','cannot open file')
 	    end if
             ium(i) = iu
           end do
@@ -585,6 +587,7 @@
         use elabutil
         use shyelab_out
         use mod_physical_constants, only: rad => deg2rad_sp
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -642,13 +645,13 @@
         end if
 
         allocate(ecount(nlvdi,nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_output_conc','allocation failed')
         allocate(kcount(nlvdi,np),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_output_conc','allocation failed')
         allocate(area(nlvdi,np),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_output_conc','allocation failed')
         allocate(density(nlvdi,np,nvar),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_output_conc','allocation failed')
 	density = 0.
 
 
@@ -815,7 +818,7 @@
           ! nothing to be done
         else
           write(6,*) 'outformat = ',trim(outformat)
-          stop 'error stop: outformat not recognized'
+          call error_stop('lgr_output_conc','outformat not recognized')
         end if
 
 !---------------------------------------------------------
@@ -827,6 +830,7 @@
 !***************************************************************
 
         subroutine lgr_compute_nvar(iu,nact,ncust,nvar)
+        use mod_error_stop, only: error_stop
 
         !use evgeom
         !use basin
@@ -864,27 +868,27 @@
 	nc = ncust
 
         allocate(ida(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(tya(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(tta(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(sa(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(iea(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(xa(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(ya(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(za(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(lba(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(hla(nn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
         allocate(ca(nn,nc),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('lgr_compute_nvar','allocation failed')
 
         call lgr_get_block(iu,nact,ncust &
      &          ,ida,tya,tta,sa,iea,xa,ya,za,lba,hla,ca)
