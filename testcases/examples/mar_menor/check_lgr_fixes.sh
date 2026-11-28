@@ -601,7 +601,10 @@
 #             (field 9); the code that took the arrival point instead
 #             (2d6f0d0f, not merged) gave 9 particles that differ from the
 #             serial run, 9 events of the first kind below instead of 24
-#             and 193 node-sink events instead of 136.  The node is a sink for the particles from about
+#             and 193 node-sink events instead of 136.  The used-up lines
+#             of the hand-cut run must come from at least two ranks, so a
+#             change that keeps the circling particles on one rank fails
+#             here instead of passing without a hand-over.  The node is a sink for the particles from about
 #             03:07 (kind 26) and then turns into a source; 8 of them sit
 #             exactly on it.  Required (measured 2026-11-28): CB_CROSS = 24
 #             events "element crossings used up with time left" in the run
@@ -2534,7 +2537,7 @@ if [ "$MODE" = cross-budget ]; then
   printf '26698.2 11387.6 1\n26718.2 11387.6 0\n26718.2 11407.6 0\n26698.2 11407.6 0\n26698.2 11387.6 0\n' > "$V/node392.txt"
   sed "s/^\([[:space:]]*\)cb_t1[[:space:]]*\$/\1cb_np/" "$V/cb_t1.str" > "$V/cb_np.str"
   sed "s/^\([[:space:]]*\)cb_t1[[:space:]]*\$/\1cb_p3/" "$V/cb_t1.str" > "$V/cb_p3.str"
-  awk '/^\&para[ \t\r]*$/ { print; print "        nomp = 4"; next }
+  awk '/^&para[ \t\r]*$/ { print; print "        nomp = 4"; next }
        /^[[:space:]]*cb_t1[[:space:]]*$/ { sub(/cb_t1/, "cb_t4") } { print }' "$V/cb_t1.str" > "$V/cb_t4.str"
   grep -q "nomp = 4" "$V/cb_t4.str" || fail "cb_t4.str: no 'nomp = 4'"
   # the hand-cut partition: node 392 alone on rank 2 (node type 3), the
@@ -2550,9 +2553,11 @@ if [ "$MODE" = cross-budget ]; then
   ( cd "$V/p3/GRID" && shypre -partition part392.grd venlag62.grd > shypre.log 2>&1 ) \
     && grep -q "reading partitioning file part392.grd" "$V/p3/GRID/shypre.log" && [ -s "$V/p3/GRID/venlag62.bas" ] \
     || { fail "shypre -partition part392.grd venlag62.grd failed ($V/p3/GRID/shypre.log)"; finish; }
+  # each listed node present once, with the node type of its rank + 1
   for k in 392:3 90:2 91:2 92:1 367:1 391:1; do
-    awk -v k="${k%%:*}" -v t="${k##*:}" '$1 == 1 && $2 == k && $3 != t { bad = 1 } END { exit bad }' \
-      "$V/p3/GRID/part392.grd" || fail "part392.grd: node ${k%%:*} not of type ${k##*:}"
+    awk -v k="${k%%:*}" -v t="${k##*:}" '$1 == 1 && $2 == k { n++; if( $3 != t ) bad = 1 }
+      END { exit ( bad || n != 1 ) }' \
+      "$V/p3/GRID/part392.grd" || fail "part392.grd: node ${k%%:*} missing, twice, or not of type ${k##*:}"
   done
   for o in "itend  = '2014-08-01::03:32'" 'ilagr = 1' "itlanf = '2014-08-01::03:00:00'" "lgrlin = 'node392.txt'"; do
     grep -qF -- "$o" "$V/cb_t1.str" || fail "no '$o' in cb_t1.str"
@@ -2646,6 +2651,14 @@ for tag in ("cb_t1", "cb_t4", "cb_np", "cb_p3"):
                 % (tag, CROSS, t, CB_LASTSTEP))
         if tag in ("cb_t1", "cb_t4") and r is not None:
             bad("%s: a serial line with rank %s" % (tag, r))
+# the hand-cut run is a test of the hand-over only if the particles at
+# node 392 are handed over: its used-up lines must come from at least two
+# ranks (the ranks that share the elements around the node)
+r5 = sorted(set(r for (r, t) in res["cb_p3"][0]), key=str)
+print("  cb_p3: ranks with lines '%s': %s" % (CROSS, r5))
+if len(r5) < 2:
+    bad("cb_p3: the lines '%s' come from %d rank(s) %s, expected at least 2: the particles circling node 392"
+        " were not handed over between ranks" % (CROSS, len(r5), r5))
 for tag in ("cb_t4", "cb_np", "cb_p3"):
     for i in range(3):
         if per_step(res[tag][i]) != per_step(res["cb_t1"][i]):
