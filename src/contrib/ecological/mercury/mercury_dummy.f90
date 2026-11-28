@@ -79,7 +79,8 @@
 	  write(6,*) 'in order to use the mercury module'
 	  write(6,*) 'you will have to set MERCURY = true'
 	  write(6,*) 'in the Rules.make file'
-          stop 'error stop mercury_init: mercury module is not linked'
+          call shympi_abort_internal( &
+     &      'error stop mercury_init: mercury module is not linked')
         end if
 
         end

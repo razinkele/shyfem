@@ -29,6 +29,7 @@
 #        shyelab -  and  shyelab - FILE   (no option name after "-")
 #        shyplot -tmin <1100 characters> FILE (value too long for option)
 #        shyelab   option and output errors     (shyelab_*.f90, elabutil.f90, ... #338)
+#        shyfem    ibio = 1 and imerc = 1 on a build without that module: exit 33 (#338; skipped on a build that links it)
 #   2. exit 0 for -h (with "Usage: TOOL") and for no argument (the usage,
 #      #332 kept it at 0) of each of the seven tools
 #   3. exit 0, and no "error stop" in the output, for a good run of each:
@@ -269,6 +270,25 @@ row 7 'error stop clo_parse_options: no option name after "-"'   shyelab -
 row 7 'error stop clo_parse_options: no option name after "-"'   shyelab - mm_lgr.hydro.shy
 row 7 "error stop clo_parse_options: value too long for option: tmin" \
   shyplot -tmin "$long" mm_lgr.hydro.shy
+
+# a model run that asks for an ecology module the build does not link (#338,
+# ecological_dummy.f90, mercury_dummy.f90) must stop with exit 33 (shympi_abort_internal),
+# not 0: ibio = 1 and imerc = 1 in an otherwise good STR. A build that links the
+# module does not stop (it never prints the "not linked" message): skip the row.
+echo "=== ecology module not linked (exit 33, message on stdout)"
+eco_row() {   # PARAM LINKED-MSG MESSAGE
+  local par=$1 notlinked=$2 msg=$3
+  sed "0,/^\$para/s//\$para\n        $par = 1/" mm_lgr.str > mm_eco.str
+  grep -q "^        $par = 1" mm_eco.str || { echo "FAIL: cannot set $par in mm_eco.str"; rc=1; nfail=$((nfail + 1)); return; }
+  timeout 300 shyfem mm_eco.str > eco_probe.out 2>&1
+  if grep -qF -- "$notlinked" eco_probe.out; then
+    row 33 "$msg" shyfem mm_eco.str
+  else
+    echo "skip $par = 1 row (this build links the module)"
+  fi
+}
+eco_row ibio "No ecological module has been linked" "error stop ecological_module: ibio"
+eco_row imerc "you will have to set MERCURY = true" "error stop mercury_init: mercury module is not linked"
 
 echo "$n rows, $nfail failed"
 verdict $rc
