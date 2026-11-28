@@ -245,6 +245,11 @@
 	!      particle adv")
 	! 7    track_body_xi: time left, the cause unknown ("unknown error
 	!      adv")
+	!      (kinds 5 to 7 report the crossings left on the scale of before
+	!      #315: within the base budget lgr_ncross_base ... 1, in the extra
+	!      crossings lgr_ncross_extra ... 1, so a value of lgr_ncross_base
+	!      or less does not tell which of the two; a step that stays in
+	!      the base writes the line it wrote before #315)
 	! 8    track_xi_get_flux: a flux over a wall side, set to 0
 	!      ("material boundary:")
 	! 9    track_xi: a negative velocity ("vel < 0")
@@ -715,6 +720,8 @@
           case default
             ctext = 'advection ended with time left, cause unknown'
           end select
+          !crossings left: lgr_ncross_base ... 1 within the base budget,
+          !lgr_ncross_extra ... 1 in the extra crossings (#315)
           if( kind >= lgr_ev_adv_cross ) cname(3) = 'crossings left'
           if( kind == lgr_ev_adv_node ) cname(3) = 'layer'
         case( lgr_ev_vertex_hold )		!#316
