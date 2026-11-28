@@ -143,7 +143,7 @@
         call flx_is_flx_file(nin,nvers)
         if( nvers .le. 0 ) then
           write(6,*) 'nvers: ',nvers
-          stop 'error stop flxelab: not a valid flx file'
+          call tool_error_stop('flxelab','not a valid flx file')
         end if
 
 	call flx_read_header(nin,nvers,nsect,kfluxm,idtflx &
@@ -156,19 +156,19 @@
 	nlv = nlmax
 
 	allocate(kflux(kfluxm),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	allocate(nlayers(nscdi),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	allocate(ivars(nvar),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	allocate(nsnodes(2,nscdi),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	allocate(strings(nscdi),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	allocate(fluxes(0:nlvdi,3,nscdi),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	allocate(fluxes0(nscdi),stat=ierr_alloc)
-	if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 
         call flx_read_header2(nin,nvers,nsect,kfluxm &
      &                          ,kflux,nlayers &
@@ -262,14 +262,14 @@
 	btrans = .false.
 	if( btrans ) then
 	  allocate(naccu(istep),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	  allocate(accum(nlvdi,nkn,istep),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	else
 	  allocate(naccu(1),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	  allocate(accum(1,1,1),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call tool_error_stop('flxelab','allocation failed')
 	end if
 	naccum = 0
 	naccu = 0
@@ -464,16 +464,16 @@
    91	continue
 	write(6,*) 'error reading first data record'
 	write(6,*) 'maybe the file is empty'
-	stop 'error stop flxelab: empty record'
+	call tool_error_stop('flxelab','empty record')
    92	continue
 	write(6,*) 'error reading second header'
-	stop 'error stop flxelab: error in header'
+	call tool_error_stop('flxelab','error in header')
    93	continue
 	write(6,*) 'error reading first header'
-	stop 'error stop flxelab: error in header'
+	call tool_error_stop('flxelab','error in header')
    99	continue
 	write(6,*) 'error writing to file unit: ',nb
-	stop 'error stop flxelab: write error'
+	call tool_error_stop('flxelab','write error')
 	end
 
 !***************************************************************
@@ -482,6 +482,7 @@
 
         subroutine split_fluxes_2d(atime,nlvddi,nsect &
      &				,nvar,iv,ivar,fluxes,bext)
+        use mod_error_stop, only: error_stop
 
 ! writes 2d fluxes to file (only for ivar=0)
 
@@ -507,7 +508,7 @@
 
         if( icall == 0 ) then
 	  allocate(iusplit(nsect,nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('split_fluxes_2d','allocation failed')
 	  iusplit = 0
 	  iubox = 0
 	  if( bext ) then
@@ -517,7 +518,7 @@
      &			,iostat=ierr)
 	    if( ierr /= 0 ) then
 	      write(6,*) 'error opening file: ',trim(name)
-	      stop 'error stop flx_write: cannot open file'
+	      call error_stop('flx_write','cannot open file')
 	    end if
 	  end if
 	end if
@@ -565,6 +566,7 @@
 ! writes 3d fluxes to file
 
 	use shyfem_strings
+	use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -604,7 +606,7 @@
 	    imax = 4
 	  end if
 	  allocate(iusplit(nsect,nvar,5),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('split_fluxes_3d','allocation failed')
 	  iusplit = 0
 	end if
 
@@ -646,6 +648,7 @@
 
         subroutine split_fluxes_0d(atime,nlvddi,nsect,nvar,iv,ivar &
      &					,fluxes)
+        use mod_error_stop, only: error_stop
 
 ! splits barotropic values of discharges - old version
 
@@ -670,7 +673,7 @@
 
 	if( icall == 0 ) then
 	  allocate(iusplit(nsect),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('split_fluxes_0d','allocation failed')
 	  iusplit = 0
 	  do j=1,nsect
 	    call make_iunit_name('disch','.mass','0d',j,iu)
@@ -693,6 +696,7 @@
 !*******************************************************************
 
 	subroutine set_nodes(nsect,kfluxm,kflux,nsnodes)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -738,7 +742,7 @@
    99	continue
 	write(6,*) 'kflux does not contain expected sections: '
 	write(6,*) 'is,nsect: ',is,nsect
-	stop 'error stop set_nodes: nsect'
+	call error_stop('set_nodes','nsect')
 	end
 
 !*******************************************************************

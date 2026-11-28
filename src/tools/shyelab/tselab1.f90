@@ -48,6 +48,7 @@
 	use clo
         use elabutil
         use elabtime
+        use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -102,7 +103,7 @@
         call populate_strings
 
         if( .not. check_ts_file(infile) ) then
-          stop 'error stop tselab: not a valid time series file'
+          call error_stop('tselab','not a valid time series file')
         end if
 
 	if( bconvsec ) bconvert = .true.
@@ -120,7 +121,7 @@
 	    if( ierr /= 0 ) then
 	      write(6,*) 'cannot parse date...'
 	      write(6,*) 'date0 = ',trim(sdate0)
-              stop 'error stop tselab: date0 invalid'
+              call error_stop('tselab','date0 invalid')
 	    end if
 	    if( .not. bquiet ) then
 	      write(6,*) 'using date for conversion: ',trim(sdate0)
@@ -137,22 +138,22 @@
 
 	nvar = 0
 	call ts_open_file(infile,nvar,datetime,varline,iunit)
-	if( iunit .le. 0 ) stop
+	if( iunit .le. 0 ) call error_stop('tselab','cannot open file')
 
 	allocate(data(nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('tselab','allocation failed')
 	allocate(adata(nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('tselab','allocation failed')
 	allocate(data_minmax(2,nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('tselab','allocation failed')
 	allocate(strings(nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('tselab','allocation failed')
 	allocate(ivars(nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('tselab','allocation failed')
         allocate(facts(nvar),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('tselab','allocation failed')
         allocate(offs(nvar),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('tselab','allocation failed')
 
 	strings = ' '
 	call parse_varline(varline,nvar,strings,ivars)
@@ -178,7 +179,7 @@
 	if( nvar0 == 0 ) nvar0 = nvar
 	if( nvar /= nvar0 ) then
 	  write(6,*) 'nvar,nvar0: ',nvar,nvar0
-	  stop 'error stop: nvar /= nvar0'
+	  call error_stop('tselab','nvar /= nvar0')
 	end if
 
         call set_facts(nvar,1.,facts,factstring)
@@ -190,7 +191,7 @@
      &			,iostat=ierr)
 	  if( ierr /= 0 ) then
 	    write(6,*) 'error opening file: out.txt'
-	    stop 'error stop tselab: cannot open out.txt'
+	    call error_stop('tselab','cannot open out.txt')
 	  end if
 	  !write(format,'(a,i3,a)') '(f18.2,',nvar,'g14.6)'
 	  write(format,'(a,i3,a)') '(a20,',nvar,'g14.6)'
@@ -211,7 +212,7 @@
      &			'using absolute date from extra information'
 	  else
 	    write(6,*) 'no absolute time... cannot convert'
-	    stop 'error stop: missing absolute time'
+	    call error_stop('tselab','missing absolute time')
 	  end if
 	  call dts_format_abs_time(atime0,dline)
 	  if( debug ) write(6,*) 'absolute date reference: ',dline
@@ -246,7 +247,7 @@
 
 	nvar = 0
 	call ts_open_file(infile,nvar,datetime,varline,iunit)
-	if( iunit .le. 0 ) stop
+	if( iunit .le. 0 ) call error_stop('tselab','cannot open file')
 
 !--------------------------------------------------------------
 ! loop on all records
@@ -394,12 +395,12 @@
    96	continue
 	write(6,*) 'nvar,nvar0: ',nvar,nvar0
 	write(6,*) 'cannot change total number of columns'
-	stop 'error stop tsinf'
+	call error_stop('tsinf','cannot change total number of columns')
    97	continue
 	write(6,*) 'error code ',ierr
 	write(6,*) 'error reading record ',nrec+1
 	write(6,*) 'of file ',trim(infile)
-	stop 'error stop tsinf'
+	call error_stop('tsinf','error reading record')
 	end
 
 !*****************************************************************

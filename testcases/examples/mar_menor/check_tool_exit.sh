@@ -263,6 +263,28 @@ else
 fi
 chmod u+w ro
 
+echo "=== extelab, flxelab, lgrelab and tselab input and option errors (exit 7, message on stdout; #338)"
+: > empty.ext
+: > empty.flx
+printf 'junk\n' > wrong.ext
+head -c 300 mm_ef.ext > trunc.ext
+head -c 300 mm_ef.flx > trunc.flx
+printf '2009-01-01::00:00:00 1.0\n2009-01-01::01:00:00 2.0\n' > good.ts
+printf 'junk line\n1 2 3\n' > wrong.ts
+for h in 0 1 2 3 4 5; do printf '2009-01-01::0%s:00:00 %s.0\n' $h $h; done > late_bad.ts
+printf '2009-01-01::07:00:00 abc\n' >> late_bad.ts
+row 0 "" tselab good.ts
+row 7 "error stop extelab: not a valid ext file"           extelab empty.ext
+row 7 "error stop extelab: not a valid ext file"           extelab wrong.ext
+row 7 "error stop extelab: empty header"                  extelab trunc.ext
+row 7 "error stop flxelab: not a valid flx file"          flxelab empty.flx
+row 7 "error stop flxelab: not a valid flx file"          flxelab wrong.ext
+row 7 "error stop flxelab: error in header"               flxelab trunc.flx
+row 7 "error stop lgrelab: -lg2d output"                  lgrelab -lg2d mm_lgr.lgr.shy
+row 7 "error stop tselab: not a valid time series file"   tselab missing.ts
+row 7 "error stop tselab: not a valid time series file"   tselab wrong.ts
+row 7 "error stop tsinf: error reading record"            tselab late_bad.ts
+
 echo "=== option errors of clo.f90 (exit 7, message on stdout)"
 long=$(printf '%01100d' 0)
 row 7 'error stop clo_parse_options: no option name after "-"'   shyelab -

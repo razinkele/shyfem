@@ -315,3 +315,7 @@ elab_gis.o: ../../../lib/mod/mod_error_stop.mod
 elab_regular.o: ../../../lib/mod/mod_error_stop.mod
 elab_resample.o: ../../../lib/mod/mod_error_stop.mod
 elab_check.o: ../../../lib/mod/mod_error_stop.mod
+lgrelab1.o: ../../../lib/mod/mod_error_stop.mod
+extelab1.o: ../../../lib/mod/mod_error_stop.mod
+flxelab1.o: ../../../lib/mod/mod_error_stop.mod
+tselab1.o: ../../../lib/mod/mod_error_stop.mod

@@ -1,0 +1,10 @@
+# decisions for bin/convert_error_stop.py on lgrelab1, extelab1, flxelab1 and
+# tselab1 of src/tools/shyelab at aa9a68a9 (line numbers of the original
+# files), #338.  tselab1.f90:100 (no file given: the usage) stays a bare stop.
+# the time series file cannot be opened (after the validity check passed)
+tselab1.f90:140    tselab|cannot open file
+tselab1.f90:249    tselab|cannot open file
+# label 96: the number of columns changes inside the file
+tselab1.f90:397    tsinf|cannot change total number of columns
+# label 97: a record cannot be read
+tselab1.f90:402    tsinf|error reading record

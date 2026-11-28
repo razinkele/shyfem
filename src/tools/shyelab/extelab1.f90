@@ -172,7 +172,7 @@
         call ext_is_ext_file(nin,nvers)
         if( nvers .le. 0 ) then
           write(6,*) 'nvers: ',nvers
-          stop 'error stop extelab: not a valid ext file'
+          call tool_error_stop('extelab','not a valid ext file')
         end if
 
 	call ext_read_header(nin,nvers,knausm,lmax,nvar,ierr)
@@ -180,37 +180,37 @@
 	nlv = 1
 
 	allocate(knaus(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(hdep(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(il(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(x(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(y(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(strings(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(hl(lmax),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(xv(knausm,3),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(vals(lmax,knausm,3),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(val(lmax,knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(val0(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(zeta(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(uu(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(vv(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(speed(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	allocate(dir(knausm),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 
 	! initialize the hydro stats buffers so a stale/uninitialized value
 	! can never be printed if a record is read before it is filled
@@ -222,7 +222,7 @@
 	dir = 0.
 
 	allocate(ivars(nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	femver = ' '
 	ivars = 0
 
@@ -304,14 +304,14 @@
 	btrans = .false.
 	if( btrans ) then
 	  allocate(naccu(istep),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	  allocate(accum(nlvdi,nkn,istep),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
 	else
           allocate(naccu(1),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
           allocate(accum(1,1,1),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call tool_error_stop('extelab','allocation failed')
         end if
         naccum = 0
         naccu = 0
@@ -529,18 +529,18 @@
 	return
    85	continue
 	write(6,*) 'it,itvar,i,ivar,nvar: ',it,itvar,i,ivar,nvar
-	stop 'error stop extelab: time mismatch'
+	call tool_error_stop('extelab','time mismatch')
    91	continue
 	write(6,*) 'error reading first data record'
 	write(6,*) 'maybe the file is empty'
-	stop 'error stop extelab: empty record'
+	call tool_error_stop('extelab','empty record')
    93	continue
 	write(6,*) 'error reading header of file'
 	write(6,*) 'maybe the file is empty'
-	stop 'error stop extelab: empty header'
+	call tool_error_stop('extelab','empty header')
    99	continue
 	write(6,*) 'error writing to file unit: ',nb
-	stop 'error stop extelab: write error'
+	call tool_error_stop('extelab','write error')
 	end
 
 !***************************************************************
@@ -548,6 +548,7 @@
 !***************************************************************
 
 	subroutine split_var0d(atime,knausm,nvar,what,zeta,uu,vv)
+        use mod_error_stop, only: error_stop
 
 ! splits first (old format) record which contains zeta, velx, vely
 
@@ -583,7 +584,7 @@
 
 	if( icall == 0 ) then
 	  allocate(iusplit(niu,knausm),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('split_var0d','allocation failed')
 	  title(6) = all
 	  do j=1,knausm
 	    call get_station_name(j,station)
@@ -624,6 +625,7 @@
 
         subroutine split_var2d(atime,knausm &
      &				,m,nvar,ivar,iv,val0)
+        use mod_error_stop, only: error_stop
 
 ! splits 2d scalar records
 
@@ -647,7 +649,7 @@
 
 	if( icall == 0 ) then
 	  allocate(iusplit(knausm,nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('split_var2d','allocation failed')
 	  iusplit = 0
 	end if
 
@@ -675,7 +677,7 @@
 	else
 	  write(6,*) 'm,ivar: ',m,ivar
 	  write(6,*) 'no multi-variable only for 2d'
-	  stop 'error stop split_var2d: no multi-variable'
+	  call error_stop('split_var2d','no multi-variable')
 	end if
 
 	return
@@ -691,6 +693,7 @@
 ! to be integrated into split_var2d
 
 	use shyfem_strings
+	use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -711,7 +714,7 @@
 
 	if( icall == 0 ) then
 	  allocate(iusplit(knausm),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('split_var_wave','allocation failed')
 	  iusplit = 0
 	end if
 
@@ -743,6 +746,7 @@
 
 ! splits 3d values
 	use shyfem_strings
+	use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -768,7 +772,7 @@
 
 	if( icall == 0 ) then
 	  allocate(iusplit(niu,knausm,nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('split_var3d','allocation failed')
 	  iusplit = 0
 	end if
 
@@ -820,7 +824,7 @@
 	else
 	  write(6,*) 'm,ivar: ',m,ivar
 	  write(6,*) 'multi-variable only for velocity'
-	  stop 'error stop split_var: no multi-variable'
+	  call error_stop('split_var','no multi-variable')
 	end if
 
         end
