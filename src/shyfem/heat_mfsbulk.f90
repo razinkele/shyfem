@@ -38,6 +38,7 @@
 ! 28.11.2026	arb	transfer speed is the 10 m wind, not the current (#364)
 ! 28.11.2026	arb	Reed's noon altitude in degrees in qshort1 (#364)
 ! 28.11.2026	arb	speed from metws (iwtype = 2), floor in mfs_qfluxes (#364)
+! 28.11.2026	arb	dead pressure check removed, rh2dp checks it (#364)
 
       !!------------------------------------------------------------------------
       !!
@@ -115,10 +116,7 @@
         real dew,sstk,tairk
         real, parameter  :: ckelv = 273.15
 
-        if( pa > 10000 ) then
-          write(6,*) 'pressure: ',pa
-          call shympi_abort_internal('error stop heatmfsbulk: p not in mbar')
-        end if
+        ! pa is in mbar: rh2dp (heat_util.f90) checks it before this call
 
         ! convert in units needed by MFS-bulk-formulae!  
         sstk = tm + ckelv      
