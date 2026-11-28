@@ -60,6 +60,7 @@
 !===============================================================
 
 	subroutine initialize_extract(sextract)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -86,12 +87,12 @@
 	  mode = 1
 	  nextract = ianz
 	  allocate(dval(ianz),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('initialize_extract','allocation failed')
 	  ianz = iscand(sextract,dval,ianz)	! get numbers
 	  nextract = nint(maxval(dval))
 	  if( nextract <= 0 ) goto 99
 	  allocate(irecs(nextract),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('initialize_extract','allocation failed')
 	  irecs = 0
 	  do i=1,ianz
 	    irec = nint(dval(i))
@@ -111,12 +112,13 @@
 	return
   99	continue
 	write(6,*) trim(sextract)
-	stop 'error stop initialize_extract: error in record list'
+	call error_stop('initialize_extract','error in record list')
 	end subroutine initialize_extract
 
 !***************************************************************
 
 	function must_extract(nread)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -137,7 +139,7 @@
 	  must_extract = .true.
 	else
 	  write(6,*) 'mode = ',mode
-	  stop 'error stop must_extract: no such mode'
+	  call error_stop('must_extract','no such mode')
 	end if
 
 	end function must_extract
@@ -145,6 +147,7 @@
 !***************************************************************
 
 	subroutine parse_extract_range(string,is,if,ie)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -187,10 +190,10 @@
   98	continue
 	write(6,*) trim(string)
 	write(6,*) is,if,ie
-	stop 'error stop parse_extract_range: error in parsed parameters'
+	call error_stop('parse_extract_range','error in parsed parameters')
   99	continue
 	write(6,*) trim(string)
-	stop 'error stop parse_extract_range: error in parsing'
+	call error_stop('parse_extract_range','error in parsing')
 	end subroutine parse_extract_range
 
 !===============================================================

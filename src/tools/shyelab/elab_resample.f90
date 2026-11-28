@@ -37,6 +37,7 @@
      &				,regpar_out,nxn,nyn,idx0,idy0)
 
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -63,7 +64,7 @@
 	s = string
 	if( index(trim(s),' ') > 0 ) then
 	  write(6,*) 'no white space allowed in string: ',trim(s)
-	  stop 'error stop fem_resample_parse: white space'
+	  call error_stop('fem_resample_parse','white space')
 	end if
 	call replace_with_flag(s,'-999.')
 
@@ -84,7 +85,7 @@
 	  write(6,*) 'resample string must have 4 values... cannot parse'
 	  write(6,*) trim(string)
 	  write(6,*) trim(s)
-	  stop 'error stop fem_resample_parse: cannot parse'
+	  call error_stop('fem_resample_parse','cannot parse')
 	end if
 
 	xn0 = f(1)
@@ -183,6 +184,7 @@
 	subroutine fem_resample_check(nn,regpar_in)
 
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -193,7 +195,7 @@
 
 	if( any( regpar_save /= regpar_in ) ) then
 	  if( any( regpar_save /= 0. ) ) then
-	    stop 'error stop: size of regular grid cannot change'
+	    call error_stop('fem_resample_check','size of regular grid cannot change')
 	  end if
 	  regpar_save = regpar_in
 	end if
@@ -205,6 +207,7 @@
 	subroutine resample_data(flag,nlvdi,nx,ny,il_in,hd_in,data_in &
      &				,nxn,nyn,idx,idy &
      &				,il_out,hd_out,data_out)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -258,16 +261,16 @@
 	return
    97	continue
 	write(6,*) ixs,ixe,nx
-	stop 'error stop resample_data: ixs,ixe out of bound'
+	call error_stop('resample_data','ixs,ixe out of bound')
    96	continue
 	write(6,*) iys,iye,ny
-	stop 'error stop resample_data: iys,iye out of bound'
+	call error_stop('resample_data','iys,iye out of bound')
    99	continue
 	write(6,*) ixto,nxn
-	stop 'error stop resample_data: ixto out of bound'
+	call error_stop('resample_data','ixto out of bound')
    98	continue
 	write(6,*) iyto,nyn
-	stop 'error stop resample_data: iyto out of bound'
+	call error_stop('resample_data','iyto out of bound')
 	end
 
 !***************************************************************

@@ -49,6 +49,7 @@
 
         use basin
         use levels
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -73,21 +74,21 @@
 
 ! allocate arrays
         allocate(ut(nlvdi,nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
         allocate(vt(nlvdi,nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
         allocate(ze(3*nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
         allocate(wn(0:nlvdi,nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
         allocate(wnaux(nlvdi,nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
         allocate(zn(nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
         allocate(sn(nlvdi,nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
         allocate(tn(nlvdi,nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
 
 ! assign values
  	it = int(dtime)
@@ -105,7 +106,7 @@
 	nlink = nlink + nkn				!account for wn(0:...)
 	call count_linear(nlvdi,nel,1,ilhv,nline)
 	allocate(rlin(max(nlink,nline)),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('off_output_hydro','allocation failed')
 
 ! write to output file
         write(idout) it,nkn,nel,3
@@ -174,6 +175,7 @@
         use evgeom
         use levels
         use basin
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -189,7 +191,7 @@
 	double precision, allocatable :: wauxv(:,:)
 
 	allocate(wauxv(0:nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('make_vertical_velocity_off','allocation failed')
 
         wauxv = 0.
         wlnv = 0.

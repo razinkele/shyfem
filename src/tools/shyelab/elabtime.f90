@@ -109,6 +109,7 @@
 !************************************************************
 
 	subroutine elabtime_set_minmax(stmin,stmax)
+	use mod_error_stop, only: error_stop
 
 ! converts stmin/stmax to absolute time
 
@@ -137,7 +138,7 @@
    99	continue
 	write(6,*) 'stmin = ',trim(stmin)
 	write(6,*) 'stmax = ',trim(stmax)
-	stop 'error stop elabtime_set_minmax: cannot parse'
+	call error_stop('elabtime_set_minmax','cannot parse')
 	end subroutine elabtime_set_minmax
 
 !************************************************************

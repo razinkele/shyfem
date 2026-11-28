@@ -51,6 +51,7 @@
      &				,strings,scheck,bquiet)
 
 	use iso8601
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -113,23 +114,23 @@
 	  call datetime2dt((/date,time/),dt0)
 	  call week_of_year(atime,dt0(7))	!for week - memorize at idt=7
 	  allocate(accum(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(astd(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(amin(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(amax(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(facts(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(ivars(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(ius(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(filenames(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  allocate(strings_out(nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('fem_check','allocation failed')
 	  naccum = 0
 	  accum = 0.
 	  astd = 0.
@@ -144,7 +145,7 @@
 	  if( i == 0 ) then
 	    write(6,*) 'period for check not recognized: ',trim(scheck)
 	    write(6,*) 'possible periods: ',trim(string)
-	    stop 'error stop fem_check: no such period'
+	    call error_stop('fem_check','no such period')
 	  end if
 	  if( scheck == 'all' ) idt = 0		!compute for whole period
 	  if( scheck == 'year' ) idt = 1	!compute on year
@@ -174,11 +175,11 @@
               else if( dir == 'y' ) then
   	        ivar = ivardd
 		if( iv /= ivect+1 ) then
-		  stop 'error stop fem_check: internal error (1)'
+		  call error_stop('fem_check','internal error (1)')
 		end if
               else
                 write(6,*) 'unknown direction: ',trim(string),'  ',dir
-                stop 'error stop fem_check: unknown direction'
+                call error_stop('fem_check','unknown direction')
 	      end if
             end if
 
@@ -191,7 +192,7 @@
      &			,iostat=ierr)
 	    if( ierr /= 0 ) then
 	      write(6,*) 'error opening file: ',trim(file)
-	      stop 'error stop check_fem_data: cannot open file'
+	      call error_stop('check_fem_data','cannot open file')
 	    end if
 	    write(iu,'(a)') '#      date_and_time    minimum'// &
      &			'       average       maximum       std'

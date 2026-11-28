@@ -215,6 +215,7 @@
 ! writes connectivity
 
         use basin
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -224,7 +225,7 @@
      &			,status='unknown',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: connectivity.gis'
-	  stop 'error stop gis_write_connect: cannot open file'
+	  call error_stop('gis_write_connect','cannot open file')
 	end if
 
 	write(iu,*) nel

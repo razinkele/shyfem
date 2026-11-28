@@ -118,6 +118,7 @@
 	use shyelab_out
 	use shyfile
         use mod_offline
+        use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -148,17 +149,17 @@
 	if( nxreg > 0 .and. nyreg > 0 ) then
 	  nxy = nxreg * nyreg
 	  allocate(svalue(nlvdi,nxy),s2dvalue(nxy),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  allocate(zvalue(nxy),uvalue(nlvdi,nxy),vvalue(nlvdi,nxy) &
      &		,stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  allocate(ilcoord(nxy),xcoord(nxy),ycoord(nxy),hcoord(nxy) &
      &		,stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  allocate(fmreg(4,nxy),fmextra(6,nkn),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  allocate(xlon(nxreg),ylat(nyreg),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  call fem_regular_setup(nxreg,nyreg,regpar,ilhv &
      &				,fmreg,fmextra &
      &				,ilcoord,xcoord,ycoord,hcoord &
@@ -169,13 +170,13 @@
 	  !write(6,*) 'regular setup: ',regpar
 	else
 	  allocate(svalue(nlvdi,nkn),s2dvalue(nkn),stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  allocate(zvalue(nkn),uvalue(nlvdi,nkn),vvalue(nlvdi,nkn) &
      &		,stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  allocate(ilcoord(nkn),xcoord(nkn),ycoord(nkn),hcoord(nkn) &
      &		,stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_init_output','allocation failed')
 	  xcoord = xgv
 	  ycoord = ygv
 	  ilcoord = ilhkv
@@ -184,7 +185,7 @@
 
 	if( breg .and. ( bsplit .or. bshy ) ) then
 	  write(6,*) 'regular output only for format gis, fem, nc'
-	  stop 'error stop shyelab_init_output: regular output'
+	  call error_stop('shyelab_init_output','regular output')
 	end if
 
 	!if( breg .and. outformat == 'gis' ) then
@@ -231,18 +232,18 @@
 	    idout = iunit
 	  else
 	    write(6,*) 'outformat = ',trim(outformat)
-	    stop 'error stop: outformat not recognized'
+	    call error_stop('shyelab_init_output','outformat not recognized')
 	  end if
 	end if
 
 	return
    74	continue
         write(6,*) 'error opening file ',trim(file)
-        stop 'error stop shyelab_init_output: opening file'
+        call error_stop('shyelab_init_output','opening file')
    75	continue
         write(6,*) 'error writing header, ierr = ',ierr
         write(6,*) 'file = ',trim(file)
-        stop 'error stop shyelab_init_output: writing header'
+        call error_stop('shyelab_init_output','writing header')
 	end
 
 !***************************************************************
@@ -257,6 +258,7 @@
 	use elabtime
 	use shyelab_out
 	use shyfile
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -297,10 +299,10 @@
 	  else if( outformat == 'off' ) then
 	    if( bhydro ) return
             write(6,*) 'off format valid only on hydro files'
-	    stop 'error stop: off outformat'
+	    call error_stop('shyelab_header_output','off outformat')
 	  else
 	    write(6,*) 'outformat = ',trim(outformat)
-	    stop 'error stop: outformat not recognized'
+	    call error_stop('shyelab_header_output','outformat not recognized')
 	  end if
 	end if
 
@@ -319,6 +321,7 @@
 	use elabutil
 	use shyelab_out
 	use shyfile
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -358,8 +361,7 @@
 	else if( belem ) then
 	  if( .not. bhydro ) then
 	    !convert from nel to nkn
-	    stop 'error stop shyelab_record_output: ' // &
-     &				'belem==.true. not ready'
+	    call error_stop('shyelab_record_output','belem==.true. not ready')
 	  end if
 	else if( .not. bsplit .and. .not. bshy ) then
 	  goto 98
@@ -404,7 +406,7 @@
 	    ! nothing to be done
 	  else
 	    write(6,*) 'outformat = ',trim(outformat)
-	    stop 'error stop: outformat not recognized'
+	    call error_stop('shyelab_record_output','outformat not recognized')
 	  end if
 	end if
 
@@ -416,11 +418,11 @@
         write(6,*) 'output format = ',trim(outformat)
         write(6,*) 'n,m = ',n,m
         write(6,*) 'nkn,nel = ',nkn,nel
-        stop 'error stop shyelab_record_output: cannot handle'
+        call error_stop('shyelab_record_output','cannot handle')
    99   continue
         write(6,*) 'output format = ',trim(outformat)
         write(6,*) 'ivar = ',ivar
-        stop 'error stop shyelab_record_output: cannot handle'
+        call error_stop('shyelab_record_output','cannot handle')
 	end
 
 !***************************************************************
@@ -435,6 +437,7 @@
 	use elabutil
 	use shyelab_out
 	use shyfile
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -470,10 +473,10 @@
 	if( bhydro ) then
 	  allocate(znv(nkn),uprv(nlvddi,nkn),vprv(nlvddi,nkn) &
      &		,stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_post_output','allocation failed')
 	  allocate(sv(nlvddi,nkn),dv(nlvddi,nkn),cvaux(nlvddi,nkn) &
      &		,stat=ierr_alloc)
-	  if( ierr_alloc /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr_alloc /= 0 ) call error_stop('shyelab_post_output','allocation failed')
           call prepare_hydro(.true.,nndim,cv3all,znv,uprv,vprv)
           call convert_to_speed(uprv,vprv,sv,dv)
 	  if( breg ) then
@@ -509,7 +512,7 @@
      &					,belem,n,m &
      &					,lmax,nlvddi,cv3all(:,:,0))
 	    else
-	      stop 'error stop shyelab_post_output: internal error (1)'
+	      call error_stop('shyelab_post_output','internal error (1)')
 	    end if
 	  else if( outformat == 'gis' ) then
 	    call gis_write_hydro(dtime,np,nlvddi,ilcoord &
@@ -524,7 +527,7 @@
             call off_output_hydro(idout,dtime,nndim,cv3all)
 	  else
 	    write(6,*) 'outformat = ',trim(outformat)
-	    stop 'error stop: outformat not recognized'
+	    call error_stop('shyelab_post_output','outformat not recognized')
 	  end if
           if( .not. (bshy.and.bhydro) ) then
 	    nwrite = nwrite + 1
@@ -548,6 +551,7 @@
 	use shyelab_out
 	use shyfile
 	use shyfem_strings
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -631,7 +635,7 @@
 	    write(6,*) 'out.off'
 	  else
 	    write(6,*) 'outformat = ',trim(outformat)
-	    stop 'error stop: outformat not recognized'
+	    call error_stop('shyelab_final_output','outformat not recognized')
 	  end if
 
 	else if( baverbas ) then
@@ -730,6 +734,7 @@
 !***************************************************************
 
 	subroutine get_string_description(ivar,string)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -741,7 +746,7 @@
 	call ivar2string(ivar,string,isub)
 
 	if( string == ' ' ) then
-	  stop 'error stop get_string_description: unknown ivar'
+	  call error_stop('get_string_description','unknown ivar')
 	end if
 
 	end

@@ -272,6 +272,7 @@
 	subroutine elabutil_set_options(type,program)
 
 	use clo
+	use mod_error_stop, only: error_stop
 
 	character*(*) type
 	character*(*) program
@@ -315,7 +316,7 @@
 	  blgrfile = .true.
 	else
 	  write(6,*) 'type : ',trim(type)
-	  stop 'error stop elabutil_set_options: unknown type'
+	  call error_stop('elabutil_set_options','unknown type')
 	end if
 
 	binputfile = bfemfile .or. btsfile
@@ -726,6 +727,7 @@
 	subroutine elabutil_get_options(type,program)
 
 	use clo
+	use mod_error_stop, only: error_stop
 
 	character*(*) type
 	character*(*) program
@@ -855,7 +857,7 @@
 	else if( type == 'LGR' ) then
 	else
 	  write(6,*) 'type : ',trim(type)
-	  stop 'error stop elabutil_get_options: unknown type'
+	  call error_stop('elabutil_get_options','unknown type')
 	end if
 
 	call shyfem_set_short_copyright(bquiet)
@@ -881,7 +883,7 @@
 
 	if( bconvwindxy .and. bconvwindsd ) then
 	  write(6,*) 'cannot give both -bconvwindxy and -bconvwindsd'
-	  stop 'error stop: convert wind'
+	  call error_stop('elabutil_get_options','convert wind')
 	end if
 
 !-------------------------------------------------------------------
@@ -937,6 +939,7 @@
 !************************************************************
 
 	subroutine handle_smooth_option
+	use mod_error_stop, only: error_stop
 
 	integer ic
 	double precision d(2)
@@ -948,7 +951,7 @@
 	ic = iscand(ssmooth,d,2)
 	if( ic /= 2 ) then
 	  write(6,*) 'cannot parse smooth parameters: ',trim(ssmooth)
-	  stop 'error stop handle_smooth_option: cannot parse'
+	  call error_stop('handle_smooth_option','cannot parse')
 	end if
 
 	salpha = d(1)
@@ -961,6 +964,7 @@
 !************************************************************
 
 	subroutine elabutil_check_options
+	use mod_error_stop, only: error_stop
 
 	integer ic
 
@@ -971,7 +975,7 @@
 	  write(6,*) '-2d -split -sumvar -vorticity'
 	  write(6,*) '-aver -sum -min -max -std -rms'
 	  write(6,*) '-threshold -averdir'
-	  stop 'error stop elabutil_check_options: incompatible options'
+	  call error_stop('elabutil_check_options','incompatible options')
 	end if
 
 	end subroutine elabutil_check_options
@@ -981,6 +985,7 @@
 !************************************************************
 
 	subroutine elabutil_set_averaging(nvar)
+	use mod_error_stop, only: error_stop
 
 	integer nvar
 
@@ -996,7 +1001,7 @@
 	  write(6,*) 'Only one of the following options can be given:'
 	  write(6,*) '-aver -sum -min -max -std -rms'
 	  write(6,*) '-threshold -averdir'
-	  stop 'error stop elabutil_set_averaging: incompatible options'
+	  call error_stop('elabutil_set_averaging','incompatible options')
 	end if
 
         if( baver ) avermode = 1
@@ -1014,7 +1019,7 @@
 	    if( ifreq /= 0 ) then
 	      write(6,*) 'For option -sumvar cannot use value for -freq'
 	      write(6,*) 'freq = ',ifreq
-	      stop 'error stop elabutil_set_averaging: freq'
+	      call error_stop('elabutil_set_averaging','freq')
 	    end if
             istep = 1
           else if( ifreq .ge. 0 ) then  !normal averaging
@@ -1029,7 +1034,7 @@
 	  if( ifreq /= 0 ) then
 	    write(6,*) 'For option -sumvar cannot use value for -freq'
 	    write(6,*) 'freq = ',ifreq
-	    stop 'error stop elabutil_set_averaging: freq'
+	    call error_stop('elabutil_set_averaging','freq')
 	  end if
           istep = 1
 	end if
@@ -1128,6 +1133,7 @@
 !***************************************************************
 
         subroutine depth_stats(nkn,nlvddi,ilhkv)
+        use mod_error_stop, only: error_stop
 
 !       computes statistics on levels
 
@@ -1150,7 +1156,7 @@
 
         do k=1,nkn
           lmax = ilhkv(k)
-          if( lmax .gt. nlvddi ) stop 'error stop depth_stats: lmax'
+          if( lmax .gt. nlvddi ) call error_stop('depth_stats','lmax')
           count(lmax) = count(lmax) + 1
           nlv = max(nlv,lmax)
         end do
@@ -1175,7 +1181,7 @@
 	if( nc /= nkn ) then
           write(6,*) 'total count: ',nc
           write(6,*) 'total nodes: ',nkn
-	  stop 'error stop depth_stats: data mismatch'
+	  call error_stop('depth_stats','data mismatch')
 	end if
 
         end
@@ -1190,6 +1196,7 @@
 ! writes basin average to file
 
 	use elabutil
+	use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -1205,7 +1212,7 @@
 
 	if( .not. allocated(ius) ) then
           allocate(ius(0:nvar),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('shy_write_aver','allocation failed')
           ius = 0
         end if
 
@@ -1340,6 +1347,7 @@
 ! nunit is 0 if no other file exists
 
 	use clo
+	use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -1356,7 +1364,7 @@
 
         if( nunit .le. 0 ) then
           write(6,*) 'file: ',trim(file)
-          stop 'error stop open_shy_file: opening file'
+          call error_stop('open_shy_file','opening file')
         end if
 
         end
@@ -1532,6 +1540,7 @@
 !***************************************************************
 
 	subroutine write_grd_coords(regpar)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -1557,7 +1566,7 @@
      &			,iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(grdfile)
-	  stop 'error stop write_grd_coords: cannot open file'
+	  call error_stop('write_grd_coords','cannot open file')
 	end if
 	write(iu,1001) 1,1,0,x0,y0
 	write(iu,1001) 1,2,0,x0,y1
@@ -1572,7 +1581,7 @@
      &			,iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(grdfile)
-	  stop 'error stop write_grd_coords: cannot open file'
+	  call error_stop('write_grd_coords','cannot open file')
 	end if
 	n = 0
 	do iy=1,ny
@@ -1591,7 +1600,7 @@
      &			,iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(grdfile)
-	  stop 'error stop write_grd_coords: cannot open file'
+	  call error_stop('write_grd_coords','cannot open file')
 	end if
 	n = 0
 	l = 0

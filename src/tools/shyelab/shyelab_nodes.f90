@@ -51,6 +51,7 @@
 	use basin
 	use levels
 	use mod_depth
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -62,24 +63,24 @@
             nnodes = 0
             call get_node_file(nodefile,nnodes,nodes_dummy)
             allocate(nodesi(nnodes),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call error_stop('initialize_nodes','allocation failed')
             allocate(nodese(nnodes),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call error_stop('initialize_nodes','allocation failed')
             call get_node_file(nodefile,nnodes,nodese)
           else if( bnode ) then
             nnodes = 0
             call get_node_list(nodelist,nnodes,nodes_dummy)
             allocate(nodesi(nnodes),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call error_stop('initialize_nodes','allocation failed')
             allocate(nodese(nnodes),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call error_stop('initialize_nodes','allocation failed')
             call get_node_list(nodelist,nnodes,nodese)
           else if( bcoord ) then
             nnodes = 1
             allocate(nodesi(nnodes),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call error_stop('initialize_nodes','allocation failed')
             allocate(nodese(nnodes),stat=ierr)
-            if( ierr /= 0 ) stop 'error stop: allocation failed'
+            if( ierr /= 0 ) call error_stop('initialize_nodes','allocation failed')
 	    call get_closest_node(scoord,nodesi(1))
 	    nodese = nodesi
             call convert_to_external_nodes(nnodes,nodese)
@@ -231,6 +232,7 @@
         subroutine convert_to_external_nodes(n,nodes)
 
         use basin
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -253,10 +255,10 @@
 	return
    98	continue
         write(6,*) 'cannot find internal node: ',ni
-        stop 'error stop convert_to_external_nodes: no such node'
+        call error_stop('convert_to_external_nodes','no such node')
    99	continue
         write(6,*) 'cannot convert internal node: ',ni
-        stop 'error stop convert_to_external_nodes: no such node'
+        call error_stop('convert_to_external_nodes','no such node')
         end
 
 !***************************************************************
@@ -264,6 +266,7 @@
         subroutine convert_to_internal_nodes(n,nodes)
 
         use basin
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -286,15 +289,16 @@
 	return
    98	continue
         write(6,*) 'cannot find node: ',ne
-        stop 'error stop convert_to_internal_nodes: no such node'
+        call error_stop('convert_to_internal_nodes','no such node')
    99	continue
         write(6,*) 'cannot convert node: ',ne
-        stop 'error stop convert_to_internal_nodes: no such node'
+        call error_stop('convert_to_internal_nodes','no such node')
         end
 
 !***************************************************************
 
 	subroutine get_node_list(list,n,nodes)
+	use mod_error_stop, only: error_stop
 
 ! for n == 0 only checks how many nodes to read
 ! for n > 0 reads nodes into nodes() (error if n is too small)
@@ -330,19 +334,20 @@
    96	continue
 	write(6,*) 'nscan,ndim :',nscan,ndim
 	write(6,*) 'list: ',trim(list)
-	stop 'error stop get_node_list: dimension error'
+	call error_stop('get_node_list','dimension error')
    97	continue
 	write(6,*) 'no data in list: ',trim(list)
-	stop 'error stop get_node_list: no data'
+	call error_stop('get_node_list','no data')
    98	continue
 	write(6,*) 'nscan: ',nscan
 	write(6,*) 'error in read of list: ',trim(list)
-	stop 'error stop get_node_list: read error'
+	call error_stop('get_node_list','read error')
 	end
 
 !***************************************************************
 
 	subroutine get_node_file(file,n,nodes)
+	use mod_error_stop, only: error_stop
 
 ! for n == 0 only checks how many nodes to read
 ! for n > 0 reads nodes into nodes() (error if n is too small)
@@ -385,17 +390,17 @@
    96	continue
 	write(6,*) 'n,ndim :',n,ndim
 	write(6,*) 'file: ',trim(file)
-	stop 'error stop get_node_file: dimension error'
+	call error_stop('get_node_file','dimension error')
    97	continue
 	write(6,*) 'no data in file ',trim(file)
-	stop 'error stop get_node_file: no data'
+	call error_stop('get_node_file','no data')
    98	continue
 	write(6,*) 'read error in record ',n
 	write(6,*) 'in file ',trim(file)
-	stop 'error stop get_node_file: read error'
+	call error_stop('get_node_file','read error')
    99	continue
 	write(6,*) 'file: ',trim(file)
-	stop 'error stop get_node_file: cannot open file'
+	call error_stop('get_node_file','cannot open file')
 	end
 
 !***************************************************************
@@ -403,6 +408,7 @@
 	subroutine get_closest_node(scoord,node)
 
         use basin
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -421,7 +427,7 @@
         if( icoord > 0 .and. icoord /= 2 ) then
           write(6,*) 'parse error for -coord: need two numbers'
           write(6,*) '-coord:  ',trim(scoord)
-          stop 'error stop get_closest_node: need 2 values'
+          call error_stop('get_closest_node','need 2 values')
         end if
 
         xp = f(1)
@@ -441,7 +447,7 @@
 
 	if( kclose == 0 ) then
 	  write(6,*) 'kclose = ',kclose
-	  stop 'error stop get_closest_node: internal error (1)'
+	  call error_stop('get_closest_node','internal error (1)')
 	end if
 
 	x = xgv(kclose)
@@ -466,6 +472,7 @@
 	use levels
 	use elabutil
 	use mod_depth
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -510,7 +517,7 @@
 	if( icall == 0 ) then
 	  
 	  allocate(ius(nvar,nnodes,5),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('write_nodes_scalar_ts','allocation failed')
 	  ius = 0
 
 	  do iv=1,nvar
@@ -546,7 +553,7 @@
      &			,iostat=ierr)
 	  if( ierr /= 0 ) then
 	    write(6,*) 'error opening file: ',trim(name)
-	    stop 'error stop write_nodes_scalar_ts: cannot open file'
+	    call error_stop('write_nodes_scalar_ts','cannot open file')
 	  end if
 
 	  if( b3d ) then
@@ -556,7 +563,7 @@
      &			,iostat=ierr)
 	    if( ierr /= 0 ) then
 	      write(6,*) 'error opening file: ',trim(name)
-	      stop 'error stop write_nodes_scalar_ts: cannot open file'
+	      call error_stop('write_nodes_scalar_ts','cannot open file')
 	    end if
 	  end if
 
@@ -625,6 +632,7 @@
 	use levels
 	use mod_depth
 	use elabutil
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -663,7 +671,7 @@
 
 	if( icall == 0 ) then
 	  allocate(ius(niu,nnodes,3),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('write_nodes_hydro_ts','allocation failed')
 	  ius = 0
 	  do j=1,nnodes
 	    do i=1,niu
@@ -687,7 +695,7 @@
      &			,iostat=ierr)
 	    if( ierr /= 0 ) then
 	      write(6,*) 'error opening file: ',trim(name)
-	      stop 'error stop write_nodes_hydro_ts: cannot open file'
+	      call error_stop('write_nodes_hydro_ts','cannot open file')
 	    end if
 	  end if
 	end if
@@ -774,6 +782,7 @@
 	use elabutil
 	use elabtime
 	use shyfem_strings
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -844,7 +853,7 @@
 	return
    74	continue
         write(6,*) 'error opening file ',trim(file)
-        stop 'error stop write_nodes_scal: opening file'
+        call error_stop('write_nodes_scal','opening file')
 	end
 
 !***************************************************************
@@ -857,6 +866,7 @@
 	use mod_depth
 	use elabutil
 	use elabtime
+	use mod_error_stop, only: error_stop
 	!use shyelab_out
 
 	implicit none
@@ -949,7 +959,7 @@
 	return
    74	continue
         write(6,*) 'error opening file ',trim(file)
-        stop 'error stop write_nodes_scal: opening file'
+        call error_stop('write_nodes_scal','opening file')
 	end
 
 !***************************************************************

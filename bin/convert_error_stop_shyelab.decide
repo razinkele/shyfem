@@ -1,0 +1,4 @@
+# decisions for bin/convert_error_stop.py on the shyelab files below at
+# e75678c5 (line numbers of the original files), #338
+# the stop code goes over two lines of string literals
+shyelab_output.f90:361    shyelab_record_output|belem==.true. not ready

@@ -301,3 +301,17 @@ tselab1.o: ../../../lib/mod/clo.mod ../../../lib/mod/elabtime.mod \
 		../../../lib/mod/elabutil.mod \
 		../../../lib/mod/shyfem_strings.mod 
 
+shyelab1.o: ../../../lib/mod/mod_error_stop.mod
+shyelab_util.o: ../../../lib/mod/mod_error_stop.mod
+shyelab_output.o: ../../../lib/mod/mod_error_stop.mod
+shyelab_nodes.o: ../../../lib/mod/mod_error_stop.mod
+shyelab_area.o: ../../../lib/mod/mod_error_stop.mod
+shyelab_extract.o: ../../../lib/mod/mod_error_stop.mod
+shyelab_proj.o: ../../../lib/mod/mod_error_stop.mod
+elabutil.o: ../../../lib/mod/mod_error_stop.mod
+elabtime.o: ../../../lib/mod/mod_error_stop.mod
+elab_off.o: ../../../lib/mod/mod_error_stop.mod
+elab_gis.o: ../../../lib/mod/mod_error_stop.mod
+elab_regular.o: ../../../lib/mod/mod_error_stop.mod
+elab_resample.o: ../../../lib/mod/mod_error_stop.mod
+elab_check.o: ../../../lib/mod/mod_error_stop.mod

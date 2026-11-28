@@ -48,6 +48,7 @@
 
         use basin
         use elabutil
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -66,13 +67,13 @@
         call read_all_lines(areafile,np,xx,yy,ifl)
         if( np <= 0 ) goto 99
         allocate(xx(np),yy(np),ifl(np),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('handle_area','allocation failed')
         call read_all_lines(areafile,np,xx,yy,ifl)
 
         ieflag = -1
         ikflag = 0
         allocate(ikf(nkn),ief(nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('handle_area','allocation failed')
 
 	ie = 0
 	il = 0
@@ -95,7 +96,7 @@
 	return
    99	continue
 	write(6,*) 'error reading area file: ',trim(areafile)
-	stop 'error stop handle_area: area file'
+	call error_stop('handle_area','area file')
 	end subroutine handle_area
 
 !***************************************************************
@@ -107,6 +108,7 @@
 !***************************************************************
 
 	subroutine get_next_line(n,ifl,is,ie,nn)
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -130,7 +132,7 @@
 	return
    99	continue
 	write(6,*) 'error in line file: ',is,ifl(is)
-	stop 'error stop get_next_line: file structure'
+	call error_stop('get_next_line','file structure')
 	end
 
 !***************************************************************
@@ -138,6 +140,7 @@
 	subroutine write_grd_with_flags(file,ikf,ief)
 
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -152,7 +155,7 @@
      &			,iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
-	  stop 'error stop write_grd_with_flags: cannot open file'
+	  call error_stop('write_grd_with_flags','cannot open file')
 	end if
 
 	do k=1,nkn

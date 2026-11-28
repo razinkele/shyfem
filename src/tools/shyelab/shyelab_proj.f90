@@ -45,6 +45,7 @@
         use shympi
         use projection
         use coordinates
+        use mod_error_stop, only: tool_error_stop => error_stop
 
         implicit none
 
@@ -116,15 +117,15 @@
 	return
    97	continue
 	write(6,*) 'no parameters given for projection: ',trim(tproj)
-	stop 'error stop shy_proj: no parameters'
+	call tool_error_stop('shy_proj','no parameters')
    98	continue
 	write(6,*) 'unknown projection: ',trim(tproj)
-	stop 'error stop shy_proj: unknown projection'
+	call tool_error_stop('shy_proj','unknown projection')
    99	continue
         write(6,*)'coordinates are not lat,lon'
         write(6,*)'  xmin,xmax: ',minval(xgv),maxval(xgv)
         write(6,*)'  ymin,ymax: ',minval(ygv),maxval(ygv)
-        stop 'error stop shy_proj: not lat/lon'
+        call tool_error_stop('shy_proj','not lat/lon')
         end subroutine shy_proj
        
 !*****************************************************************
