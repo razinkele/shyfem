@@ -1,0 +1,7 @@
+# decisions for bin/convert_error_stop.py on src/tools/shyadj/ at 31b9808f
+# (line numbers of the original files), #338
+adjgrd.f90:559    insgr|no such node
+adjvar.f90:407    checkarea|non-positive area
+shyadj.f90:114    shyadj|no nodes in grid
+shyadj.f90:302    rdgrd|error reading grd file
+shyadj.f90:305    ex2in|error external to internal numbering

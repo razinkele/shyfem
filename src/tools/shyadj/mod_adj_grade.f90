@@ -50,6 +50,7 @@
 !===================================================================
 
 	subroutine mod_adj_grade_init(nkn,ngr)
+	use mod_error_stop, only: error_stop
 
 	integer nkn,ngr
 	integer ierr
@@ -57,11 +58,11 @@
 	ngrdi = ngr
 
 	allocate(ngrade(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('mod_adj_grade_init','allocation failed')
 	allocate(nbound(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('mod_adj_grade_init','allocation failed')
 	allocate(ngri(2*ngr,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('mod_adj_grade_init','allocation failed')
 
 	end subroutine mod_adj_grade_init
 

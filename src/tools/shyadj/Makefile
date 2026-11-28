@@ -166,3 +166,12 @@ shyadj.o: ../../../lib/mod/basin.mod ../../../lib/mod/clo.mod \
 		../../../lib/mod/mod_adj_grade.mod \
 		../../../lib/mod/mod_depth.mod 
 
+adj4el.o: ../../../lib/mod/mod_error_stop.mod
+adj575.o: ../../../lib/mod/mod_error_stop.mod
+adj5el.o: ../../../lib/mod/mod_error_stop.mod
+adj7el.o: ../../../lib/mod/mod_error_stop.mod
+adjgrd.o: ../../../lib/mod/mod_error_stop.mod
+adjneu.o: ../../../lib/mod/mod_error_stop.mod
+adjvar.o: ../../../lib/mod/mod_error_stop.mod
+mod_adj_grade.o: ../../../lib/mod/mod_error_stop.mod
+shyadj.o: ../../../lib/mod/mod_error_stop.mod

@@ -129,6 +129,7 @@
 !  computes statistics on grade
 
 	use mod_adj_static
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -160,7 +161,7 @@
 	  nb = nbound(k)	! = 1 if on boundary
 	  if( nb .eq. nbstatic ) nb = 0	!NBSTATIC
 	  nto = nto + n
-	  if( n .lt. 0 ) stop 'error stop statgrd: internal error'
+	  if( n .lt. 0 ) call error_stop('statgrd','internal error')
 	  nsa(n) = nsa(n) + 1
 	  if( nb .ne. 0 ) then
 	    nsb(n) = nsb(n) + 1
@@ -197,7 +198,7 @@
 	  write(6,*) 'naux = ',naux
 	  write(6,*) 'nin = ',nin
 	  write(6,*) 'nbn = ',nbn
-	  stop 'error stop statgrd: element layout'
+	  call error_stop('statgrd','element layout')
 	end if
 
 	end
@@ -205,6 +206,7 @@
 ! ***********************************************************
 
 	subroutine mkbound(nkn,nel,ngrddi,nen3v,ngrade,nbound,ngri)
+	use mod_error_stop, only: error_stop
 
 !  marks boundary nodes and determines exact grade
 
@@ -260,12 +262,13 @@
 	return
    99	continue
 	write(6,*) 'internal error: grade too high: ',n+2,2*ngrddi
-	stop 'error stop mkbound: ngrddi'
+	call error_stop('mkbound','ngrddi')
 	end
 
 ! ***********************************************************
 
 	subroutine sortgr(n,iv)
+	use mod_error_stop, only: error_stop
 
 !  compacts array iv (throws out double numbers)
 
@@ -304,7 +307,7 @@
 	    bnew = .false.
 	  else
 	    ie = ie + 1
-            if( ie .gt. ndim ) stop 'error stop sortgr: ndim'
+            if( ie .gt. ndim ) call error_stop('sortgr','ndim')
 	    iaux(ie) = iv(new+1)
 	    iv(new) = 0
 	    iv(new+1) = 0
@@ -323,7 +326,7 @@
 	    bnew = .false.
 	  else
 	    ib = ib - 1
-            if( ib .lt. 1 ) stop 'error stop sortgr: ndim'
+            if( ib .lt. 1 ) call error_stop('sortgr','ndim')
 	    iaux(ib) = iv(new-1)
 	    iv(new) = 0
 	    iv(new-1) = 0
@@ -398,6 +401,7 @@
 ! ***********************************************************
 
 	function nextgr(k,kgr,ngrddi,ngrade,ngri)
+	use mod_error_stop, only: error_stop
 
 !  finds next node in grade index
 ! 
@@ -428,7 +432,7 @@
         call nint2ext(kgr,kext)
         write(6,*) 'int/ext kgr: ',kgr,kext
         write(6,*) (ngri(i,k),i=1,n)
-	stop 'error stop nextgr: no such node'
+	call error_stop('nextgr','no such node')
 
     1	continue
 	i = i + 1
@@ -440,6 +444,7 @@
 ! **************************************************************
 
 	subroutine exchgr(k,kold,knew,ngrddi,ngrade,ngri)
+	use mod_error_stop, only: error_stop
 
 !  exchanges node in grade index
 
@@ -461,13 +466,14 @@
 	end do
 
 	write(6,*) k,kold,knew
-	stop 'error stop exchgr: no such node'
+	call error_stop('exchgr','no such node')
 
 	end
 
 ! **************************************************************
 
 	subroutine delgr(k,kold,ngrddi,ngrade,ngri)
+	use mod_error_stop, only: error_stop
 
 !  deletes grade in index (kold from index of node k)
 
@@ -493,7 +499,7 @@
 
 	if( idiff .eq. 0 ) then
 	  write(6,*) k,kold
-	  stop 'error stop delgr: no such node'
+	  call error_stop('delgr','no such node')
 	end if
 
 	end
@@ -501,6 +507,7 @@
 ! **************************************************************
 
 	subroutine insgrb(k,kbefor,knew,ngrddi,ngrade,ngri)
+	use mod_error_stop, only: error_stop
 
 !  inserts grade in index (knew in index of node k befor node kbefor)
 
@@ -525,13 +532,14 @@
 	end do
 
 	write(6,*) k,kbefor,knew
-	stop 'error stop insgrb: no such node'
+	call error_stop('insgrb','no such node')
 
 	end 
 
 ! **************************************************************
 
 	subroutine insgr(k,kafter,knew,ngrddi,ngrade,ngri)
+	use mod_error_stop, only: error_stop
 
 !  inserts grade in index (knew in index of node k after node kafter)
 
@@ -556,7 +564,7 @@
 
 	write(6,*) 'insgr: ',k,kafter,knew
 	write(6,*) 'No such node : ',kafter
-	stop 'error stop insgr'
+	call error_stop('insgr','no such node')
 
 	end 
 

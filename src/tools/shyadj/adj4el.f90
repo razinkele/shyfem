@@ -106,6 +106,7 @@
 
 	use mod_adj_grade
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -119,7 +120,7 @@
 	if( k .gt. nkn ) return
 
 	n = ngrade(k)
-	if( n .ne. 3 ) stop 'error stop elim3: not grade 3'
+	if( n .ne. 3 ) call error_stop('elim3','not grade 3')
 
 	write(6,*) k,n
 
@@ -138,15 +139,15 @@
 !  delete elements
 
 	ie = ifindel(neibs(1),neibs(2),k)
-	if( ie .eq. 0 ) stop 'error stop elim3: internal error (1)'
+	if( ie .eq. 0 ) call error_stop('elim3','internal error (1)')
 	call setele(ie,neibs(1),neibs(2),neibs(3),nen3v)
 
 	ie = ifindel(neibs(2),neibs(3),k)
-	if( ie .eq. 0 ) stop 'error stop elim3: internal error (1)'
+	if( ie .eq. 0 ) call error_stop('elim3','internal error (1)')
 	call delele(ie)
 
 	ie = ifindel(neibs(3),neibs(1),k)
-	if( ie .eq. 0 ) stop 'error stop elim3: internal error (1)'
+	if( ie .eq. 0 ) call error_stop('elim3','internal error (1)')
 	call delele(ie)
 
 !  delete node
@@ -163,6 +164,7 @@
 
 	use mod_adj_grade
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -256,7 +258,7 @@
 	if( i .ne. 4 ) then
 	  write(6,*) k,i
 	  write(6,*) (ielem(k),k=1,i)
-	  stop 'error stop elim4: internal error (2)'
+	  call error_stop('elim4','internal error (2)')
 	end if
 	do i=1,4
 	  ie = ielem(i)
@@ -336,6 +338,7 @@
 ! ***********************************************************
 
 	subroutine el4to2(k,k1,k2,ieind,ienew)
+	use mod_error_stop, only: error_stop
 
 !  four elements to two
 
@@ -357,7 +360,7 @@
 	  end do
 	end do
 	if( iip .ne. 2 ) then
-		stop 'error stop el4to2: internal error (5)'
+		call error_stop('el4to2','internal error (5)')
 	end if
 
 	call unifel(k,ieind(1,ip(1)),ieind(1,ip(2)),ienew(1,1))
@@ -372,7 +375,7 @@
 	  end do
 	end do
 	if( iip .ne. 2 ) then
-		stop 'error stop el4to2: internal error (5)'
+		call error_stop('el4to2','internal error (5)')
 	end if
 
 	call unifel(k,ieind(1,ip(1)),ieind(1,ip(2)),ienew(1,2))
@@ -390,6 +393,7 @@
 ! ***********************************************************
 
 	subroutine unifel(k,ik1,ik2,inew)
+	use mod_error_stop, only: error_stop
 
 !  unifies two elements with common node k
 
@@ -414,7 +418,7 @@
 	  write(6,*) 'unifel : ',k
 	  write(6,*) (ik1(ii),ii=1,3)
 	  write(6,*) (ik2(ii),ii=1,3)
-	  stop 'error stop unifel: no node k'
+	  call error_stop('unifel','no node k')
 	end if
 
 	in1 = mod(ikp1,3) + 1
@@ -432,7 +436,7 @@
 	else
 	  write(6,*) (ik1(ii),ii=1,3)
 	  write(6,*) (ik2(ii),ii=1,3)
-	  stop 'error stop unifel: no second common node'
+	  call error_stop('unifel','no second common node')
 	end if
 
 ! 	write(6,*) 'unifel : ',k

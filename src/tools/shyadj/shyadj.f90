@@ -65,6 +65,7 @@
 	use mod_adj_grade
 	use mod_depth
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -111,18 +112,18 @@
 	call grd_get_params(nk,ne,nl,nne,nnl)
 
 	write(6,'(a,5i7)') 'grid parameters: ',nk,ne,nl
-	if( nk .le. 0 ) stop
+	if( nk .le. 0 ) call error_stop('shyadj','no nodes in grid')
 
 	call grd_to_basin
 
 	allocate(dx(nkn),dy(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('shyadj','allocation failed')
 	allocate(ic(nkn),ianv(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('shyadj','allocation failed')
 	allocate(ipaux(nkn),iaux(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('shyadj','allocation failed')
 	allocate(raux(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('shyadj','allocation failed')
 
 !  save depth information in elements to nodes
 
@@ -299,10 +300,10 @@
 	stop 'shyadj: done'
    97	continue
 	write(6,*) 'error reading grd file'
-	stop 'error stop rdgrd'
+	call error_stop('rdgrd','error reading grd file')
    99	continue
 	write(6,*) 'error external to internal numbering'
-	stop 'error stop ex2in'
+	call error_stop('ex2in','error external to internal numbering')
 	end
 
 ! ***********************************************************
