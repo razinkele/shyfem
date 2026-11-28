@@ -28,6 +28,7 @@
 #      a wrong file is "junk line" / "1 2 3"; and the two clo.f90 messages:
 #        shyelab -  and  shyelab - FILE   (no option name after "-")
 #        shyplot -tmin <1100 characters> FILE (value too long for option)
+#        shyelab   option and output errors     (shyelab_*.f90, elabutil.f90, ... #338)
 #   2. exit 0 for -h (with "Usage: TOOL") and for no argument (the usage,
 #      #332 kept it at 0) of each of the seven tools
 #   3. exit 0, and no "error stop" in the output, for a good run of each:
@@ -63,7 +64,8 @@ done
 echo "binaries: $(dirname "$(command -v shypre)")"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/check_tool_exit.XXXXXX")" || exit 1
-trap 'rm -rf "$TMP"' EXIT
+# the unwritable-folder rows run with a-w on a folder: restore u+w before rm
+trap 'chmod -R u+w "$TMP" 2> /dev/null; rm -rf "$TMP"' EXIT
 cd "$TMP" || exit 1
 rc=0
 n=0
@@ -75,14 +77,14 @@ nfail=0
 row() {
   local want=$1 pat=$2; shift 2
   n=$((n + 1))
-  timeout 300 "$@" > "out.$n" 2> "err.$n"
+  timeout 300 "$@" > "$TMP/out.$n" 2> "$TMP/err.$n"
   local st=$? why=""
   [ "$st" -eq "$want" ] || why="exit $st, want $want"
-  if [ -z "$why" ] && [ -n "$pat" ] && ! grep -qF -- "$pat" "out.$n"; then
+  if [ -z "$why" ] && [ -n "$pat" ] && ! grep -qF -- "$pat" "$TMP/out.$n"; then
     why="no \"$pat\" on stdout"
   fi
-  if [ -z "$why" ] && [ "$want" -eq 0 ] && grep -qi "error stop" "out.$n" "err.$n"; then
-    why="\"$(grep -hi -m1 "error stop" "out.$n" "err.$n" | sed 's/^ *//')\""
+  if [ -z "$why" ] && [ "$want" -eq 0 ] && grep -qi "error stop" "$TMP/out.$n" "$TMP/err.$n"; then
+    why="\"$(grep -hi -m1 "error stop" "$TMP/out.$n" "$TMP/err.$n" | sed 's/^ *//')\""
   fi
   local cmd="$*"
   [ "${#cmd}" -gt 60 ] && cmd="${cmd:0:57}..."
@@ -92,7 +94,7 @@ row() {
     printf 'FAIL %-60s %s\n' "$cmd" "$why"
     local f last
     for f in out err; do
-      last=$(grep -v '^ *$' "$f.$n" | tail -1 | sed 's/^ *//; s/ *$//' | cut -c1-100)
+      last=$(grep -v '^ *$' "$TMP/$f.$n" | tail -1 | sed 's/^ *//; s/ *$//' | cut -c1-100)
       [ -n "$last" ] && echo "       last line on std$f: $last"
     done
     rc=1; nfail=$((nfail + 1))
@@ -220,6 +222,46 @@ row 7 "error stop shyelab: file not existing"                    lgrelab missing
 row 7 "error stop shyelab: not a valid shy file"                 lgrelab wrong.lgr
 row 7 "error stop extelab: cannot open file"                     extelab missing.ext
 row 7 "error stop flxelab: cannot open file"                     flxelab missing.flx
+
+echo "=== shyelab option and output errors (exit 7, message on stdout; #338)"
+H=mm_lgr.hydro.shy
+printf '' > nodes_empty.txt
+printf 'abc\n' > nodes_junk.txt
+printf '99999\n' > nodes_none.txt
+row 7 "error stop shyelab_init_output: outformat not recognized" shyelab -outformat foo $H
+row 7 "error stop convert_to_internal_nodes: no such node"    shyelab -node 99999 $H
+row 7 "error stop get_node_list: read error"                 shyelab -node abc $H
+row 7 "error stop get_node_file: cannot open file"           shyelab -nodes missing.txt $H
+row 7 "error stop get_node_file: no data"                    shyelab -nodes nodes_empty.txt $H
+row 7 "error stop get_node_file: read error"                 shyelab -nodes nodes_junk.txt $H
+row 7 "error stop convert_to_internal_nodes: no such node"    shyelab -nodes nodes_none.txt $H
+row 7 "error stop get_closest_node: need 2 values"           shyelab -coord 1 $H
+row 7 "error stop get_closest_node: internal error (1)"      shyelab -coord a,b $H
+row 7 "error stop parse_extract_range: error in parsing"     shyelab -extract abc $H
+row 7 "error stop initialize_extract: error in record list"  shyelab -extract 0 $H
+row 7 "error stop shy_proj: unknown projection"              shyelab -proj foo $H
+row 7 "error stop shy_proj: no parameters"                   shyelab -proj GB $H
+row 7 "error stop elabtime_set_minmax: cannot parse"         shyelab -tmin garbage $H
+row 7 "error stop shyelab: need 2 files"                     shyelab -diff $H
+row 7 "error stop handle_smooth_option: cannot parse"        shyelab -smooth abc $H
+row 7 "error stop elabutil_set_averaging: incompatible options" shyelab -aver -sum $H
+row 7 "error stop shyelab1: vorticity output format"         shyelab -vorticity -out -outformat gis $H
+row 7 "error stop fem_regular_parse: string"                 shyelab -lgdens -reg abc mm_lgr.lgr.shy
+row 7 "error stop shyelab_init_output: regular output"       shyelab -reg 100 -resample 1 $H
+row 7 "error stop handle_area: area file"                    shyelab -areas GRID/MM_coarse.grd $H
+# output into a folder that cannot be written (not as root: root can write there)
+mkdir ro && ln -s ../$H ro/h.shy && chmod a-w ro
+if touch ro/probe 2> /dev/null; then
+  rm -f ro/probe
+  echo "skip shyelab rows for an unwritable folder (the folder is writable, root?)"
+else
+  cd ro || exit 1
+  row 7 "error stop shy_split_internal: cannot open file"      shyelab -split h.shy
+  row 7 "error stop shyelab_init_output: opening file"         shyelab -out h.shy
+  row 7 "error stop gis_write_connect: cannot open file"       shyelab -out -outformat gis h.shy
+  cd .. || exit 1
+fi
+chmod u+w ro
 
 echo "=== option errors of clo.f90 (exit 7, message on stdout)"
 long=$(printf '%01100d' 0)

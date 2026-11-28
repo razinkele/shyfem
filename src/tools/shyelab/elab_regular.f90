@@ -40,6 +40,7 @@
 	subroutine fem_regular_parse(string,regpar,nx,ny)
 
 	use basin
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -74,7 +75,7 @@
 	else
 	  write(6,*) ianz,'  ',trim(string)
 	  write(6,*) 'read error or wrong number of parameters'
-	  stop 'error stop fem_regular_parse: string'
+	  call error_stop('fem_regular_parse','string')
 	end if
 
 	if( ianz == 0 ) then
@@ -98,7 +99,7 @@
           write(6,*) nx,ny
           write(6,*) dx,dy
           write(6,*) x0,y0,x1,y1
-	  stop 'error stop fem_regular_parse: erroneous domain'
+	  call error_stop('fem_regular_parse','erroneous domain')
 	end if
 
 	if( ianz /= 6 ) then		!correct x0/y0

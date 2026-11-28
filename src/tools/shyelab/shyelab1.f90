@@ -98,6 +98,7 @@
         use evgeom
         use levels
         use shympi
+        use mod_error_stop, only: tool_error_stop => error_stop
 
 	implicit none
 
@@ -240,12 +241,12 @@
 	  if( nvar /= 4 ) goto 71
 	  nndim = 3*nel
 	  allocate(il(nel),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	  il = ilhv
 	else if( bscalar ) then		!NOS
 	  nndim = nkn
 	  allocate(il(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	  il = ilhkv
 	else
 	  goto 76	!relax later
@@ -254,29 +255,29 @@
         call shy_check_nvar(id,nvar)
 
 	allocate(ieflag(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	allocate(ikflag(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	allocate(cv2(nndim),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	allocate(cv3(nlv,nndim),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	allocate(cv3all(nlv,nndim,0:nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	allocate(idims(4,nvar),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
         allocate(ivars(nvar),strings(nvar),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	allocate(znv(nkn),uprv(nlv,nkn),vprv(nlv,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	allocate(sv(nlv,nkn),dv(nlv,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	if( bdiff ) then
 	  allocate(cv3diff(nlv,nndim,0:nvar),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	else
 	  allocate(cv3diff(1,1,0:1),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call tool_error_stop('shyelab1','allocation failed')
 	end if
 
 	!--------------------------------------------------------------
@@ -372,7 +373,7 @@
 	    write(6,*) 'vorticity output not supported for format: ' &
      &				,trim(outformat)
 	    write(6,*) 'use -outformat shy (or native) for vorticity'
-	    stop 'error stop shyelab1: vorticity output format'
+	    call tool_error_stop('shyelab1','vorticity output format')
 	  end if
 	  ftype_out = 2
 	  call shyelab_init_output(id,idout,ftype_out,1,(/19/))
@@ -656,48 +657,48 @@
    61	continue
 	write(6,*) 'difference of time between files'
 	write(6,*) 'time1,time2: ',dtime,ddtime
-	stop 'error stop shyelab: time record in diffing'
+	call tool_error_stop('shyelab','time record in diffing')
    62	continue
 	write(6,*) 'cannot read record in diff file'
-	stop 'error stop shyelab: no record in diffing'
+	call tool_error_stop('shyelab','no record in diffing')
    66	continue
 	write(6,*) 'for computing difference need exactly 2 files'
-	stop 'error stop shyelab: need 2 files'
+	call tool_error_stop('shyelab','need 2 files')
    70	continue
 	write(6,*) 'for vorticity hydro file is needed'
 	write(6,*) 'this file is not a hydro file'
-	stop 'error stop shyelab: file not hydro file'
+	call tool_error_stop('shyelab','file not hydro file')
    71	continue
 	write(6,*) 'ftype = ',ftype,'  nvar = ',nvar
 	write(6,*) 'nvar should be 4'
-	stop 'error stop shyelab: ftype,nvar'
+	call tool_error_stop('shyelab','ftype,nvar')
    74	continue
-	stop 'error stop shyelab: general error...'
+	call tool_error_stop('shyelab','general error...')
    75	continue
 	write(6,*) 'error writing header, ierr = ',ierr
 	call shy_get_filename(id,file)
 	write(6,*) 'file = ',trim(file)
-	stop 'error stop shyelab: writing header'
+	call tool_error_stop('shyelab','writing header')
    76	continue
 	write(6,*) 'ftype = ',ftype,'  expecting 1 or 2'
 	call shy_get_filename(id,file)
 	write(6,*) 'file = ',trim(file)
-	stop 'error stop shyelab: ftype'
+	call tool_error_stop('shyelab','ftype')
    77	continue
 	write(6,*) 'error reading header, ierr = ',ierr
 	call shy_get_filename(id,file)
 	write(6,*) 'file = ',trim(file)
-	stop 'error stop shyelab: reading header'
+	call tool_error_stop('shyelab','reading header')
    98	continue
 	write(6,*) 'error reading file, ierr = ',ierr
 	call shy_get_filename(id,file)
 	write(6,*) 'file = ',trim(file)
-	stop 'error stop shyelab: file contains no data'
+	call tool_error_stop('shyelab','file contains no data')
    99	continue
 	write(6,*) 'error reading file, ierr = ',ierr
 	call shy_get_filename(id,file)
 	write(6,*) 'file = ',trim(file)
-	stop 'error stop shyelab: reading first record'
+	call tool_error_stop('shyelab','reading first record')
 	end
 
 !***************************************************************
@@ -812,6 +813,7 @@
 	subroutine shy_split_internal(id,file,b2d,id_out)
 
 	use shyfile
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -838,9 +840,9 @@
 
 	return
    98	continue
-	stop 'error stop shy_split_internal: cannot write header'
+	call error_stop('shy_split_internal','cannot write header')
    99	continue
-	stop 'error stop shy_split_internal: cannot open file'
+	call error_stop('shy_split_internal','cannot open file')
 	end
 
 !***************************************************************
@@ -848,6 +850,7 @@
 	subroutine shy_split_id(ivar,id_in,id_out)
 
 	use shyfile
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -864,13 +867,13 @@
         if( nsplit == 0 ) then
 	  nsplit = max(ivar,100)
 	  allocate(iusplit(nsplit),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call error_stop('shy_split_id','allocation failed')
 	  iusplit = 0
 	end if
 
         if( ivar > nsplit ) then
           allocate(iuaux(2*ivar),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('shy_split_id','allocation failed')
 	  iuaux = 0
           iuaux(1:nsplit) = iusplit(1:nsplit)
           call move_alloc(iuaux,iusplit)
@@ -904,9 +907,9 @@
 
 	return
    98	continue
-	stop 'error stop shy_split_id: cannot write header'
+	call error_stop('shy_split_id','cannot write header')
    99	continue
-	stop 'error stop shy_split_id: cannot open file'
+	call error_stop('shy_split_id','cannot open file')
 	end
 
 !***************************************************************
@@ -997,6 +1000,7 @@
 !***************************************************************
 
         subroutine shy_assert(bval,text)
+        use mod_error_stop, only: error_stop
 
         implicit none
         logical bval
@@ -1005,7 +1009,7 @@
         if( .not. bval ) then
           write(6,*) 'assertion violated'
           write(6,*) text
-          stop 'error stop shy_assert: assertion violated'
+          call error_stop('shy_assert','assertion violated')
         end if
 
         end subroutine shy_assert

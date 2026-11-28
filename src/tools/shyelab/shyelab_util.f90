@@ -40,6 +40,7 @@
         use basin
         use levels
         use mod_depth
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -56,11 +57,11 @@
         real, allocatable :: vv(:,:)
 
         allocate(zenv(3*nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('prepare_hydro','allocation failed')
         allocate(uv(nlvdi,nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('prepare_hydro','allocation failed')
         allocate(vv(nlvdi,nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('prepare_hydro','allocation failed')
 
         znv(1:nkn)     = cv3all(1,1:nkn,1)
         zenv(1:3*nel)  = cv3all(1,1:3*nel,2)
@@ -82,6 +83,7 @@
         use basin
         use levels
         use mod_depth
+        use mod_error_stop, only: error_stop
 
         implicit none
 
@@ -99,13 +101,13 @@
         real, allocatable :: vv(:,:)
 
         allocate(znv(nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('prepare_hydro_e','allocation failed')
         allocate(zenv(3*nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('prepare_hydro_e','allocation failed')
         allocate(uv(nlvdi,nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('prepare_hydro_e','allocation failed')
         allocate(vv(nlvdi,nel),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('prepare_hydro_e','allocation failed')
 
         znv(1:nkn)     = cv3all(1,1:nkn,1)
         zenv(1:3*nel)  = cv3all(1,1:3*nel,2)
@@ -156,6 +158,7 @@
      &				,hev,zenv,nen3v &
      &                          ,ilhv,hlv,utlnv,vtlnv &
      &                          ,uprv,vprv)
+        use mod_error_stop, only: error_stop
 
 ! transforms transports at elements to velocities at nodes
 
@@ -187,7 +190,7 @@
         real area_elem
 
         call get_sigma_info(nlvaux,nsigma,hsigma)
-        if( nlvaux .gt. nlvddi ) stop 'error stop transp2vel: nlvddi'
+        if( nlvaux .gt. nlvddi ) call error_stop('transp2vel','nlvddi')
         bsigma = nsigma .gt. 0
 
 	weight = 0.
@@ -240,6 +243,7 @@
      &				,hev,zenv,nen3v &
      &                          ,ilhv,hlv,utlnv,vtlnv &
      &                          ,zev,ue3v,ve3v)
+        use mod_error_stop, only: error_stop
 
 ! transforms transports at elements to velocities at elements
 
@@ -269,7 +273,7 @@
         real hsigma,hadapt
 
         call get_sigma_info(nlvaux,nsigma,hsigma)
-        if( nlvaux .gt. nlvddi ) stop 'error stop transp2vel: nlvddi'
+        if( nlvaux .gt. nlvddi ) call error_stop('transp2vel','nlvddi')
         bsigma = nsigma .gt. 0
 
 	ue3v = 0.
@@ -312,6 +316,7 @@
         use levels
         use mod_depth
         use evgeom
+        use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -332,23 +337,23 @@
         real, allocatable :: v3v(:,:)
 
         allocate(aux(nlvdi,nkn),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call error_stop('compute_vorticity','allocation failed')
 
 	if( bnode ) then
           allocate(zv(nkn),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('compute_vorticity','allocation failed')
           allocate(u3v(nlvdi,nkn),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('compute_vorticity','allocation failed')
           allocate(v3v(nlvdi,nkn),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('compute_vorticity','allocation failed')
 	  call prepare_hydro(.true.,nndim,cv3all,zv,u3v,v3v)
 	else
           allocate(zv(nel),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('compute_vorticity','allocation failed')
           allocate(u3v(nlvdi,nel),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('compute_vorticity','allocation failed')
           allocate(v3v(nlvdi,nel),stat=ierr)
-          if( ierr /= 0 ) stop 'error stop: allocation failed'
+          if( ierr /= 0 ) call error_stop('compute_vorticity','allocation failed')
           call prepare_hydro_e(.true.,nndim,cv3all,zv,u3v,v3v)
 	end if
 
@@ -397,6 +402,7 @@
 	use basin
 	use levels
 	use evgeom
+	use mod_error_stop, only: error_stop
 
 	implicit none
 
@@ -427,9 +433,9 @@
 	icall = icall + 1
 
 	allocate(cnew(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('shy_smooth','allocation failed')
 	allocate(icount(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call error_stop('shy_smooth','allocation failed')
 
 	do iloop=1,sloop
 
