@@ -36,6 +36,7 @@
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 13.03.2019	ggu	changed VERS_7_5_61
 ! 28.11.2026	arb	transfer speed is the 10 m wind, not the current (#364)
+! 28.11.2026	arb	Reed's noon altitude in degrees in qshort1 (#364)
 
       !!------------------------------------------------------------------------
       !!
@@ -420,18 +421,21 @@
        sunbet=sin(alat)*sin(eclips*sin(tjul)) + &
      &        cos(alat)*cos(eclips*sin(tjul))
 
-       !solar noon altitude in degrees :
+       !solar noon altitude in degrees (sunbet = cos(lat-decl) can round
+       !above 1 where the latitude is close to the declination):
 
-       sunbetd = degradr*asin(sunbet)
+       sunbetd = degradr*asin(min(1.,max(-1.,sunbet)))
 
        !correction for cloud less than 0.3 according to Reed
+       !(the noon altitude of Reed's cloud formula is in degrees, as in
+       !NEMO's sbcblk_mfs; it was the sine sunbet before #364)
 
        albedo = alpham(im)
 
        if (cc.lt.0.3) then
           qswa = qtot*(1.-albedo)
        else
-          qswa  = qtot*(1-0.62*cc + .0019*sunbet)*(1.-albedo)
+          qswa  = qtot*(1-0.62*cc + .0019*sunbetd)*(1.-albedo)
        endif
 
 
